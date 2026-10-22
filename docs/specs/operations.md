@@ -1,0 +1,32 @@
+# Operations
+
+**Part of:** [[PRD]] · **Status:** Draft
+
+> Deploying and running Lush. Owner: Infra.
+
+- Domain with DNS on Cloudflare.
+- GitHub Actions: client → Cloudflare Pages; Go server → Vultr VM.
+- systemd service with automatic restart; Caddy for HTTPS.
+- Graceful restarts: in-game countdown, save everyone, restart.
+- Sentry on client and server.
+
+## Environments
+
+- **Production:** Vultr CPU Optimized VM, 2 vCPU / 4 GB, Los Angeles; Vultr Managed PostgreSQL, Los Angeles, same private network.
+- **Staging:** a second instance of the server on the **same VM**, on a separate port, with its own database (or schema) so test data never mixes with production (D-032).
+  - Run the CI load test only when no testers are online.
+  - Production tick metrics recorded during a load test are not reliable.
+  - Move staging to its own VM before any public launch.
+
+## Firewall
+
+- SSH (22): owner's IP only.
+- TCP 80 and 443: open.
+- UDP 443: open only once WebTransport ships.
+
+## Database access
+
+- Trusted sources: the game server, plus the owner's IP during development.
+- Automatic backups on.
+
+See also [[Monitoring]].

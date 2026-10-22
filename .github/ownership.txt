@@ -1,0 +1,24 @@
+# Which files each agent role may change.
+# Branches named agent/<role>/... are checked against this file twice: by the
+# path-guard workflow and by the runner before every merge. Patterns use
+# shell-style globs; "*" also matches "/".
+# Branches that don't start with "agent/" (the human owner) are not restricted.
+#
+# This file is a gate file: agents can never change it.
+
+gate: .github/* scripts/ci/* .claude/* CONSTITUTION.md CLAUDE.md */CLAUDE.md
+
+protocol: protocol/* server/internal/protocol/* client/src/protocol/*
+
+server-world: server/internal/world/* server/internal/systems/* server/internal/interest/* server/go.mod server/go.sum
+
+server-platform: server/internal/transport/* server/internal/session/* server/internal/store/* server/internal/api/* server/internal/ops/* server/cmd/* db/migrations/* server/go.mod server/go.sum
+
+client: client/src/core/* client/src/net/* client/src/state/* client/src/input/* client/src/ui/* client/src/audio/* client/src/main.ts client/index.html client/package.json client/package-lock.json client/vite.config.ts client/tsconfig.json client/eslint.config.js client/public/*
+
+client-render: client/src/render/* shared/map/* client/public/models/* client/package.json client/package-lock.json
+
+infra: Makefile .gitignore .editorconfig deploy/* tools/bots/* scripts/dev/*
+
+# Used only by the runner to revert a merge that broke main. Any file except gate files.
+revert: *

@@ -1,0 +1,113 @@
+# Reusable deploy, called by deploy-staging.yml and deploy-production.yml.
+# Builds the Go server for Linux and the client bundle, uploads the server to the
+# Vultr VM, restarts the matching systemd unit, and publishes the client to
+# Cloudflare Pages. Skips each half until that part of the repo exists.
+#
+# Repository secrets: DEPLOY_SSH_KEY, DEPLOY_HOST, DEPLOY_USER,
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, DISCORD_WEBHOOK_URL
+# Repository variables: CLOUDFLARE_PAGES_PROJECT,
+#   STAGING_SERVER_URL, PRODUCTION_SERVER_URL (wss://.../ws, baked into the client)
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: staging or production
+        required: true
+        type: string
+      sha:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    env:
+      ENV_NAME: ${{ inputs.environment }}
+      SHA: ${{ inputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+
+      - name: Detect parts
+        id: has
+        run: |
+          [ -f server/go.mod ] && echo "server=true" >> "$GITHUB_OUTPUT" || echo "server=false" >> "$GITHUB_OUTPUT"
+          [ -f client/package.json ] && echo "client=true" >> "$GITHUB_OUTPUT" || echo "client=false" >> "$GITHUB_OUTPUT"
+
+      # ---- server ----
+      - uses: actions/setup-go@v5
+        if: steps.has.outputs.server == 'true'
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Build server (linux/amd64)
+        if: steps.has.outputs.server == 'true'
+        working-directory: server
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=${SHA}" -o ../lush-server ./cmd/server
+      - name: Upload and restart on the VM
+        if: steps.has.outputs.server == 'true'
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          SSH="ssh -i ~/.ssh/deploy_key -o BatchMode=yes ${USER}@${HOST}"
+          REL="/opt/lush/${ENV_NAME}/releases/${SHA}"
+          $SSH "mkdir -p ${REL}"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes lush-server "${USER}@${HOST}:${REL}/lush-server"
+          # Switch the symlink, restart (SIGTERM triggers the in-game countdown and final save),
+          # and keep the 5 newest releases.
+          $SSH "chmod 755 ${REL}/lush-server \
+            && ln -sfn ${REL} /opt/lush/${ENV_NAME}/current \
+            && sudo /bin/systemctl restart lush-${ENV_NAME} \
+            && ls -1dt /opt/lush/${ENV_NAME}/releases/* | tail -n +6 | xargs -r rm -rf"
+          $SSH "systemctl is-active --quiet lush-${ENV_NAME}" || { echo "lush-${ENV_NAME} is not running after restart"; exit 1; }
+
+      # ---- client ----
+      - uses: actions/setup-node@v4
+        if: steps.has.outputs.client == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - name: Build client
+        if: steps.has.outputs.client == 'true'
+        working-directory: client
+        env:
+          VITE_SERVER_URL: ${{ inputs.environment == 'production' && vars.PRODUCTION_SERVER_URL || vars.STAGING_SERVER_URL }}
+          VITE_RELEASE: ${{ inputs.sha }}
+        run: npm ci && npm run build
+      - name: Publish client to Cloudflare Pages
+        if: steps.has.outputs.client == 'true'
+        working-directory: client
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+        run: |
+          BRANCH=$([ "$ENV_NAME" = production ] && echo main || echo staging)
+          npx --yes wrangler@3 pages deploy dist --project-name="$PROJECT" --branch="$BRANCH" --commit-hash="$SHA"
+
+      - name: Notify Discord
+        if: always()
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          STATUS: ${{ job.status }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [ -z "$WEBHOOK" ] && exit 0
+          if [ "$STATUS" = success ]; then icon="🚀"; else icon="🔴"; fi
+          text=$(printf '%s %s deploy of `%s`: %s\n%s' "$icon" "$ENV_NAME" "${SHA:0:7}" "$STATUS" "$URL")
+          jq -n --arg c "$text" '{content: $c}' | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK"

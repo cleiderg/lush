@@ -1,0 +1,53 @@
+name: Task for an agent
+description: A piece of work the runner can hand to an agent. Fill every field; vague issues are labeled needs-detail and skipped.
+labels: ["status:ready"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which agent does this. One area per issue; split work that spans two.
+      options:
+        - area:protocol
+        - area:server-world
+        - area:server-platform
+        - area:client
+        - area:client-render
+        - area:infra
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: One or two sentences. What exists or works after this issue that didn't before?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: PRD sections, decision ids (D-0xx) and spec files the agent should read.
+      placeholder: "- PRD 5.1 Controls\n- docs/specs/networking.md, Snapshots"
+    validations:
+      required: true
+  - type: textarea
+    id: criteria
+    attributes:
+      label: Acceptance criteria
+      description: At least two. Each must be provable by a test or a command that runs in CI. Keep the checkbox format.
+      value: "- [ ] **AC1** \n- [ ] **AC2** "
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What the agent should not do here.
+      value: "- "
+  - type: input
+    id: blocked-by
+    attributes:
+      label: Blocked by
+      description: Issue numbers that must be closed first, like "#12, #15", or "none".
+      value: none

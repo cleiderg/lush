@@ -1,0 +1,133 @@
+# Required checks for every pull request and every push to main.
+# Jobs skip themselves until their part of the repo exists, so this file can be
+# committed on day one. Branch protection requires: server, client, protocol,
+# smoke, path-guard.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect server
+        id: has
+        run: if [ -f server/go.mod ]; then echo "yes=true" >> "$GITHUB_OUTPUT"; else echo "yes=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/setup-go@v5
+        if: steps.has.outputs.yes == 'true'
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: gofmt
+        if: steps.has.outputs.yes == 'true'
+        working-directory: server
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "Not gofmt-formatted:"; echo "$out"; exit 1; fi
+      - name: vet
+        if: steps.has.outputs.yes == 'true'
+        working-directory: server
+        run: go vet ./...
+      - name: Import boundaries (world/systems must not import transport/store/api)
+        if: steps.has.outputs.yes == 'true'
+        working-directory: server
+        run: |
+          bad=$(go list -f '{{.ImportPath}}: {{join .Imports " "}}' ./internal/world/... ./internal/systems/... 2>/dev/null \
+            | grep -E 'internal/(transport|store|api)' || true)
+          if [ -n "$bad" ]; then echo "Forbidden imports:"; echo "$bad"; exit 1; fi
+      - name: test
+        if: steps.has.outputs.yes == 'true'
+        working-directory: server
+        run: go test -race ./...
+
+  client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect client
+        id: has
+        run: if [ -f client/package.json ]; then echo "yes=true" >> "$GITHUB_OUTPUT"; else echo "yes=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/setup-node@v4
+        if: steps.has.outputs.yes == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - name: install
+        if: steps.has.outputs.yes == 'true'
+        working-directory: client
+        run: npm ci
+      - name: lint (includes import boundaries)
+        if: steps.has.outputs.yes == 'true'
+        working-directory: client
+        run: npm run lint
+      - name: test
+        if: steps.has.outputs.yes == 'true'
+        working-directory: client
+        run: npm test -- --run
+      - name: build
+        if: steps.has.outputs.yes == 'true'
+        working-directory: client
+        run: npm run build
+
+  protocol:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect protocol
+        id: has
+        run: if [ -d protocol/schema ] && [ -f Makefile ]; then echo "yes=true" >> "$GITHUB_OUTPUT"; else echo "yes=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Install flatc
+        if: steps.has.outputs.yes == 'true'
+        run: sudo apt-get update && sudo apt-get install -y flatbuffers-compiler
+      - name: Generated code matches schema
+        if: steps.has.outputs.yes == 'true'
+        run: |
+          make protocol
+          if ! git diff --exit-code; then
+            echo "Generated protocol code is out of date. Run 'make protocol' and commit the result."
+            exit 1
+          fi
+
+  smoke:
+    runs-on: ubuntu-latest
+    needs: [server]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect smoke target
+        id: has
+        run: if [ -f Makefile ] && grep -q '^smoke:' Makefile; then echo "yes=true" >> "$GITHUB_OUTPUT"; else echo "yes=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/setup-go@v5
+        if: steps.has.outputs.yes == 'true'
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Bot smoke test
+        if: steps.has.outputs.yes == 'true'
+        run: make smoke
+
+  alert-main-broken:
+    runs-on: ubuntu-latest
+    needs: [server, client, protocol, smoke]
+    if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Post to Discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          MSG: ${{ github.event.head_commit.message }}
+        run: |
+          [ -z "$WEBHOOK" ] && exit 0
+          text=$(printf '🔴 **main is broken** after: %s\n%s\nThe runner re-runs it once, then reverts the merge if it fails again.' "${MSG%%$'\n'*}" "$URL")
+          jq -n --arg c "$text" '{content: $c}' | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK"

@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Review verdict",
+  "description": "The reviewer's result for one review round. The runner merges only the exact commit in reviewed_head, and only after verdict pass.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "reviewed_head", "summary", "criteria", "findings"],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["pass", "fixed", "needs_owner"],
+      "description": "pass: no blocker or major findings and every criterion met; you changed nothing. fixed: you found blocker/major problems, fixed them, committed and pushed. needs_owner: a decision only the owner can make blocks this PR (fill question)."
+    },
+    "reviewed_head": {"type": "string", "description": "The full 40-character commit you reviewed (the head given in your prompt)."},
+    "summary": {"type": "string"},
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status", "evidence"],
+        "properties": {
+          "id": {"type": "string"},
+          "status": {"type": "string", "enum": ["met", "fixed", "not_met"]},
+          "evidence": {"type": "string", "description": "The test or file:line that proves it. 'not_met' only with verdict needs_owner."}
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "location", "problem", "fix", "fixed"],
+        "properties": {
+          "severity": {"type": "string", "enum": ["blocker", "major", "minor"]},
+          "location": {"type": "string", "description": "path:line"},
+          "problem": {"type": "string", "description": "What is wrong and how you know (the failing case, expected vs actual)."},
+          "fix": {"type": "string", "description": "What you changed, or what should change."},
+          "fixed": {"type": "boolean"}
+        }
+      }
+    },
+    "question": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "question"],
+      "properties": {
+        "title": {"type": "string"},
+        "question": {"type": "string"},
+        "options": {"type": "array", "items": {"type": "string"}},
+        "recommendation": {"type": "string"}
+      }
+    }
+  }
+}

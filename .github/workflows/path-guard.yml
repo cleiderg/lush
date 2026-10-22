@@ -1,0 +1,70 @@
+# Blocks agent pull requests that touch files outside their role.
+#
+# Runs on pull_request_target so the check always uses the workflow and script
+# from main, never a version modified by the pull request itself. It never
+# checks out or runs code from the pull request; it only reads the list of
+# changed file names through the GitHub API.
+#
+# pull_request_target runs are attached to the base branch, not the PR's head
+# commit, so this job reports its result as a commit status named "path-guard"
+# on the head commit. Branch protection requires that status. The agents' token
+# can only read statuses, so they can't fake it.
+name: path-guard
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: path-guard-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  ownership:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SHA: ${{ github.event.pull_request.head.sha }}
+      URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Mark path-guard pending
+        run: gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=pending -f context=path-guard -f description="Checking file ownership" -f target_url="$URL" > /dev/null
+
+      - name: Check out main (not the pull request)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+
+      - name: List changed files
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR}/files" --jq '.[].filename' > changed.txt
+          # Renames: also check the old path, so a file can't be moved out of a gate folder.
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR}/files" --jq '.[] | select(.previous_filename != null) | .previous_filename' >> changed.txt
+          echo "Changed files:"; cat changed.txt
+
+      - name: Check ownership
+        id: check
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set +e
+          python3 scripts/ci/check_owned_paths.py "$BRANCH" .github/ownership.txt < changed.txt
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Report path-guard on the PR's head commit
+        if: always()
+        env:
+          CODE: ${{ steps.check.outputs.code }}
+        run: |
+          if [ "$CODE" = "0" ]; then state=success; desc="All files are inside the branch's role"
+          elif [ -n "$CODE" ]; then state=failure; desc="Files outside the branch's role (see log)"
+          else state=error; desc="path-guard could not run (see log)"; fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state="$state" -f context=path-guard -f description="$desc" -f target_url="$URL" > /dev/null
+          [ "$state" = success ]

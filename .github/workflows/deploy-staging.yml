@@ -1,0 +1,20 @@
+# Every commit on main that passes CI is deployed to staging.
+name: deploy-staging
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  staging:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: staging
+      sha: ${{ github.event.workflow_run.head_sha }}
+    secrets: inherit

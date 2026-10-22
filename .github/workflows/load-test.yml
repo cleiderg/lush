@@ -1,0 +1,87 @@
+# Nightly 1,000-bot siege test against staging (PRD section 2 success criteria).
+# Staging shares the production VM, so it only runs when production is empty.
+#
+# Repository variables: STAGING_SERVER_URL (wss://.../ws), PRODUCTION_METRICS_URL
+# Requires a Makefile target from the infra agent:
+#   make loadtest LOADTEST_URL=<ws url> LOADTEST_OUT=<json path>
+name: load-test
+
+on:
+  schedule:
+    - cron: '0 11 * * *'   # 11:00 UTC = 3-4am in Irvine
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: load-test
+  cancel-in-progress: false
+
+jobs:
+  load-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ready to run?
+        id: ready
+        env:
+          METRICS: ${{ vars.PRODUCTION_METRICS_URL }}
+          TARGET: ${{ vars.STAGING_SERVER_URL }}
+        run: |
+          if [ -z "$TARGET" ] || ! grep -q '^loadtest:' Makefile 2>/dev/null; then
+            echo "Staging URL or 'make loadtest' not set up yet; skipping."; echo "run=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ -n "$METRICS" ]; then
+            players=$(curl -fsS --max-time 10 "$METRICS" | jq -r '.players // 0') || players=0
+            if [ "$players" -gt 0 ]; then
+              echo "$players player(s) on production; not load testing the shared VM."; exit 1
+            fi
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v5
+        if: steps.ready.outputs.run == 'true'
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Run 1,000-bot siege
+        if: steps.ready.outputs.run == 'true'
+        env:
+          TARGET: ${{ vars.STAGING_SERVER_URL }}
+        run: make loadtest LOADTEST_URL="$TARGET" LOADTEST_OUT=loadtest-result.json
+
+      - name: Check thresholds
+        if: steps.ready.outputs.run == 'true'
+        run: |
+          cat loadtest-result.json
+          jq -e '
+            .failed_to_connect == 0
+            and .connected_at_end >= 1000
+            and .server.tick_ms_p99 < 25
+            and .server.dropped_per_s == 0
+            and .download_kb_per_s_per_player < 15
+          ' loadtest-result.json > /dev/null || { echo "Load test thresholds not met"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.ready.outputs.run == 'true'
+        with:
+          name: loadtest-result
+          path: loadtest-result.json
+          if-no-files-found: ignore
+
+      - name: Notify Discord
+        if: always() && steps.ready.outputs.run == 'true'
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          STATUS: ${{ job.status }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [ -z "$WEBHOOK" ] && exit 0
+          p99=$(jq -r '.server.tick_ms_p99 // "?"' loadtest-result.json 2>/dev/null || echo "?")
+          if [ "$STATUS" = success ]; then icon="✅"; else icon="🔴"; fi
+          text=$(printf '%s Nightly load test (1,000 bots, siege): %s, tick p99 %s ms\n%s' "$icon" "$STATUS" "$p99" "$URL")
+          jq -n --arg c "$text" '{content: $c}' | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK"

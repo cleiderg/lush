@@ -1,0 +1,89 @@
+# Production deploys happen only when the runner pushes a release-* tag, and only if
+# every gate below passes. The gates are checked here, independently of the runner.
+#
+# Repository variable: PRODUCTION_METRICS_URL (https://.../metrics)
+name: deploy-production
+
+on:
+  push:
+    tags: ['release-*']
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Tag points at main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main || { echo "Tag is not on main"; exit 1; }
+
+      - name: CI passed for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          c=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$SHA" --json conclusion --jq '.[0].conclusion')
+          [ "$c" = success ] || { echo "CI conclusion for $SHA is '$c'"; exit 1; }
+
+      - name: Load test passed in the last 24 hours
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Look at recent successful runs and require one that actually ran the bots
+          # (it uploads a loadtest-result artifact; a run that skipped does not).
+          ok=""
+          for row in $(gh run list --repo "$GITHUB_REPOSITORY" --workflow load-test.yml --status success --limit 5 --json databaseId,createdAt --jq '.[] | "\(.databaseId),\(.createdAt)"'); do
+            id=${row%%,*}; created=${row#*,}
+            age=$(( $(date +%s) - $(date -d "$created" +%s) ))
+            [ "$age" -le 86400 ] || continue
+            n=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/artifacts" --jq '[.artifacts[] | select(.name=="loadtest-result")] | length')
+            if [ "$n" -gt 0 ]; then ok="$id"; break; fi
+          done
+          [ -n "$ok" ] || { echo "No load test that actually ran and passed in the last 24 hours"; exit 1; }
+          echo "Using load test run $ok"
+
+      - name: Nobody is playing
+        env:
+          METRICS: ${{ vars.PRODUCTION_METRICS_URL }}
+        run: |
+          if [ -z "$METRICS" ]; then echo "PRODUCTION_METRICS_URL not set; first deploy, skipping player check"; exit 0; fi
+          players=$(curl -fsS --max-time 10 "$METRICS" | jq -r '.players // empty') || players=""
+          if [ -z "$players" ]; then echo "Production metrics unreachable; allowing deploy (server may be down)"; exit 0; fi
+          [ "$players" -eq 0 ] || { echo "$players player(s) online; not deploying"; exit 1; }
+
+  production:
+    needs: gate
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: production
+      sha: ${{ needs.gate.outputs.sha }}
+    secrets: inherit
+
+  notify-blocked:
+    runs-on: ubuntu-latest
+    needs: gate
+    if: failure()
+    steps:
+      - name: Tell Discord the release was blocked
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TAG: ${{ github.ref_name }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [ -z "$WEBHOOK" ] && exit 0
+          text=$(printf '⏸️ Release `%s` was blocked by a production gate (see log). The runner will try again on a later day.\n%s' "$TAG" "$URL")
+          jq -n --arg c "$text" '{content: $c}' | curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK"
