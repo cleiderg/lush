@@ -37,11 +37,18 @@ jobs:
         with:
           ref: ${{ inputs.sha }}
 
+      # Each half deploys only when its code exists AND its secrets are set, so
+      # nothing tries to deploy before the server and Cloudflare exist (Milestone 4).
       - name: Detect parts
         id: has
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          [ -f server/go.mod ] && echo "server=true" >> "$GITHUB_OUTPUT" || echo "server=false" >> "$GITHUB_OUTPUT"
-          [ -f client/package.json ] && echo "client=true" >> "$GITHUB_OUTPUT" || echo "client=false" >> "$GITHUB_OUTPUT"
+          if [ -f server/go.mod ] && [ -n "$DEPLOY_HOST" ]; then echo "server=true" >> "$GITHUB_OUTPUT"
+          else echo "server=false" >> "$GITHUB_OUTPUT"; echo "Server deploy skipped (no server code or DEPLOY_HOST not set)"; fi
+          if [ -f client/package.json ] && [ -n "$CLOUDFLARE_API_TOKEN" ]; then echo "client=true" >> "$GITHUB_OUTPUT"
+          else echo "client=false" >> "$GITHUB_OUTPUT"; echo "Client deploy skipped (no client code or CLOUDFLARE_API_TOKEN not set)"; fi
 
       # ---- server ----
       - uses: actions/setup-go@v5
@@ -101,7 +108,7 @@ jobs:
           npx --yes wrangler@3 pages deploy dist --project-name="$PROJECT" --branch="$BRANCH" --commit-hash="$SHA"
 
       - name: Notify Discord
-        if: always()
+        if: always() && (steps.has.outputs.server == 'true' || steps.has.outputs.client == 'true' || failure())
         env:
           WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
           STATUS: ${{ job.status }}
