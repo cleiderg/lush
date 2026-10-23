@@ -24,7 +24,7 @@ function isObj(v: unknown): v is Obj {
 
 /** Keys whose values are chat text or credentials. */
 function sensitiveKey(key: string): boolean {
-  return /token|chat|message|text/i.test(key);
+  return /token|chat|text/i.test(key);
 }
 
 function scrubString(s: string, token: string): string {
