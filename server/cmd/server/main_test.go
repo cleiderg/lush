@@ -94,7 +94,7 @@ func TestRunShutdown(t *testing.T) {
 			countdown = append(countdown, rec["seconds"].(float64))
 		}
 	}
-	want := []string{"starting", "shutdown requested", "restart countdown", "restart countdown",
+	want := []string{"starting", "LUSH_DATABASE_URL not set; using in-memory store, progress is lost on restart", "shutdown requested", "restart countdown", "restart countdown",
 		"restart countdown", "restart countdown", "restart countdown", "saving players", "bye"}
 	if strings.Join(msgs, ",") != strings.Join(want, ",") {
 		t.Errorf("log messages %v, want %v", msgs, want)
@@ -109,5 +109,26 @@ func TestRunBadConfig(t *testing.T) {
 	code := run(context.Background(), func(k string) string { return env[k] }, world.NewFakeClock(time.Unix(0, 0)), &syncBuffer{})
 	if code != 2 {
 		t.Fatalf("exit code %d, want 2", code)
+	}
+}
+
+func TestRunProductionRequiresDatabase(t *testing.T) {
+	env := map[string]string{"LUSH_ENV": "production", "LUSH_LISTEN_ADDR": "127.0.0.1:0"}
+	code := run(context.Background(), func(k string) string { return env[k] }, world.NewFakeClock(time.Unix(0, 0)), &syncBuffer{})
+	if code != 2 {
+		t.Fatalf("exit code %d, want 2", code)
+	}
+}
+
+func TestRunDatabaseUnreachable(t *testing.T) {
+	const secret = "s3cretpw"
+	env := map[string]string{"LUSH_DATABASE_URL": "postgres://u:" + secret + "@127.0.0.1:1/db?connect_timeout=1", "LUSH_LISTEN_ADDR": "127.0.0.1:0"}
+	out := &syncBuffer{}
+	code := run(context.Background(), func(k string) string { return env[k] }, world.NewFakeClock(time.Unix(0, 0)), out)
+	if code != 1 {
+		t.Fatalf("exit code %d, want 1", code)
+	}
+	if !strings.Contains(out.String(), "database unavailable") || strings.Contains(out.String(), secret) {
+		t.Fatalf("log should report the failure without the URL:\n%s", out)
 	}
 }

@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/cleiderg/lush/server/internal/api"
 	"github.com/cleiderg/lush/server/internal/ops"
 	"github.com/cleiderg/lush/server/internal/session"
@@ -27,6 +29,9 @@ var version = "dev"
 
 // saveTimeout bounds the final save so a stuck database cannot outlast the systemd stop timeout.
 const saveTimeout = 20 * time.Second
+
+// dbStartTimeout bounds connecting and migrating at startup.
+const dbStartTimeout = 30 * time.Second
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
@@ -46,6 +51,25 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 	}
 	log.Info("starting", "version", version, "env", cfg.Env, "listen", cfg.ListenAddr, "tick_rate", cfg.TickRate)
 
+	var players store.Players
+	var pinger api.Pinger
+	if cfg.DatabaseURL != "" {
+		// Errors from pgx can embed the connection string; log only the stage.
+		pool, err := openDatabase(ctx, cfg.DatabaseURL)
+		if err != nil {
+			log.Error("database unavailable", "stage", err.Error())
+			return 1
+		}
+		defer pool.Close() // runs after the shutdown save
+		players, pinger = store.NewPGPlayers(pool), pool
+	} else if cfg.Env == "production" {
+		log.Error("bad config", "err", "LUSH_DATABASE_URL is required when LUSH_ENV=production")
+		return 2
+	} else {
+		log.Warn("LUSH_DATABASE_URL not set; using in-memory store, progress is lost on restart")
+		players = store.NewMemory()
+	}
+
 	metrics := ops.NewMetrics(version)
 	w := world.New(world.Config{TickRate: cfg.TickRate})
 
@@ -59,7 +83,7 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		Spawn:        world.Vec2{X: cfg.SpawnX, Y: cfg.SpawnZ},
 		MoveSpeed:    cfg.MoveSpeed,
 		SaveInterval: cfg.SaveInterval,
-	}, w, clock, store.NewMemory(), log) // pgx store comes in P7
+	}, w, clock, players, log)
 	// Order matters: movement applies inputs, chat delivers, session snapshots last.
 	for _, s := range []world.System{mover, chat.New(chat.DefaultConfig(), clock, sess), sess} {
 		if err := w.Register(s); err != nil {
@@ -68,7 +92,7 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		}
 	}
 	ws := transport.NewWebSocket(metrics, transport.WithOriginPatterns(cfg.WSOrigins...))
-	mux := newMux(ws.HTTPHandler(sess.ServeConn), metrics.Handler())
+	mux := newMux(ws.HTTPHandler(sess.ServeConn), metrics.Handler(), pinger)
 
 	srv := &http.Server{Addr: cfg.ListenAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	srvErr := make(chan error, 1)
@@ -135,12 +159,32 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 	return 0
 }
 
-// newMux mounts the WebSocket, API and metrics routes on one mux. The API has
-// no Pinger yet; the database arrives with the store.
-func newMux(wsHandler, opsHandler http.Handler) *http.ServeMux {
+// openDatabase connects a pool and applies pending migrations. The returned
+// error names the failed stage only, never the URL.
+func openDatabase(ctx context.Context, url string) (*pgxpool.Pool, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbStartTimeout)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		return nil, errors.New("invalid database URL")
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, errors.New("connect failed")
+	}
+	if err := store.Migrate(ctx, pool); err != nil {
+		pool.Close()
+		return nil, errors.New("migrate failed")
+	}
+	return pool, nil
+}
+
+// newMux mounts the WebSocket, API and metrics routes on one mux. pinger
+// (nil without a database) backs /readyz.
+func newMux(wsHandler, opsHandler http.Handler, pinger api.Pinger) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("/ws", wsHandler)
-	api.Mount(mux, api.Config{Version: version})
+	api.Mount(mux, api.Config{Version: version, Pinger: pinger})
 	mux.Handle("/", opsHandler)
 	return mux
 }
