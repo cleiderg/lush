@@ -61,7 +61,7 @@ The acceptance criteria are the contract. Done means every criterion is met and 
 1. **Do the issue, all of it, and nothing else.** No drive-by refactors, no work from other issues.
 2. **Stay in your folders and never touch gate files** (`CONSTITUTION.md` rules 5 and 6). The `path-guard` check and the runner both block a pull request that does.
 3. **Commit early and push often** to your branch (`git push origin <your branch>`), so work survives interruptions. Add the trailer `Lush-Run: $LUSH_RUN_ID` to each commit: `git commit -m "..." --trailer "Lush-Run: $LUSH_RUN_ID"`.
-4. **Commit messages:** imperative, under 72 characters, with the issue number: `Add fixed tick loop (#12)`.
+4. **Commit messages:** imperative, under 72 characters, with the issue number: `Add fixed tick loop (#12)`. No `Co-Authored-By` or "Generated with" lines.
 5. **Don't open, merge or close pull requests or issues, and don't edit labels.** The runner does that.
 6. **Never push to `main`, never force-push, never create tags.**
 7. **If you need another area to change something** (for example a protocol field), don't make the change. Finish with status `blocked_by_issue` and describe the change in `new_issue`.
