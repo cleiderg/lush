@@ -46,6 +46,9 @@ type Config struct {
 	// SaveInterval is how often live players' positions are saved
 	// (0 = DefaultSaveInterval).
 	SaveInterval time.Duration
+	// OnPanic, if set, is told about a panic recovered in a connection
+	// goroutine (for error reporting). The connection ends; others go on.
+	OnPanic func(recovered any)
 }
 
 // InputCommand is a client Input as a world command.
@@ -145,6 +148,15 @@ func (s *Server) ServeConn(c transport.Conn) {
 		case <-c.Done():
 			cancel()
 		case <-ctx.Done():
+		}
+	}()
+
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Warn("panic in session goroutine", "panic", fmt.Sprint(r))
+			if s.cfg.OnPanic != nil {
+				s.cfg.OnPanic(r)
+			}
 		}
 	}()
 

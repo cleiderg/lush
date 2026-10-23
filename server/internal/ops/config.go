@@ -4,6 +4,7 @@ package ops
 
 import (
 	"fmt"
+	"log/slog"
 	"math"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 //	LUSH_TICK_RATE        world ticks per second    (default 20)
 //	LUSH_DATABASE_URL     Postgres URL placeholder  (default "", unused until the store lands)
 //	LUSH_ENV              "development" or "production" (default "development")
+//	LUSH_SENTRY_DSN       Sentry DSN; empty disables error reporting (a secret: never logged)
 //	LUSH_MOVE_SPEED       walk speed, world units/s (default 4, PRD decision D-044)
 //	LUSH_SPAWN_X, LUSH_SPAWN_Z  guest spawn position (default 0, 0: map origin, centre of central campus)
 //	LUSH_SHUTDOWN_COUNTDOWN  restart countdown, Go duration (default 60s in production, 5s otherwise)
@@ -34,6 +36,28 @@ type Config struct {
 	SpawnX, SpawnZ    float32
 	WSOrigins         []string
 	SaveInterval      time.Duration
+	SentryDSN         string
+}
+
+// String is the loggable form of the config; it omits secrets (the Sentry DSN
+// and the database URL, which may carry a password).
+func (c Config) String() string {
+	return fmt.Sprintf("Config{ListenAddr:%s TickRate:%d Env:%s ShutdownCountdown:%s MoveSpeed:%v Spawn:(%v,%v) WSOrigins:%v SaveInterval:%s SentryDSN:%s DatabaseURL:%s}",
+		c.ListenAddr, c.TickRate, c.Env, c.ShutdownCountdown, c.MoveSpeed, c.SpawnX, c.SpawnZ, c.WSOrigins, c.SaveInterval,
+		redact(c.SentryDSN), redact(c.DatabaseURL))
+}
+
+// GoString makes %#v redact as well.
+func (c Config) GoString() string { return c.String() }
+
+// LogValue makes slog print the redacted form.
+func (c Config) LogValue() slog.Value { return slog.StringValue(c.String()) }
+
+func redact(s string) string {
+	if s == "" {
+		return ""
+	}
+	return "[redacted]"
 }
 
 // LoadConfig builds a Config from getenv (os.Getenv in production).
@@ -69,6 +93,7 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		}
 	}
 	c.DatabaseURL = getenv("LUSH_DATABASE_URL")
+	c.SentryDSN = strings.TrimSpace(getenv("LUSH_SENTRY_DSN"))
 	if v := getenv("LUSH_ENV"); v != "" {
 		c.Env = v
 	}

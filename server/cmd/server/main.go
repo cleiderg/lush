@@ -44,6 +44,12 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		log.Error("bad config", "err", err)
 		return 2
 	}
+	reporter, err := ops.NewReporter(cfg, version, nil)
+	if err != nil {
+		log.Error("bad config", "err", err)
+		return 2
+	}
+	log = slog.New(reporter.WrapHandler(log.Handler()))
 	log.Info("starting", "version", version, "env", cfg.Env, "listen", cfg.ListenAddr, "tick_rate", cfg.TickRate)
 
 	metrics := ops.NewMetrics(version)
@@ -59,6 +65,7 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		Spawn:        world.Vec2{X: cfg.SpawnX, Y: cfg.SpawnZ},
 		MoveSpeed:    cfg.MoveSpeed,
 		SaveInterval: cfg.SaveInterval,
+		OnPanic:      reporter.Recovered,
 	}, w, clock, store.NewMemory(), log) // pgx store comes in P7
 	// Order matters: movement applies inputs, chat delivers, session snapshots last.
 	for _, s := range []world.System{mover, chat.New(chat.DefaultConfig(), clock, sess), sess} {
@@ -109,6 +116,7 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 	log.Info("shutdown requested", "countdown", cfg.ShutdownCountdown.String())
 	err = ops.GracefulShutdown(context.Background(), clock, cfg.ShutdownCountdown, ops.ShutdownHooks{
 		Announce: func(r time.Duration) { log.Info("restart countdown", "seconds", int(r.Seconds())) },
+		Flush:    reporter.Flush,
 		Save: func(ctx context.Context) error {
 			sess.BroadcastReload("server restarting")
 			log.Info("saving players")
