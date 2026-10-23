@@ -132,7 +132,10 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 
 	log.Info("shutdown requested", "countdown", cfg.ShutdownCountdown.String())
 	err = ops.GracefulShutdown(context.Background(), clock, cfg.ShutdownCountdown, ops.ShutdownHooks{
-		Announce: func(r time.Duration) { log.Info("restart countdown", "seconds", int(r.Seconds())) },
+		Announce: func(r time.Duration) {
+			log.Info("restart countdown", "seconds", int(r.Seconds()))
+			sess.BroadcastRestartCountdown(r)
+		},
 		Save: func(ctx context.Context) error {
 			sess.BroadcastReload("server restarting")
 			log.Info("saving players")
