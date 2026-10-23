@@ -2,6 +2,7 @@ package session_test
 
 import (
 	"context"
+	"log/slog"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/session"
+	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
 	"github.com/cleiderg/lush/server/internal/systems/movement"
 	"github.com/cleiderg/lush/server/internal/transport"
@@ -39,10 +41,20 @@ func newRig(t *testing.T, queue int) *rig {
 
 func newRigCfg(t *testing.T, queue int, cfg session.Config) *rig {
 	t.Helper()
+	return newRigStore(t, queue, cfg, store.NewMemory())
+}
+
+func newRigStore(t *testing.T, queue int, cfg session.Config, players store.Players) *rig {
+	t.Helper()
+	return newRigLog(t, queue, cfg, players, nil)
+}
+
+func newRigLog(t *testing.T, queue int, cfg session.Config, players store.Players, log *slog.Logger) *rig {
+	t.Helper()
 	clock := world.NewFakeClock(time.Unix(0, 0))
 	w := world.New(world.DefaultConfig())
 	st := &stats{}
-	sess := session.New(cfg, w, clock, nil)
+	sess := session.New(cfg, w, clock, players, log)
 	mv, err := movement.New(movement.Config{MaxSpeed: 5})
 	if err != nil {
 		t.Fatal(err)
