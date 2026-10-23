@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 const root = new URL('../../', import.meta.url);
 
 describe('scaffold', () => {
-  it('has the required src folders', () => {
-    for (const d of ['core', 'net', 'protocol', 'state', 'render', 'input', 'ui', 'audio']) {
+  it('has the src folders owned by the client role (protocol and render are created by their own owners)', () => {
+    for (const d of ['core', 'net', 'state', 'input', 'ui', 'audio']) {
       expect(existsSync(new URL(`src/${d}/`, root)), d).toBe(true);
     }
   });
