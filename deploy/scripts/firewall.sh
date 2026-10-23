@@ -20,6 +20,8 @@ for src in "${sources[@]}"; do
   fi
 done
 
+# Start from no rules so a re-run with narrower sources drops the old SSH rules.
+ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
 for src in "${sources[@]}"; do

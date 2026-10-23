@@ -24,7 +24,8 @@ run() { # run <log> [env assignments...]
 # Open to all (Q4).
 log="$tmp/any.log"
 run "$log" LUSH_SSH_SOURCES=any || fail "any: script failed"
-expected="default deny incoming
+expected="--force reset
+default deny incoming
 default allow outgoing
 allow 22/tcp
 allow 80/tcp
@@ -36,7 +37,8 @@ grep -q -i udp "$log" && fail "UDP rule present"
 # Restricted sources.
 log="$tmp/cidr.log"
 run "$log" LUSH_SSH_SOURCES=203.0.113.4/32,2001:db8::/32 || fail "cidr: script failed"
-expected="default deny incoming
+expected="--force reset
+default deny incoming
 default allow outgoing
 allow from 203.0.113.4/32 to any port 22 proto tcp
 allow from 2001:db8::/32 to any port 22 proto tcp
