@@ -43,8 +43,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 1 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 1", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 2 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 2", ProtocolVersionCurrent)
 	}
 }
 
@@ -192,5 +192,18 @@ func TestRoundTripReload(t *testing.T) {
 	m.Init(tbl.Bytes, tbl.Pos)
 	if string(m.Reason()) != "protocol mismatch" {
 		t.Fatalf("reload mismatch")
+	}
+}
+
+func TestRoundTripRestartCountdown(t *testing.T) {
+	b := flatbuffers.NewBuilder(32)
+	RestartCountdownStart(b)
+	RestartCountdownAddSecondsRemaining(b, 42)
+	buf := finish(b, MessageRestartCountdown, RestartCountdownEnd(b))
+	var m RestartCountdown
+	tbl := open(t, buf, MessageRestartCountdown)
+	m.Init(tbl.Bytes, tbl.Pos)
+	if m.SecondsRemaining() != 42 {
+		t.Fatalf("seconds_remaining = %d, want 42", m.SecondsRemaining())
 	}
 }

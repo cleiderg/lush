@@ -2,7 +2,7 @@ import * as flatbuffers from 'flatbuffers';
 import { describe, expect, it } from 'vitest';
 import {
   ActionFlags, ChatMessage, ChatSend, Entity, Envelope, Hello, Input, Message, Ping, Pong,
-  ProtocolVersion, Reload, Snapshot, Vec2, Welcome,
+  ProtocolVersion, Reload, RestartCountdown, Snapshot, Vec2, Welcome,
 } from './index.js';
 
 function finish(b: flatbuffers.Builder, type: Message, msg: flatbuffers.Offset): Uint8Array {
@@ -32,7 +32,7 @@ function buildSnapshot(n: number): Uint8Array {
 
 describe('protocol', () => {
   it('exposes the version constant', () => {
-    expect(ProtocolVersion.Current).toBe(1);
+    expect(ProtocolVersion.Current).toBe(2);
   });
 
   it('keeps a 101-entity snapshot under 1200 bytes', () => {
@@ -120,5 +120,12 @@ describe('protocol', () => {
     const b = new flatbuffers.Builder(32);
     const buf = finish(b, Message.Reload, Reload.createReload(b, b.createString('protocol mismatch')));
     expect(open(buf, Message.Reload, new Reload()).reason()).toBe('protocol mismatch');
+  });
+
+  it('round-trips RestartCountdown', () => {
+    const b = new flatbuffers.Builder(32);
+    const buf = finish(b, Message.RestartCountdown, RestartCountdown.createRestartCountdown(b, 42));
+    const m = open(buf, Message.RestartCountdown, new RestartCountdown());
+    expect(m.secondsRemaining()).toBe(42);
   });
 });

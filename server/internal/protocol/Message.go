@@ -7,42 +7,45 @@ import "strconv"
 type Message byte
 
 const (
-	MessageNONE        Message = 0
-	MessageHello       Message = 1
-	MessageWelcome     Message = 2
-	MessageInput       Message = 3
-	MessageSnapshot    Message = 4
-	MessageChatSend    Message = 5
-	MessageChatMessage Message = 6
-	MessagePing        Message = 7
-	MessagePong        Message = 8
-	MessageReload      Message = 9
+	MessageNONE             Message = 0
+	MessageHello            Message = 1
+	MessageWelcome          Message = 2
+	MessageInput            Message = 3
+	MessageSnapshot         Message = 4
+	MessageChatSend         Message = 5
+	MessageChatMessage      Message = 6
+	MessagePing             Message = 7
+	MessagePong             Message = 8
+	MessageReload           Message = 9
+	MessageRestartCountdown Message = 10
 )
 
 var EnumNamesMessage = map[Message]string{
-	MessageNONE:        "NONE",
-	MessageHello:       "Hello",
-	MessageWelcome:     "Welcome",
-	MessageInput:       "Input",
-	MessageSnapshot:    "Snapshot",
-	MessageChatSend:    "ChatSend",
-	MessageChatMessage: "ChatMessage",
-	MessagePing:        "Ping",
-	MessagePong:        "Pong",
-	MessageReload:      "Reload",
+	MessageNONE:             "NONE",
+	MessageHello:            "Hello",
+	MessageWelcome:          "Welcome",
+	MessageInput:            "Input",
+	MessageSnapshot:         "Snapshot",
+	MessageChatSend:         "ChatSend",
+	MessageChatMessage:      "ChatMessage",
+	MessagePing:             "Ping",
+	MessagePong:             "Pong",
+	MessageReload:           "Reload",
+	MessageRestartCountdown: "RestartCountdown",
 }
 
 var EnumValuesMessage = map[string]Message{
-	"NONE":        MessageNONE,
-	"Hello":       MessageHello,
-	"Welcome":     MessageWelcome,
-	"Input":       MessageInput,
-	"Snapshot":    MessageSnapshot,
-	"ChatSend":    MessageChatSend,
-	"ChatMessage": MessageChatMessage,
-	"Ping":        MessagePing,
-	"Pong":        MessagePong,
-	"Reload":      MessageReload,
+	"NONE":             MessageNONE,
+	"Hello":            MessageHello,
+	"Welcome":          MessageWelcome,
+	"Input":            MessageInput,
+	"Snapshot":         MessageSnapshot,
+	"ChatSend":         MessageChatSend,
+	"ChatMessage":      MessageChatMessage,
+	"Ping":             MessagePing,
+	"Pong":             MessagePong,
+	"Reload":           MessageReload,
+	"RestartCountdown": MessageRestartCountdown,
 }
 
 func (v Message) String() string {
