@@ -14,6 +14,8 @@ export class GameState {
   playerId = -1;
   tickRate = 20;
   heading = 0;
+  /** Seconds until the server restarts, or null when no restart is announced. */
+  restartSeconds: number | null = null;
   prediction = new Prediction();
   readonly interp = new Interpolator();
 
@@ -23,6 +25,9 @@ export class GameState {
       this.tickRate = msg.tickRate;
       this.prediction = new Prediction(msg.spawn);
       this.interp.clear();
+      this.restartSeconds = null;
+    } else if (msg.type === 'restartCountdown') {
+      this.restartSeconds = msg.seconds;
     } else if (msg.type === 'snapshot') {
       const me = msg.entities.find((e) => e.id === this.playerId);
       if (me) this.prediction.reconcile({ x: me.x, z: me.z }, msg.lastInputSeq);

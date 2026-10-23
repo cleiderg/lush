@@ -4,6 +4,7 @@ import { localTokenStore, Session } from './net/session';
 import { WebSocketTransport } from './net/transport';
 import { GameState } from './state/world';
 import { Controls } from './ui/controls';
+import { RestartBanner } from './ui/restartBanner';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d');
@@ -22,10 +23,14 @@ const controls = new Controls({
 });
 
 const game = new GameState();
+const banner = new RestartBanner(document.body);
 const session = new Session({
   factory: () => new WebSocketTransport(),
   store: localTokenStore(),
-  onMessage: (msg) => game.handle(msg, performance.now()),
+  onMessage: (msg) => {
+    game.handle(msg, performance.now());
+    banner.set(game.restartSeconds);
+  },
   onReload: () => location.reload(),
 });
 session.start();
