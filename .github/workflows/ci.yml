@@ -107,9 +107,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Detect smoke target
         id: has
-        run: if [ -f Makefile ] && grep -q '^smoke:' Makefile; then echo "yes=true" >> "$GITHUB_OUTPUT"; else echo "yes=false" >> "$GITHUB_OUTPUT"; fi
+        run: |
+          if [ -f Makefile ] && grep -q '^smoke:' Makefile; then echo "yes=true" >> "$GITHUB_OUTPUT"; else echo "yes=false" >> "$GITHUB_OUTPUT"; fi
+          # Go is only needed (and only installable) once the server module exists.
+          if [ -f server/go.mod ]; then echo "go=true" >> "$GITHUB_OUTPUT"; else echo "go=false" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/setup-go@v5
-        if: steps.has.outputs.yes == 'true'
+        if: steps.has.outputs.yes == 'true' && steps.has.outputs.go == 'true'
         with:
           go-version-file: server/go.mod
           cache-dependency-path: server/go.sum
