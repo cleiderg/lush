@@ -4,53 +4,139 @@
   "description": "What a coding agent reports when its session ends. The runner checks the claim against git before believing it.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["status", "summary"],
+  "required": [
+    "status",
+    "summary"
+  ],
   "properties": {
     "status": {
       "type": "string",
-      "enum": ["done", "blocked_by_issue", "needs_owner", "no_change", "failed"],
+      "enum": [
+        "done",
+        "blocked_by_issue",
+        "needs_owner",
+        "no_change",
+        "failed"
+      ],
       "description": "done: every acceptance criterion is met, tests pass, work is committed and pushed. blocked_by_issue: another area must change first (fill new_issue). needs_owner: a PRD TBD or a product decision is needed (fill question). no_change: the criteria are already met on main and nothing needs to change. failed: you could not finish; explain in summary."
     },
-    "summary": {"type": "string", "description": "Two to five sentences: what changed and why, or why you stopped."},
+    "summary": {
+      "type": "string",
+      "description": "Two to five sentences: what changed and why, or why you stopped."
+    },
     "criteria": {
       "type": "array",
       "description": "One entry per acceptance criterion, in order.",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "how_verified"],
+        "required": [
+          "id",
+          "how_verified"
+        ],
         "properties": {
-          "id": {"type": "string", "description": "AC1, AC2, ..."},
-          "how_verified": {"type": "string", "description": "The test name or command that proves it, e.g. 'TestTickRate in server/internal/world/tick_test.go'."}
+          "id": {
+            "type": "string",
+            "description": "AC1, AC2, ..."
+          },
+          "how_verified": {
+            "type": "string",
+            "description": "The test name or command that proves it, e.g. 'TestTickRate in server/internal/world/tick_test.go'."
+          }
         }
       }
     },
-    "tests_run": {"type": "array", "items": {"type": "string"}, "description": "Commands you ran and whether they passed."},
-    "open_questions": {"type": "array", "items": {"type": "string"}, "description": "Placeholders or assumptions the owner should know about. Not for blocking decisions."},
+    "tests_run": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Commands you ran and whether they passed."
+    },
+    "open_questions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Placeholders or assumptions the owner should know about. Not for blocking decisions."
+    },
     "new_issue": {
       "type": "object",
       "additionalProperties": false,
       "description": "Only with blocked_by_issue: the change another area must make first.",
-      "required": ["title", "area", "goal", "criteria"],
+      "required": [
+        "title",
+        "area",
+        "goal",
+        "criteria"
+      ],
       "properties": {
-        "title": {"type": "string"},
-        "area": {"type": "string", "enum": ["area:protocol", "area:server-world", "area:server-platform", "area:client", "area:client-render", "area:infra"]},
-        "goal": {"type": "string"},
-        "context": {"type": "array", "items": {"type": "string"}},
-        "criteria": {"type": "array", "minItems": 2, "items": {"type": "string"}},
-        "out_of_scope": {"type": "array", "items": {"type": "string"}}
+        "title": {
+          "type": "string"
+        },
+        "area": {
+          "type": "string",
+          "enum": [
+            "area:protocol",
+            "area:server-world",
+            "area:server-platform",
+            "area:client",
+            "area:client-render",
+            "area:infra"
+          ]
+        },
+        "goal": {
+          "type": "string"
+        },
+        "context": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "criteria": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "string"
+          }
+        },
+        "out_of_scope": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "question": {
       "type": "object",
       "additionalProperties": false,
       "description": "Only with needs_owner: the decision the owner must make.",
-      "required": ["title", "question"],
+      "required": [
+        "title",
+        "question"
+      ],
       "properties": {
-        "title": {"type": "string"},
-        "question": {"type": "string"},
-        "options": {"type": "array", "items": {"type": "string"}},
-        "recommendation": {"type": "string"}
+        "title": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recommendation": {
+          "type": "string"
+        },
+        "gate_change": {
+          "type": "string",
+          "description": "Only when accepting the recommendation means changing an owner-only gate file (.github/ including workflows and ownership.txt, scripts/ci/, .claude/, CONSTITUTION.md, any CLAUDE.md, docs/): the file(s) and the exact change, e.g. 'In .github/workflows/ci.yml, server job: add a postgres:16 service and set LUSH_TEST_DATABASE_URL for the test step.' The watcher drafts this as a PR for the owner. Leave empty otherwise."
+        }
       }
     }
   }

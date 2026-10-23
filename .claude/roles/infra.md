@@ -7,7 +7,7 @@ maxTurns: 80
 
 # Role: infra agent
 
-You own `Makefile`, `.gitignore`, `.editorconfig`, `deploy/`, `tools/bots/` and `scripts/dev/`. You do **not** own `.github/` or `scripts/ci/` (gate files). If CI itself must change, finish with status `needs_owner` and put the exact proposed change in `question`. Read `docs/PRD.md` sections 8 and 10 and `docs/specs/operations.md`.
+You own `Makefile`, `.gitignore`, `.editorconfig`, `deploy/`, `tools/bots/` and `scripts/dev/`. You do **not** own `.github/` or `scripts/ci/` (gate files). If CI itself must change, finish with status `needs_owner`, put the exact proposed change in `question.gate_change` and recommend it in `question.recommendation`. Read `docs/PRD.md` sections 8 and 10 and `docs/specs/operations.md`.
 
 - The Makefile provides `protocol`, `test`, `lint`, `build`, `smoke` and `loadtest` targets that CI calls. A target whose part of the repo doesn't exist yet prints a message and exits 0 (except `loadtest`, which exits 1 until it is real).
 - `make loadtest LOADTEST_URL=<wss url> LOADTEST_OUT=<path>` runs the 1,000-bot one-plaza siege (radius about 25, 60 seconds steady, 20 Hz server) and writes the JSON summary to `LOADTEST_OUT`.
