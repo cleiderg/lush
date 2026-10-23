@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { showAttribution } from './attribution';
-import { CampusMap, loadCampus } from './campusMap';
+import { CampusMap, MAX_GREEN_LAYER, greenLayers, loadCampus } from './campusMap';
 import { isBlocked, parseCollision } from './mapData';
 import { mulberry32 } from './rng';
 
@@ -38,6 +38,28 @@ describe('campus rendering (AC2, AC3)', () => {
     expect(m.group.children.length).toBe(m.stats.chunks);
     expect(m.stats.triangles).toBeGreaterThan(1000);
     expect(m.stats.triangles).toBeLessThan(400_000);
+  });
+
+  it('puts overlapping green areas on different layers so they do not z-fight', () => {
+    const green = loadCampus().green;
+    const layers = greenLayers(green);
+    const box = (p: number[]) => {
+      const xs = p.filter((_, i) => i % 2 === 0), zs = p.filter((_, i) => i % 2 === 1);
+      return [Math.min(...xs), Math.min(...zs), Math.max(...xs), Math.max(...zs)];
+    };
+    const boxes = green.map((g) => box(g.p));
+    let overlaps = 0;
+    for (let i = 0; i < green.length; i++) {
+      for (let j = i + 1; j < green.length; j++) {
+        const a = boxes[i], b = boxes[j];
+        if (a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]) {
+          overlaps++;
+          expect(layers.get(green[i].id)).not.toBe(layers.get(green[j].id));
+        }
+      }
+    }
+    expect(overlaps).toBeGreaterThan(0);
+    expect(Math.max(...layers.values())).toBeLessThanOrEqual(MAX_GREEN_LAYER);
   });
 
   it('seeded rng repeats', () => {

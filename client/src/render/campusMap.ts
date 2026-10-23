@@ -1,11 +1,14 @@
 import * as THREE from 'three';
 import campusRaw from '../../../shared/map/campus.json?raw';
-import { GREEN_GRASS, GREEN_PITCH, GREEN_WATER, GREEN_WOOD, parseCampus, type CampusData } from './mapData';
+import { GREEN_GRASS, GREEN_PITCH, GREEN_WATER, GREEN_WOOD, parseCampus, type CampusData, type Green } from './mapData';
 import { mulberry32 } from './rng';
 
 const DM = 0.1;
 const Y_GREEN = 0.01;
-const Y_PATH = 0.05;
+/** Height between stacked green layers, so overlapping polygons don't z-fight. */
+const GREEN_LAYER_STEP = 0.005;
+export const MAX_GREEN_LAYER = 8;
+const Y_PATH = Y_GREEN + (MAX_GREEN_LAYER + 1) * GREEN_LAYER_STEP;
 const ROOF_RISE = 2.5;
 const PITCHED_CHANCE = 0.4;
 
@@ -116,6 +119,39 @@ function addPathSegment(b: MeshBuilder, x0: number, z0: number, x1: number, z1: 
   b.tri(c, e, d, UP, PATH_COLOR);
 }
 
+type Box = [number, number, number, number];
+
+function bbox(p: number[]): Box {
+  const b: Box = [Infinity, Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < p.length; i += 2) {
+    b[0] = Math.min(b[0], p[i]); b[1] = Math.min(b[1], p[i + 1]);
+    b[2] = Math.max(b[2], p[i]); b[3] = Math.max(b[3], p[i + 1]);
+  }
+  return b;
+}
+
+/**
+ * Layer index per green polygon id: larger polygons lower, and any two whose bounding boxes
+ * overlap on different layers (e.g. lawns inside the park). Capped at MAX_GREEN_LAYER.
+ */
+export function greenLayers(green: Green[]): Map<number, number> {
+  const items = green.map((g) => ({ id: g.id, box: bbox(g.p), area: Math.abs(signedArea(polygonPoints(g.p))), layer: 0 }));
+  items.sort((a, b) => b.area - a.area || a.id - b.id);
+  const layers = new Map<number, number>();
+  for (let i = 0; i < items.length; i++) {
+    const x = items[i];
+    for (let j = 0; j < i; j++) {
+      const y = items[j];
+      if (x.box[0] < y.box[2] && y.box[0] < x.box[2] && x.box[1] < y.box[3] && y.box[1] < x.box[3]) {
+        x.layer = Math.max(x.layer, y.layer + 1);
+      }
+    }
+    x.layer = Math.min(x.layer, MAX_GREEN_LAYER);
+    layers.set(x.id, x.layer);
+  }
+  return layers;
+}
+
 export interface MapStats {
   chunks: number;
   triangles: number;
@@ -149,12 +185,13 @@ export class CampusMap {
       return [(x0 + x1) / 2, (z0 + z1) / 2];
     };
 
+    const layers = greenLayers(data.green);
     for (const g of data.green) {
       const [cx, cz] = centre(g.p);
       const rnd = mulberry32(g.id);
       const shade = 0.92 + rnd() * 0.16;
       const color = new THREE.Color(GREEN_COLOR[g.k] ?? GREEN_COLOR[GREEN_GRASS]).multiplyScalar(shade).getHex();
-      fillPolygon(at(cx, cz), polygonPoints(g.p), Y_GREEN + g.k * 0.004, color);
+      fillPolygon(at(cx, cz), polygonPoints(g.p), Y_GREEN + layers.get(g.id)! * GREEN_LAYER_STEP, color);
     }
     for (const w of data.paths) {
       const half = (w.w * DM) / 2;
