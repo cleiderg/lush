@@ -1,0 +1,17 @@
+# Go
+/bin/
+*.exe
+*.test
+*.out
+server/lush-server
+lush-server
+
+# Node / Vite
+node_modules/
+dist/
+
+# OS / editor
+.DS_Store
+
+# Agent worktrees
+.claude/worktrees/
