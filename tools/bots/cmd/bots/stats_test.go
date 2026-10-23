@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"math"
 	"testing"
 	"time"
@@ -67,5 +68,44 @@ func TestSnapshotSelfPosition(t *testing.T) {
 	bt.setPos(m.selfX, m.selfZ)
 	if x, z := bt.pos(); math.Abs(x-(-14)) > 1e-9 || math.Abs(z-12) > 1e-9 {
 		t.Errorf("pos = %v, %v; want -14, 12", x, z)
+	}
+}
+
+func TestSummaryFields(t *testing.T) {
+	s := &summary{Server: json.RawMessage(`{"tick_ms_p99":3.5,"dropped_per_s":0}`)}
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"connected_at_end", "failed_to_connect", "download_kb_per_s_per_player",
+		"rtt_ms_p50", "rtt_ms_p99", "server"} {
+		if _, ok := got[k]; !ok {
+			t.Errorf("summary has no %q", k)
+		}
+	}
+	var srv map[string]float64
+	if err := json.Unmarshal(got["server"], &srv); err != nil || srv["tick_ms_p99"] != 3.5 {
+		t.Errorf("server not copied verbatim: %s, %v", got["server"], err)
+	}
+}
+
+func TestProblems(t *testing.T) {
+	ok := summary{ConnectedAtEnd: 50, Server: json.RawMessage(`{}`)}
+	if p := ok.problems(50); len(p) != 0 {
+		t.Errorf("clean run: %v", p)
+	}
+	for name, s := range map[string]summary{
+		"failed":  {ConnectedAtEnd: 50, FailedToConnect: 1, Server: json.RawMessage(`{}`)},
+		"lost":    {ConnectedAtEnd: 49, Server: json.RawMessage(`{}`)},
+		"dropped": {ConnectedAtEnd: 50, ServerMaxDroppedPerS: 0.5, Server: json.RawMessage(`{}`)},
+		"metrics": {ConnectedAtEnd: 50},
+	} {
+		if p := s.problems(50); len(p) == 0 {
+			t.Errorf("%s: no problem reported", name)
+		}
 	}
 }

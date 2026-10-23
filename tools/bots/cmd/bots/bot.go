@@ -137,7 +137,8 @@ func (b *bot) play(ctx context.Context, conn *websocket.Conn) error {
 	var seq, pingTok uint32
 	dirX, dirZ := b.pickDir()
 	turnAt := time.Now().Add(b.walkTime())
-	nextChat := time.Now().Add(time.Duration(20+b.rng.Intn(21)) * time.Second)
+	// The first chat comes within 20 s so short runs (make smoke) see chat too.
+	nextChat := time.Now().Add(time.Duration(b.rng.Int63n(int64(20 * time.Second))))
 	nextPing := time.Now().Add(time.Duration(b.rng.Int63n(int64(pingEvery))))
 	tick := time.NewTicker(inputEvery)
 	defer tick.Stop()

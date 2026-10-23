@@ -16,6 +16,8 @@ trap cleanup EXIT
 
 (cd server && go build -o "$tmp/lush-server" ./cmd/server)
 make --no-print-directory bots
+# CI runs no other job for tools/bots, so its unit tests run here.
+(cd tools/bots && go vet ./... && go test ./...)
 
 LUSH_LISTEN_ADDR="127.0.0.1:$port" LUSH_SHUTDOWN_COUNTDOWN=0s "$tmp/lush-server" >"$tmp/server.log" 2>&1 &
 server_pid=$!
@@ -33,4 +35,15 @@ if ! tools/bots/bin/bots -url "ws://127.0.0.1:$port/ws" -bots 50 -duration 20s -
   exit 1
 fi
 cat "$tmp/summary.json"
+# The summary fields CI's load test reads, and proof the bots pinged and chatted.
+if ! jq -e '
+  (has("connected_at_end") and has("failed_to_connect") and has("download_kb_per_s_per_player")
+   and has("rtt_ms_p50") and has("rtt_ms_p99"))
+  and (.server | has("tick_ms_p99") and has("dropped_per_s"))
+  and .rtt_ms_p50 > 0 and .chats_received > 0 and .snapshots_received > 0
+  and .download_kb_per_s_per_player > 0
+' "$tmp/summary.json" >/dev/null; then
+  echo "smoke: summary is missing fields, pings, chats or snapshots" >&2
+  exit 1
+fi
 echo "smoke: ok"
