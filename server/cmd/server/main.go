@@ -13,6 +13,10 @@ import (
 	"time"
 
 	"github.com/cleiderg/lush/server/internal/ops"
+	"github.com/cleiderg/lush/server/internal/session"
+	"github.com/cleiderg/lush/server/internal/systems/chat"
+	"github.com/cleiderg/lush/server/internal/systems/movement"
+	"github.com/cleiderg/lush/server/internal/transport"
 	"github.com/cleiderg/lush/server/internal/world"
 )
 
@@ -40,7 +44,29 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 	metrics := ops.NewMetrics(version)
 	w := world.New(world.Config{TickRate: cfg.TickRate})
 
-	srv := &http.Server{Addr: cfg.ListenAddr, Handler: metrics.Handler(), ReadHeaderTimeout: 5 * time.Second}
+	mover, err := movement.New(movement.Config{MaxSpeed: cfg.MoveSpeed})
+	if err != nil {
+		log.Error("bad config", "err", err)
+		return 2
+	}
+	sess := session.New(session.Config{
+		TickRate:  cfg.TickRate,
+		Spawn:     world.Vec2{X: cfg.SpawnX, Y: cfg.SpawnZ},
+		MoveSpeed: cfg.MoveSpeed,
+	}, w, clock, log)
+	// Order matters: movement applies inputs, chat delivers, session snapshots last.
+	for _, s := range []world.System{mover, chat.New(chat.DefaultConfig(), clock, sess), sess} {
+		if err := w.Register(s); err != nil {
+			log.Error("register system", "err", err)
+			return 2
+		}
+	}
+	ws := transport.NewWebSocket(metrics, transport.WithOriginPatterns(cfg.WSOrigins...))
+	mux := http.NewServeMux()
+	mux.Handle("/ws", ws.HTTPHandler(sess.ServeConn))
+	mux.Handle("/", metrics.Handler())
+
+	srv := &http.Server{Addr: cfg.ListenAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	srvErr := make(chan error, 1)
 	go func() { srvErr <- srv.ListenAndServe() }()
 
@@ -80,7 +106,11 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 	// Broadcast and save are placeholders until transport and store land.
 	err = ops.GracefulShutdown(context.Background(), clock, cfg.ShutdownCountdown, ops.ShutdownHooks{
 		Announce: func(r time.Duration) { log.Info("restart countdown", "seconds", int(r.Seconds())) },
-		Save:     func(context.Context) error { log.Info("saving players"); return nil },
+		Save: func(context.Context) error {
+			log.Info("saving players") // placeholder until the store lands
+			sess.BroadcastReload("server restarting")
+			return nil
+		},
 	})
 	cancelLoop()
 	<-loopDone
