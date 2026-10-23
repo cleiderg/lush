@@ -20,7 +20,7 @@
 
 ## Firewall
 
-- SSH (22): owner's IP only.
+- SSH (22): open to all, key-only (password login off). Phase 1 has internal testers only and deploys come from GitHub Actions, whose IPs change. Revisit with a tunnel before public launch.
 - TCP 80 and 443: open.
 - UDP 443: open only once WebTransport ships.
 
