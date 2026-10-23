@@ -91,3 +91,85 @@ func BenchmarkMove1000Players(b *testing.B) {
 		w.Tick()
 	}
 }
+
+// gridRows builds a collision.bin for tests: 1 m cells, origin (0,0).
+func gridRows(tb testing.TB, rows ...string) *world.Grid {
+	tb.Helper()
+	w, h := len(rows[0]), len(rows)
+	b := make([]byte, 22, 22+(w*h+7)/8)
+	copy(b, "LCOL")
+	b[4] = 1
+	b[6], b[8] = 10, 64
+	b[10], b[12] = byte(w), byte(h)
+	b = append(b, make([]byte, (w*h+7)/8)...)
+	for r, row := range rows {
+		for c, ch := range row {
+			if ch == '#' {
+				i := r*w + c
+				b[22+i>>3] |= 1 << (uint(i) & 7)
+			}
+		}
+	}
+	g, err := world.ParseGrid(b)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return g
+}
+
+func TestMovementCollision(t *testing.T) {
+	tests := []struct {
+		name  string
+		rows  []string
+		start world.Vec2
+		to    world.Vec2
+		check func(p world.Vec2) bool
+	}{
+		{"head-on wall stops", []string{
+			"...#..", "...#..", "...#..", "...#..", "...#..", "...#.."},
+			world.Vec2{X: 2.5, Y: 2.5}, world.Vec2{X: 5.5, Y: 2.5},
+			func(p world.Vec2) bool { return p.X < 3 && p.X > 2.9 && p.Y == 2.5 }},
+		{"diagonal slides along wall", []string{
+			"......", "......", "......", "######", "......", "......"},
+			world.Vec2{X: 1.5, Y: 2.5}, world.Vec2{X: 4.5, Y: 5.5},
+			func(p world.Vec2) bool { return p.X > 4.4 && p.Y < 3 && p.Y >= 2.5 }},
+		{"corner slides around single cell", []string{
+			"......", "......", "......", "...#..", "......", "......"},
+			world.Vec2{X: 2.5, Y: 2.5}, world.Vec2{X: 3.5, Y: 3.5},
+			func(p world.Vec2) bool { return p.X == 3.5 && p.Y < 3 }},
+		{"enclosed stays put", []string{
+			"###", "#.#", "###"},
+			world.Vec2{X: 1.5, Y: 1.5}, world.Vec2{X: 1.9, Y: 1.9},
+			func(p world.Vec2) bool { return p.X >= 1 && p.X < 2 && p.Y >= 1 && p.Y < 2 }},
+		{"leaving the grid is blocked", []string{
+			"...", "...", "..."},
+			world.Vec2{X: 2.5, Y: 1.5}, world.Vec2{X: 6, Y: 1.5},
+			func(p world.Vec2) bool { return p.X < 3 && p.Y == 1.5 }},
+		{"short step into wall is blocked", []string{
+			"...#..", "...#..", "...#.."},
+			world.Vec2{X: 2.9, Y: 1.5}, world.Vec2{X: 3.1, Y: 1.5},
+			func(p world.Vec2) bool { return p.X < 3 && p.Y == 1.5 }},
+		{"open ground unaffected", []string{
+			"....", "....", "...."},
+			world.Vec2{X: 0.5, Y: 0.5}, world.Vec2{X: 3.5, Y: 2.5},
+			func(p world.Vec2) bool { return p == world.Vec2{X: 3.5, Y: 2.5} }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := world.New(world.DefaultConfig())
+			sys, err := movement.New(movement.Config{MaxSpeed: 6, Collision: gridRows(t, tc.rows...)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = w.Register(sys)
+			_ = w.AddPlayer(&world.Player{ID: 1, Pos: tc.start})
+			w.Enqueue(movement.MoveCommand{Player: 1, To: tc.to})
+			for i := 0; i < 60; i++ {
+				w.Tick()
+			}
+			if p := w.Player(1).Pos; !tc.check(p) {
+				t.Fatalf("final pos %+v", p)
+			}
+		})
+	}
+}
