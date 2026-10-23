@@ -73,11 +73,6 @@ func (s *System) Tick(w *world.World, dt time.Duration) {
 		}
 		p.Facing = float32(math.Atan2(dy, dx))
 		p.Anim = world.AnimWalk
-		if dist <= maxStep {
-			p.Pos = p.Desired
-			p.HasDesired = false
-			continue
-		}
 		next := p.Desired
 		if dist > maxStep {
 			k := maxStep / dist

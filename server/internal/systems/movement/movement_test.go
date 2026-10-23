@@ -145,6 +145,10 @@ func TestMovementCollision(t *testing.T) {
 			"...", "...", "..."},
 			world.Vec2{X: 2.5, Y: 1.5}, world.Vec2{X: 6, Y: 1.5},
 			func(p world.Vec2) bool { return p.X < 3 && p.Y == 1.5 }},
+		{"short step into wall is blocked", []string{
+			"...#..", "...#..", "...#.."},
+			world.Vec2{X: 2.9, Y: 1.5}, world.Vec2{X: 3.1, Y: 1.5},
+			func(p world.Vec2) bool { return p.X < 3 && p.Y == 1.5 }},
 		{"open ground unaffected", []string{
 			"....", "....", "...."},
 			world.Vec2{X: 0.5, Y: 0.5}, world.Vec2{X: 3.5, Y: 2.5},
