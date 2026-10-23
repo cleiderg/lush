@@ -3,16 +3,22 @@ import { Character } from './character';
 import { CameraRig } from './cameraRig';
 import { RemotePlayers } from './remotePlayers';
 import { CampusMap, loadCampus } from './campusMap';
+import type { CampusData } from './mapData';
 import type { WorldView } from './worldView';
 
 const SKY = 0x6aa7d8;
+/** Ground extends this far (metres) past the map bounds so its edge stays out of view. */
+const GROUND_MARGIN = 200;
 
-/** Plain ground under and around the campus map. */
-function makeGround(): THREE.Mesh {
+/** Plain ground under and around the campus map. Bounds are in decimetres. */
+function makeGround(b: CampusData['bounds']): THREE.Mesh {
+  const w = (b.maxX - b.minX) / 10 + 2 * GROUND_MARGIN;
+  const d = (b.maxZ - b.minZ) / 10 + 2 * GROUND_MARGIN;
   const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(400, 400).rotateX(-Math.PI / 2),
+    new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2),
     new THREE.MeshLambertMaterial({ color: 0x5f9e4f }),
   );
+  mesh.position.set((b.minX + b.maxX) / 20, 0, (b.minZ + b.maxZ) / 20);
   mesh.name = 'ground';
   return mesh;
 }
@@ -33,7 +39,7 @@ export class WorldScene {
     const sun = new THREE.DirectionalLight(0xffffff, 1.6);
     sun.position.set(30, 60, 20);
     this.scene.add(sun);
-    this.scene.add(makeGround(), this.map.group, this.player.root, this.remotes.group);
+    this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.player.root, this.remotes.group);
   }
 
   update(view: WorldView): void {

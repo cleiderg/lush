@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CameraRig, MAX_PITCH, MIN_PITCH } from './cameraRig';
+import { loadCampus } from './campusMap';
 import { PARTS } from './character';
 import { WorldScene, countDrawCalls, countDrawCallsInView, countTrianglesInView } from './scene';
 import type { PlayerView, WorldView } from './worldView';
@@ -60,7 +61,15 @@ describe('characters', () => {
     expect(inst.count).toBe(100);
   });
 
-  it('has a ground', () => {
-    expect(new WorldScene().scene.getObjectByName('ground')).toBeDefined();
+  it('has a ground that covers the whole map', () => {
+    const ground = new WorldScene().scene.getObjectByName('ground') as import('three').Mesh;
+    expect(ground).toBeDefined();
+    ground.geometry.computeBoundingBox();
+    const box = ground.geometry.boundingBox!.clone().translate(ground.position);
+    const b = loadCampus().bounds;
+    expect(box.min.x).toBeLessThanOrEqual(b.minX / 10);
+    expect(box.max.x).toBeGreaterThanOrEqual(b.maxX / 10);
+    expect(box.min.z).toBeLessThanOrEqual(b.minZ / 10);
+    expect(box.max.z).toBeGreaterThanOrEqual(b.maxZ / 10);
   });
 });
