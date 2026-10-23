@@ -62,4 +62,16 @@ describe('scrubber', () => {
     expect(JSON.stringify(crumb)).not.toContain(token);
     expect(crumb.message).toBe(`tok ${REDACTED}`);
   });
+
+  it('keeps Sentry contexts and stack frame source lines', () => {
+    const event = {
+      contexts: { browser: { name: 'Safari' }, os: { name: 'iOS' } },
+      exception: { values: [{ value: 'boom', stacktrace: { frames: [{ context_line: 'x()', pre_context: ['a'] }] } }] },
+      extra: { guest_token: 'abc', lastChatText: 'hi' },
+    };
+    const out = scrubEvent(event, '');
+    expect(out.contexts).toEqual(event.contexts);
+    expect(out.exception).toEqual(event.exception);
+    expect(out.extra).toEqual({ guest_token: REDACTED, lastChatText: REDACTED });
+  });
 });

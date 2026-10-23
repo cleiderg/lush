@@ -22,9 +22,15 @@ function isObj(v: unknown): v is Obj {
   return typeof v === 'object' && v !== null;
 }
 
-/** Keys whose values are chat text or credentials. */
+/**
+ * Keys whose values are chat text or credentials. Matches whole words of the key
+ * (guestToken, chat_text), so Sentry's own `contexts` and `context_line` survive.
+ */
 function sensitiveKey(key: string): boolean {
-  return /token|chat|text/i.test(key);
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[^a-zA-Z0-9]+/)
+    .some((w) => /^(token|chat|text)s?$/i.test(w));
 }
 
 function scrubString(s: string, token: string): string {
