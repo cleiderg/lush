@@ -87,18 +87,19 @@ func encodeSnapshot(b *flatbuffers.Builder, tick uint64, lastSeq uint32, ents []
 
 // message is a decoded inbound envelope; only the field for typ is set.
 type message struct {
-	typ      protocol.Message
-	hello    protocol.Hello
-	input    protocol.Input
-	chat     protocol.ChatSend
-	ping     protocol.Ping
-	moveX    float32
-	moveZ    float32
-	helloTok string
-	chatText string
+	typ       protocol.Message
+	version   uint16
+	helloTok  string
+	seq       uint32
+	moveX     float32
+	moveZ     float32
+	facing    float32
+	chatText  string
+	pingToken uint32
 }
 
-// decode parses an inbound frame. FlatBuffers readers panic on malformed
+// decode parses an inbound frame and reads every field it uses, so that all
+// reads of client bytes happen here. FlatBuffers readers panic on malformed
 // data, so any panic becomes an error.
 func decode(buf []byte) (m message, err error) {
 	defer func() {
@@ -114,18 +115,24 @@ func decode(buf []byte) (m message, err error) {
 	}
 	switch m.typ {
 	case protocol.MessageHello:
-		m.hello.Init(tbl.Bytes, tbl.Pos)
-		m.helloTok = string(m.hello.GuestToken())
+		var h protocol.Hello
+		h.Init(tbl.Bytes, tbl.Pos)
+		m.version, m.helloTok = h.ProtocolVersion(), string(h.GuestToken())
 	case protocol.MessageInput:
-		m.input.Init(tbl.Bytes, tbl.Pos)
-		if v := m.input.Move(nil); v != nil {
+		var in protocol.Input
+		in.Init(tbl.Bytes, tbl.Pos)
+		m.seq, m.facing = in.Seq(), in.Facing()
+		if v := in.Move(nil); v != nil {
 			m.moveX, m.moveZ = v.X(), v.Z()
 		}
 	case protocol.MessageChatSend:
-		m.chat.Init(tbl.Bytes, tbl.Pos)
-		m.chatText = string(m.chat.Text())
+		var ch protocol.ChatSend
+		ch.Init(tbl.Bytes, tbl.Pos)
+		m.chatText = string(ch.Text())
 	case protocol.MessagePing:
-		m.ping.Init(tbl.Bytes, tbl.Pos)
+		var p protocol.Ping
+		p.Init(tbl.Bytes, tbl.Pos)
+		m.pingToken = p.Token()
 	}
 	return m, nil
 }

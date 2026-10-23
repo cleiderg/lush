@@ -34,10 +34,15 @@ type rig struct {
 
 func newRig(t *testing.T, queue int) *rig {
 	t.Helper()
+	return newRigCfg(t, queue, session.Config{TickRate: 20, MoveSpeed: 5, HelloTimeout: time.Second})
+}
+
+func newRigCfg(t *testing.T, queue int, cfg session.Config) *rig {
+	t.Helper()
 	clock := world.NewFakeClock(time.Unix(0, 0))
 	w := world.New(world.DefaultConfig())
 	st := &stats{}
-	sess := session.New(session.Config{TickRate: 20, MoveSpeed: 5, HelloTimeout: time.Second}, w, clock, nil)
+	sess := session.New(cfg, w, clock, nil)
 	mv, err := movement.New(movement.Config{MaxSpeed: 5})
 	if err != nil {
 		t.Fatal(err)
@@ -287,5 +292,105 @@ func TestSlowClientDoesNotDelayTick(t *testing.T) {
 	}
 	if worst > 100*time.Millisecond {
 		t.Fatalf("slowest tick %v with a stalled client", worst)
+	}
+}
+
+func TestSnapshotUsesInterestManagement(t *testing.T) {
+	r := newRig(t, 16)
+	c := r.dial(hello(uint16(protocol.ProtocolVersionCurrent), ""))
+	id, _ := r.expectWelcome(c)
+	const near, far = 5000, 5001
+	if err := r.w.AddPlayer(&world.Player{ID: near, Pos: world.Vec2{X: 3}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.w.AddPlayer(&world.Player{ID: far, Pos: world.Vec2{X: 500, Y: 500}}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 100; i++ {
+		var s protocol.Snapshot
+		tbl := r.waitFor(c, protocol.MessageSnapshot)
+		s.Init(tbl.Bytes, tbl.Pos)
+		if s.EntitiesLength() < 2 {
+			continue // snapshot from before the others were added
+		}
+		ids := map[uint16]bool{}
+		var e protocol.Entity
+		for j := 0; j < s.EntitiesLength(); j++ {
+			s.Entities(&e, j)
+			ids[e.Id()] = true
+		}
+		if s.Entities(&e, 0); e.Id() != id || !ids[near] || ids[far] || len(ids) != 2 {
+			t.Fatalf("snapshot entities %v (first %d), want self %d first plus %d only", ids, e.Id(), id, near)
+		}
+		return
+	}
+	t.Fatal("never saw a snapshot with the nearby player")
+}
+
+func TestResumeWhileOldConnectionOpen(t *testing.T) {
+	r := newRig(t, 64)
+	v := uint16(protocol.ProtocolVersionCurrent)
+	c1 := r.dial(hello(v, ""))
+	id, tok := r.expectWelcome(c1)
+	c1.send(input(100, 1, 0))
+	for i := 0; ; i++ {
+		var s protocol.Snapshot
+		tbl := r.waitFor(c1, protocol.MessageSnapshot)
+		if s.Init(tbl.Bytes, tbl.Pos); s.LastInputSeq() == 100 {
+			break
+		}
+		if i == 100 {
+			t.Fatal("input 100 never processed")
+		}
+	}
+
+	// A network switch: the client reconnects before the server notices the
+	// old connection is gone, and numbers its inputs from 1 again.
+	c2 := r.dial(hello(v, tok))
+	typ, tbl := r.next(c2)
+	if typ != protocol.MessageWelcome {
+		t.Fatalf("got %v, want Welcome", typ)
+	}
+	var w protocol.Welcome
+	w.Init(tbl.Bytes, tbl.Pos)
+	if w.PlayerId() != id || w.Spawn(nil).X() <= 0 {
+		t.Fatalf("welcome id %d spawn x %v, want id %d at the moved position", w.PlayerId(), w.Spawn(nil).X(), id)
+	}
+	c2.send(input(1, 0, 1))
+	for i := 0; i < 100; i++ {
+		var s protocol.Snapshot
+		tbl := r.waitFor(c2, protocol.MessageSnapshot)
+		if s.Init(tbl.Bytes, tbl.Pos); s.LastInputSeq() == 1 {
+			return
+		}
+	}
+	t.Fatal("input from the new connection never processed")
+}
+
+func TestGuestIdsRecycledWhenFull(t *testing.T) {
+	r := newRigCfg(t, 16, session.Config{TickRate: 20, MoveSpeed: 5, HelloTimeout: time.Second, MaxGuests: 2})
+	v := uint16(protocol.ProtocolVersionCurrent)
+	a := r.dial(hello(v, ""))
+	idA, tokA := r.expectWelcome(a)
+	b := r.dial(hello(v, ""))
+	r.expectWelcome(b)
+	if typ, _ := r.next(r.dial(hello(v, ""))); typ != protocol.MessageReload {
+		t.Fatalf("third guest with both online got %v, want Reload", typ)
+	}
+
+	a.c.Close(websocket.StatusNormalClosure, "")
+	for deadline := time.Now().Add(5 * time.Second); len(r.w.Players()) != 1; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("first guest never left")
+		}
+		r.w.Tick()
+	}
+	d := r.dial(hello(v, ""))
+	if id, tok := r.expectWelcome(d); id != idA || tok == tokA {
+		t.Fatalf("new guest got id %d token %q, want the offline guest's id %d and a new token", id, tok, idA)
+	}
+	// The forgotten guest's token no longer resumes, and every id is online again.
+	if typ, _ := r.next(r.dial(hello(v, tokA))); typ != protocol.MessageReload {
+		t.Fatalf("forgotten token got %v, want Reload", typ)
 	}
 }

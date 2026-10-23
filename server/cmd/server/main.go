@@ -61,7 +61,7 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 			return 2
 		}
 	}
-	ws := transport.NewWebSocket(metrics)
+	ws := transport.NewWebSocket(metrics, transport.WithOriginPatterns(cfg.WSOrigins...))
 	mux := http.NewServeMux()
 	mux.Handle("/ws", ws.HTTPHandler(sess.ServeConn))
 	mux.Handle("/", metrics.Handler())
