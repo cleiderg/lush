@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#000000" />
+    <title>Lush</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #000; overscroll-behavior: none; touch-action: none; }
+      #app { display: flex; flex-direction: column; height: 100dvh; max-width: 480px; margin: 0 auto; }
+      #game-canvas { flex: 1 1 auto; min-height: 0; width: 100%; background: #6aa7d8; display: block; }
+      #control-tray { flex: 0 0 35%; background: #1d1d26; padding-bottom: env(safe-area-inset-bottom); }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game-canvas"></canvas>
+      <div id="control-tray"></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
