@@ -26,7 +26,7 @@ func TestPGPlayers(t *testing.T) {
 		t.Fatal(err)
 	}
 	storetest.RunPlayers(t, func(t *testing.T) store.Players {
-		if _, err := pool.Exec(ctx, "TRUNCATE players RESTART IDENTITY"); err != nil {
+		if _, err := pool.Exec(ctx, "TRUNCATE players RESTART IDENTITY CASCADE"); err != nil {
 			t.Fatal(err)
 		}
 		return store.NewPGPlayers(pool)
