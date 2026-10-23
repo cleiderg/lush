@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -18,11 +19,18 @@ import (
 // version is set at build time: -ldflags "-X main.version=1.2.3".
 var version = "dev"
 
-func main() { os.Exit(run()) }
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	code := run(ctx, os.Getenv, realClock{}, os.Stdout)
+	stop()
+	os.Exit(code)
+}
 
-func run() int {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	cfg, err := ops.LoadConfig(os.Getenv)
+// run starts the server and blocks until ctx is cancelled (SIGTERM/SIGINT in
+// production), then runs the graceful shutdown. It returns the exit code.
+func run(ctx context.Context, getenv func(string) string, clock world.Clock, out io.Writer) int {
+	log := slog.New(slog.NewJSONHandler(out, nil))
+	cfg, err := ops.LoadConfig(getenv)
 	if err != nil {
 		log.Error("bad config", "err", err)
 		return 2
@@ -31,10 +39,6 @@ func run() int {
 
 	metrics := ops.NewMetrics(version)
 	w := world.New(world.Config{TickRate: cfg.TickRate})
-	clock := realClock{}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
 
 	srv := &http.Server{Addr: cfg.ListenAddr, Handler: metrics.Handler(), ReadHeaderTimeout: 5 * time.Second}
 	srvErr := make(chan error, 1)
