@@ -18,7 +18,6 @@ import (
 const (
 	inputEvery = 100 * time.Millisecond // 10 Hz
 	pingEvery  = 2 * time.Second
-	walkSpeed  = 4.0 // m/s, PRD D-044; only used to steer back inside the circle
 )
 
 type bot struct {
@@ -27,9 +26,23 @@ type bot struct {
 	st    *stats
 	rng   *rand.Rand
 	self  uint16
-	x, z  float64 // metres from the spawn point
-	mu    sync.Mutex // guards sentP (written by play, read by the read goroutine)
+	spawn [2]float64 // from Welcome, in metres
+	mu    sync.Mutex // guards x, z and sentP (shared by play and the read goroutine)
+	x, z  float64    // metres from the spawn point, from the latest Snapshot
 	sentP map[uint32]time.Time
+}
+
+// setPos records the server's position for this bot (Snapshot decimetres).
+func (b *bot) setPos(xdm, zdm int16) {
+	b.mu.Lock()
+	b.x, b.z = float64(xdm)/10-b.spawn[0], float64(zdm)/10-b.spawn[1]
+	b.mu.Unlock()
+}
+
+func (b *bot) pos() (float64, float64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.x, b.z
 }
 
 func (b *bot) notePing(tok uint32, t time.Time) {
@@ -92,10 +105,10 @@ func (b *bot) connect(ctx context.Context) (*websocket.Conn, error) {
 			return nil, err
 		}
 		b.st.bytes.Add(uint64(len(data)))
-		if m, ok := decode(data); ok {
+		if m, ok := decode(data, 0); ok {
 			switch m.typ {
 			case protocol.MessageWelcome:
-				b.self = m.playerID
+				b.self, b.spawn = m.playerID, m.spawn
 				return conn, nil
 			case protocol.MessageReload:
 				conn.CloseNow()
@@ -137,18 +150,16 @@ func (b *bot) play(ctx context.Context, conn *websocket.Conn) error {
 		case err := <-readErr:
 			return err
 		case now := <-tick.C:
-			// Steer back toward the spawn once outside the circle.
-			if now.After(turnAt) || math.Hypot(b.x, b.z) > b.cfg.radius {
+			// Steer back toward the spawn once outside the circle. The
+			// position is the server's, so speed and walls can't make it drift.
+			x, z := b.pos()
+			if now.After(turnAt) || math.Hypot(x, z) > b.cfg.radius {
 				dirX, dirZ = b.pickDir()
-				if math.Hypot(b.x, b.z) > b.cfg.radius {
-					dirX, dirZ = -b.x, -b.z
-					n := math.Hypot(dirX, dirZ)
-					dirX, dirZ = dirX/n, dirZ/n
+				if n := math.Hypot(x, z); n > b.cfg.radius {
+					dirX, dirZ = -x/n, -z/n
 				}
 				turnAt = now.Add(b.walkTime())
 			}
-			b.x += dirX * walkSpeed * inputEvery.Seconds()
-			b.z += dirZ * walkSpeed * inputEvery.Seconds()
 			seq++
 			if err := conn.Write(ctx, websocket.MessageBinary, encodeInput(bld, seq, dirX, dirZ)); err != nil {
 				return err
@@ -174,13 +185,16 @@ func (b *bot) play(ctx context.Context, conn *websocket.Conn) error {
 
 // handle runs on the read goroutine.
 func (b *bot) handle(data []byte) {
-	m, ok := decode(data)
+	m, ok := decode(data, b.self)
 	if !ok {
 		return
 	}
 	switch m.typ {
 	case protocol.MessageSnapshot:
 		b.st.snapshots.Add(1)
+		if m.hasSelf {
+			b.setPos(m.selfX, m.selfZ)
+		}
 	case protocol.MessageChatMessage:
 		b.st.chats.Add(1)
 	case protocol.MessagePong:

@@ -1,8 +1,13 @@
 package main
 
 import (
+	"math"
 	"testing"
 	"time"
+
+	flatbuffers "github.com/google/flatbuffers/go"
+
+	"github.com/cleiderg/lush/tools/bots/internal/protocol"
 )
 
 func TestPercentileMs(t *testing.T) {
@@ -32,10 +37,35 @@ func TestMetricsURL(t *testing.T) {
 }
 
 func TestHelloRoundTrip(t *testing.T) {
-	if _, ok := decode(encodeHello()); !ok {
+	if _, ok := decode(encodeHello(), 0); !ok {
 		t.Error("hello should decode")
 	}
-	if _, ok := decode([]byte{1, 2, 3}); ok {
+	if _, ok := decode([]byte{1, 2, 3}, 0); ok {
 		t.Error("garbage should not decode")
+	}
+}
+
+func TestSnapshotSelfPosition(t *testing.T) {
+	b := flatbuffers.NewBuilder(128)
+	protocol.SnapshotStartEntitiesVector(b, 2)
+	protocol.CreateEntity(b, 9, -40, 70, 0, 0) // vectors are built back to front
+	protocol.CreateEntity(b, 7, 125, -30, 0, 0)
+	vec := b.EndVector(2)
+	protocol.SnapshotStart(b)
+	protocol.SnapshotAddEntities(b, vec)
+	buf := finish(b, protocol.MessageSnapshot, protocol.SnapshotEnd(b))
+
+	m, ok := decode(buf, 9)
+	if !ok || !m.hasSelf || m.selfX != -40 || m.selfZ != 70 {
+		t.Errorf("self 9: got %+v ok=%v", m, ok)
+	}
+	if m, _ := decode(buf, 3); m.hasSelf {
+		t.Error("absent self should not be found")
+	}
+
+	bt := &bot{spawn: [2]float64{10, -5}}
+	bt.setPos(m.selfX, m.selfZ)
+	if x, z := bt.pos(); math.Abs(x-(-14)) > 1e-9 || math.Abs(z-12) > 1e-9 {
+		t.Errorf("pos = %v, %v; want -14, 12", x, z)
 	}
 }

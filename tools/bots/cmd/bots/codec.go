@@ -49,15 +49,19 @@ func encodePing(b *flatbuffers.Builder, tok uint32) []byte {
 
 // inbound is a decoded server message; only the fields for typ are set.
 type inbound struct {
-	typ      protocol.Message
-	playerID uint16
-	token    uint32
-	text     string
+	typ          protocol.Message
+	playerID     uint16
+	spawn        [2]float64 // Welcome, metres
+	token        uint32
+	text         string
+	hasSelf      bool  // Snapshot contains the entity self
+	selfX, selfZ int16 // its position in decimetres
 }
 
-// decode parses a server frame. FlatBuffers readers panic on malformed data,
-// so a panic becomes ok=false.
-func decode(buf []byte) (m inbound, ok bool) {
+// decode parses a server frame; self is this bot's player id, looked up in
+// Snapshots. FlatBuffers readers panic on malformed data, so a panic becomes
+// ok=false.
+func decode(buf []byte, self uint16) (m inbound, ok bool) {
 	defer func() {
 		if recover() != nil {
 			ok = false
@@ -74,6 +78,19 @@ func decode(buf []byte) (m inbound, ok bool) {
 		var w protocol.Welcome
 		w.Init(tbl.Bytes, tbl.Pos)
 		m.playerID = w.PlayerId()
+		if v := w.Spawn(nil); v != nil {
+			m.spawn = [2]float64{float64(v.X()), float64(v.Z())}
+		}
+	case protocol.MessageSnapshot:
+		var s protocol.Snapshot
+		s.Init(tbl.Bytes, tbl.Pos)
+		var e protocol.Entity
+		for i := 0; i < s.EntitiesLength(); i++ { // the server lists the player first
+			if s.Entities(&e, i) && e.Id() == self {
+				m.hasSelf, m.selfX, m.selfZ = true, e.X(), e.Z()
+				break
+			}
+		}
 	case protocol.MessagePong:
 		var p protocol.Pong
 		p.Init(tbl.Bytes, tbl.Pos)

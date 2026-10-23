@@ -16,4 +16,5 @@ its spawn) at 10 Hz, chats every 20-40 s and pings every 2 s. The JSON summary
 has `connected_at_end`, `failed_to_connect`, `download_kb_per_s_per_player`,
 `rtt_ms_p50`, `rtt_ms_p99` and `server` (the `/metrics` document taken at the
 end of the steady period). `server_max_dropped_per_s` is the highest
-`dropped_per_s` seen while sampling `/metrics` once a second.
+`dropped_per_s` seen while sampling `/metrics` twice a second for the whole
+run, ramp included. Bots steer by their own position from each Snapshot.

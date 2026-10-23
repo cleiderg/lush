@@ -115,6 +115,31 @@ func run(ctx context.Context, cfg config) *summary {
 	defer cancel()
 
 	st := &stats{}
+	// Watch dropped_per_s for the whole run, ramp included. The server
+	// recomputes it once a second, so polling twice as often sees every value.
+	// maxDrop is written by the sampler, then by run once the sampler is done.
+	var maxDrop float64
+	noteDrop := func(m *serverMetrics) {
+		if m != nil && m.DroppedPerS > maxDrop {
+			maxDrop = m.DroppedPerS
+		}
+	}
+	samplerDone := make(chan struct{})
+	stopSampler := make(chan struct{})
+	go func() {
+		defer close(samplerDone)
+		tick := time.NewTicker(500 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			select {
+			case <-tick.C:
+				noteDrop(fetchMetrics(cfg.metricsURL))
+			case <-stopSampler:
+				return
+			}
+		}
+	}()
+
 	var wg sync.WaitGroup
 	var live, failed atomic.Int64
 	var settled sync.WaitGroup // every bot has either connected or failed
@@ -138,34 +163,21 @@ func run(ctx context.Context, cfg config) *summary {
 	// Steady period: the byte counters only cover this window.
 	var bytes0, snaps0 uint64
 	var steadySecs float64
-	var maxDrop float64
 	if botCtx.Err() == nil {
 		bytes0, snaps0 = st.bytes.Load(), st.snapshots.Load()
 		start := time.Now()
-		tick := time.NewTicker(time.Second)
-		end := time.After(cfg.steady)
-	loop:
-		for {
-			select {
-			case <-tick.C:
-				if m := fetchMetrics(cfg.metricsURL); m != nil && m.DroppedPerS > maxDrop {
-					maxDrop = m.DroppedPerS
-				}
-			case <-end:
-				break loop
-			case <-botCtx.Done():
-				break loop
-			}
+		select {
+		case <-time.After(cfg.steady):
+		case <-botCtx.Done():
 		}
-		tick.Stop()
 		steadySecs = time.Since(start).Seconds()
 	}
 	bytes1, snaps1 := st.bytes.Load(), st.snapshots.Load()
 	connected := int(live.Load())
+	close(stopSampler)
+	<-samplerDone
 	raw, m := fetchMetricsRaw(cfg.metricsURL)
-	if m != nil && m.DroppedPerS > maxDrop {
-		maxDrop = m.DroppedPerS
-	}
+	noteDrop(m)
 	cancel()
 	wg.Wait()
 
