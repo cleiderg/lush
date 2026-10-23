@@ -2,6 +2,7 @@
 package movement
 
 import (
+	"fmt"
 	"math"
 	"time"
 
@@ -10,13 +11,10 @@ import (
 
 // Config holds movement tuning.
 type Config struct {
-	// MaxSpeed in world units per second. PLACEHOLDER: the real value is TBD
-	// (not decided in the PRD).
+	// MaxSpeed in world units per second. There is deliberately no default:
+	// the walk speed is not decided in the PRD, so the caller must supply it.
 	MaxSpeed float32
 }
-
-// DefaultConfig returns placeholder values.
-func DefaultConfig() Config { return Config{MaxSpeed: 6} }
 
 // MoveCommand asks to move a player to a desired position.
 type MoveCommand struct {
@@ -29,8 +27,14 @@ func (c MoveCommand) Target() world.PlayerID { return c.Player }
 // System clamps desired moves to the maximum speed per tick.
 type System struct{ cfg Config }
 
-// New creates the movement system.
-func New(cfg Config) *System { return &System{cfg: cfg} }
+// New creates the movement system. MaxSpeed must be positive and finite.
+func New(cfg Config) (*System, error) {
+	v := float64(cfg.MaxSpeed)
+	if !(v > 0) || math.IsInf(v, 0) {
+		return nil, fmt.Errorf("movement: max speed %v must be positive and finite", cfg.MaxSpeed)
+	}
+	return &System{cfg: cfg}, nil
+}
 
 func (s *System) Name() string { return "movement" }
 

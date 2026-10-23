@@ -8,9 +8,16 @@ import (
 	"github.com/cleiderg/lush/server/internal/world"
 )
 
-func setup(n int) *world.World {
+func setup(tb testing.TB, n int) *world.World {
+	tb.Helper()
 	w := world.New(world.DefaultConfig())
-	_ = w.Register(movement.New(movement.Config{MaxSpeed: 6})) // 0.3 units per 20 Hz tick
+	sys, err := movement.New(movement.Config{MaxSpeed: 6}) // test value: 0.3 units per 20 Hz tick
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if err := w.Register(sys); err != nil {
+		tb.Fatal(err)
+	}
 	for i := 1; i <= n; i++ {
 		_ = w.AddPlayer(&world.Player{ID: world.PlayerID(i)})
 	}
@@ -34,7 +41,7 @@ func TestMovementClamp(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			w := setup(1)
+			w := setup(t, 1)
 			w.Enqueue(movement.MoveCommand{Player: 1, To: tc.to})
 			w.Tick()
 			p := w.Player(1)
@@ -51,8 +58,16 @@ func TestMovementClamp(t *testing.T) {
 	}
 }
 
+func TestNewRejectsBadSpeed(t *testing.T) {
+	for _, v := range []float32{0, -1, float32(math.NaN()), float32(math.Inf(1))} {
+		if _, err := movement.New(movement.Config{MaxSpeed: v}); err == nil {
+			t.Errorf("MaxSpeed %v accepted", v)
+		}
+	}
+}
+
 func TestMovementContinuesToTarget(t *testing.T) {
-	w := setup(1)
+	w := setup(t, 1)
 	w.Enqueue(movement.MoveCommand{Player: 1, To: world.Vec2{X: 1, Y: 0}})
 	for i := 0; i < 4; i++ {
 		w.Tick()
@@ -67,7 +82,7 @@ func TestMovementContinuesToTarget(t *testing.T) {
 }
 
 func BenchmarkMove1000Players(b *testing.B) {
-	w := setup(1000)
+	w := setup(b, 1000)
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		for id := 1; id <= 1000; id++ {
