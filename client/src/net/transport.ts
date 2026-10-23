@@ -10,7 +10,8 @@ export interface Transport {
 export type TransportFactory = () => Transport;
 
 export function serverUrl(): string {
-  const url = import.meta.env.VITE_SERVER_URL as string | undefined;
+  const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+  const url = env?.VITE_SERVER_URL;
   if (url) return url;
   return 'ws://localhost:8080/ws';
 }
