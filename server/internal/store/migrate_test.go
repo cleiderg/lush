@@ -23,7 +23,7 @@ func TestMigrate(t *testing.T) {
 	defer pool.Close()
 
 	// Start from an empty database.
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -34,8 +34,8 @@ func TestMigrate(t *testing.T) {
 		t.Fatalf("second Migrate should be a no-op: %v", err)
 	}
 	var n int
-	if err := pool.QueryRow(ctx, "SELECT count(*) FROM goose_db_version WHERE version_id > 0").Scan(&n); err != nil || n != 1 {
-		t.Fatalf("applied migrations = %d, err %v; want 1", n, err)
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM goose_db_version WHERE version_id > 0").Scan(&n); err != nil || n != 2 {
+		t.Fatalf("applied migrations = %d, err %v; want 2", n, err)
 	}
 
 	const ins = "INSERT INTO players (token_hash) VALUES ($1)"

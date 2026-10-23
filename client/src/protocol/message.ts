@@ -9,6 +9,7 @@ import { Input } from '../protocol/input';
 import { Ping } from '../protocol/ping';
 import { Pong } from '../protocol/pong';
 import { Reload } from '../protocol/reload';
+import { RestartCountdown } from '../protocol/restart-countdown';
 import { Snapshot } from '../protocol/snapshot';
 import { Welcome } from '../protocol/welcome';
 
@@ -23,13 +24,14 @@ export enum Message {
   ChatMessage = 6,
   Ping = 7,
   Pong = 8,
-  Reload = 9
+  Reload = 9,
+  RestartCountdown = 10
 }
 
 export function unionToMessage(
   type: Message,
-  accessor: (obj:ChatMessage|ChatSend|Hello|Input|Ping|Pong|Reload|Snapshot|Welcome) => ChatMessage|ChatSend|Hello|Input|Ping|Pong|Reload|Snapshot|Welcome|null
-): ChatMessage|ChatSend|Hello|Input|Ping|Pong|Reload|Snapshot|Welcome|null {
+  accessor: (obj:ChatMessage|ChatSend|Hello|Input|Ping|Pong|Reload|RestartCountdown|Snapshot|Welcome) => ChatMessage|ChatSend|Hello|Input|Ping|Pong|Reload|RestartCountdown|Snapshot|Welcome|null
+): ChatMessage|ChatSend|Hello|Input|Ping|Pong|Reload|RestartCountdown|Snapshot|Welcome|null {
   switch(Message[type]) {
     case 'NONE': return null; 
     case 'Hello': return accessor(new Hello())! as Hello;
@@ -41,15 +43,16 @@ export function unionToMessage(
     case 'Ping': return accessor(new Ping())! as Ping;
     case 'Pong': return accessor(new Pong())! as Pong;
     case 'Reload': return accessor(new Reload())! as Reload;
+    case 'RestartCountdown': return accessor(new RestartCountdown())! as RestartCountdown;
     default: return null;
   }
 }
 
 export function unionListToMessage(
   type: Message, 
-  accessor: (index: number, obj:ChatMessage|ChatSend|Hello|Input|Ping|Pong|Reload|Snapshot|Welcome) => ChatMessage|ChatSend|Hello|Input|Ping|Pong|Reload|Snapshot|Welcome|null, 
+  accessor: (index: number, obj:ChatMessage|ChatSend|Hello|Input|Ping|Pong|Reload|RestartCountdown|Snapshot|Welcome) => ChatMessage|ChatSend|Hello|Input|Ping|Pong|Reload|RestartCountdown|Snapshot|Welcome|null, 
   index: number
-): ChatMessage|ChatSend|Hello|Input|Ping|Pong|Reload|Snapshot|Welcome|null {
+): ChatMessage|ChatSend|Hello|Input|Ping|Pong|Reload|RestartCountdown|Snapshot|Welcome|null {
   switch(Message[type]) {
     case 'NONE': return null; 
     case 'Hello': return accessor(index, new Hello())! as Hello;
@@ -61,6 +64,7 @@ export function unionListToMessage(
     case 'Ping': return accessor(index, new Ping())! as Ping;
     case 'Pong': return accessor(index, new Pong())! as Pong;
     case 'Reload': return accessor(index, new Reload())! as Reload;
+    case 'RestartCountdown': return accessor(index, new RestartCountdown())! as RestartCountdown;
     default: return null;
   }
 }

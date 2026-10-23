@@ -13,6 +13,7 @@ export { Ping } from './ping';
 export { Pong } from './pong';
 export { ProtocolVersion } from './protocol-version';
 export { Reload } from './reload';
+export { RestartCountdown } from './restart-countdown';
 export { Snapshot } from './snapshot';
 export { Vec2 } from './vec2';
 export { Welcome } from './welcome';

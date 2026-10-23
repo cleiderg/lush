@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 1
+  Current = 2
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -90,6 +90,11 @@ table Reload {
   reason: string;
 }
 
+// Server -> client: seconds until a graceful restart, for the in-game countdown.
+table RestartCountdown {
+  seconds_remaining: ushort;
+}
+
 union Message {
   Hello,
   Welcome,
@@ -99,7 +104,8 @@ union Message {
   ChatMessage,
   Ping,
   Pong,
-  Reload
+  Reload,
+  RestartCountdown
 }
 
 table Envelope {

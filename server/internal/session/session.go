@@ -333,6 +333,19 @@ func (s *Server) BroadcastReload(reason string) {
 	}
 }
 
+// BroadcastRestartCountdown tells every connected client how long until the
+// restart. A connection with a full send queue drops the frame (counted by the
+// transport) and never delays the others.
+func (s *Server) BroadcastRestartCountdown(remaining time.Duration) {
+	secs := min(max(int64(remaining/time.Second), 0), math.MaxUint16)
+	frame := encodeRestartCountdown(uint16(secs))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for c := range s.conns {
+		c.Send(frame)
+	}
+}
+
 // ---- tick goroutine (world.System) ----
 
 func (s *Server) Name() string { return "session" }

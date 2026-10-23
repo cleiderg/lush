@@ -38,6 +38,13 @@ func encodeReload(reason string) []byte {
 	return finish(b, protocol.MessageReload, protocol.ReloadEnd(b))
 }
 
+func encodeRestartCountdown(seconds uint16) []byte {
+	b := flatbuffers.NewBuilder(32)
+	protocol.RestartCountdownStart(b)
+	protocol.RestartCountdownAddSecondsRemaining(b, seconds)
+	return finish(b, protocol.MessageRestartCountdown, protocol.RestartCountdownEnd(b))
+}
+
 func encodePong(token uint32) []byte {
 	b := flatbuffers.NewBuilder(32)
 	protocol.PongStart(b)

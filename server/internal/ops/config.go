@@ -15,7 +15,10 @@ import (
 //
 //	LUSH_LISTEN_ADDR      listen address            (default ":8080")
 //	LUSH_TICK_RATE        world ticks per second    (default 20)
-//	LUSH_DATABASE_URL     Postgres URL placeholder  (default "", unused until the store lands)
+//	LUSH_DATABASE_URL     Postgres connection URL (default ""): when set, the server migrates the
+//	                      database at startup and stores players there; when empty it uses an
+//	                      in-memory store (development only: LUSH_ENV=production requires it).
+//	                      Never logged; it carries credentials
 //	LUSH_ENV              "development" or "production" (default "development")
 //	LUSH_SENTRY_DSN       Sentry DSN; empty disables error reporting (a secret: never logged)
 //	LUSH_MOVE_SPEED       walk speed, world units/s (default 4, PRD decision D-044)

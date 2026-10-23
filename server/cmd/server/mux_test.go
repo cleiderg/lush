@@ -10,7 +10,7 @@ import (
 
 func TestNewMuxRoutes(t *testing.T) {
 	ws := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
-	mux := newMux(ws, ops.NewMetrics("test").Handler())
+	mux := newMux(ws, ops.NewMetrics("test").Handler(), nil)
 	for path, want := range map[string]int{
 		"/ws":          http.StatusTeapot,
 		"/metrics":     200,
