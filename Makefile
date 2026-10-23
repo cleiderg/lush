@@ -1,10 +1,18 @@
 # Root build entry points. Parts of the repo that don't exist yet are skipped.
 SHELL := /bin/bash
-.PHONY: protocol test lint build smoke loadtest
+.PHONY: protocol test lint build smoke loadtest bots
 
 HAS_GO  := $(wildcard server/go.mod)
 HAS_NPM := $(wildcard client/package.json)
+HAS_BOTS := $(wildcard tools/bots/go.mod)
 HAS_GEN := $(wildcard protocol/gen/generate.sh)
+
+# Bots can only import generated protocol code from their own module, so copy
+# it in (the copy is gitignored).
+bots:
+	rm -rf tools/bots/internal/protocol && mkdir -p tools/bots/internal/protocol tools/bots/bin
+	cp $(filter-out %_test.go,$(wildcard server/internal/protocol/*.go)) tools/bots/internal/protocol/
+	cd tools/bots && go build -o bin/bots ./cmd/bots
 
 protocol:
 ifneq ($(HAS_GEN),)
@@ -24,6 +32,10 @@ ifneq ($(HAS_NPM),)
 else
 	@echo "test: client skipped (client/package.json not found)"
 endif
+ifneq ($(HAS_BOTS),)
+	$(MAKE) --no-print-directory bots
+	cd tools/bots && go test ./...
+endif
 
 lint:
 ifneq ($(HAS_GO),)
@@ -35,6 +47,10 @@ ifneq ($(HAS_NPM),)
 	cd client && npm run lint
 else
 	@echo "lint: client skipped (client/package.json not found)"
+endif
+ifneq ($(HAS_BOTS),)
+	$(MAKE) --no-print-directory bots
+	cd tools/bots && go vet ./...
 endif
 
 build:
@@ -50,8 +66,21 @@ else
 endif
 
 smoke:
-	@echo "smoke: not available yet"
+ifneq ($(and $(HAS_GO),$(HAS_BOTS)),)
+	scripts/dev/smoke.sh
+else
+	@echo "smoke: skipped (server or tools/bots not found)"
+endif
 
+LOADTEST_OUT ?= loadtest-result.json
 loadtest:
-	@echo "loadtest: not available yet"
+ifeq ($(HAS_BOTS),)
+	@echo "loadtest: tools/bots not found"
 	@exit 1
+else ifeq ($(LOADTEST_URL),)
+	@echo "loadtest: set LOADTEST_URL=<wss url>"
+	@exit 1
+else
+	$(MAKE) --no-print-directory bots
+	tools/bots/bin/bots -url "$(LOADTEST_URL)" -bots 1000 -radius 25 -ramp 30s -duration 60s -out "$(LOADTEST_OUT)"
+endif
