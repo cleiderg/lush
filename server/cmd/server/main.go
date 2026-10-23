@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cleiderg/lush/server/internal/api"
 	"github.com/cleiderg/lush/server/internal/ops"
 	"github.com/cleiderg/lush/server/internal/session"
 	"github.com/cleiderg/lush/server/internal/store"
@@ -63,9 +64,7 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		}
 	}
 	ws := transport.NewWebSocket(metrics, transport.WithOriginPatterns(cfg.WSOrigins...))
-	mux := http.NewServeMux()
-	mux.Handle("/ws", ws.HTTPHandler(sess.ServeConn))
-	mux.Handle("/", metrics.Handler())
+	mux := newMux(ws.HTTPHandler(sess.ServeConn), metrics.Handler())
 
 	srv := &http.Server{Addr: cfg.ListenAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	srvErr := make(chan error, 1)
@@ -126,6 +125,16 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 	}
 	log.Info("bye")
 	return 0
+}
+
+// newMux mounts the WebSocket, API and metrics routes on one mux. The API has
+// no Pinger yet; the database arrives with the store.
+func newMux(wsHandler, opsHandler http.Handler) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.Handle("/ws", wsHandler)
+	api.Mount(mux, api.Config{Version: version})
+	mux.Handle("/", opsHandler)
+	return mux
 }
 
 type realClock struct{}
