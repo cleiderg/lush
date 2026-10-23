@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -109,5 +113,38 @@ func TestRunBadConfig(t *testing.T) {
 	code := run(context.Background(), func(k string) string { return env[k] }, world.NewFakeClock(time.Unix(0, 0)), &syncBuffer{})
 	if code != 2 {
 		t.Fatalf("exit code %d, want 2", code)
+	}
+}
+
+// TestRunFlushesSentryOnExit: an error logged on the way out (here the HTTP
+// listener failing) reaches Sentry before run returns and main exits.
+func TestRunFlushesSentryOnExit(t *testing.T) {
+	var mu sync.Mutex
+	var bodies []string
+	sentrySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(b))
+		mu.Unlock()
+	}))
+	defer sentrySrv.Close()
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy.Close()
+
+	env := map[string]string{
+		"LUSH_LISTEN_ADDR": busy.Addr().String(),
+		"LUSH_SENTRY_DSN":  strings.Replace(sentrySrv.URL, "http://", "http://key@", 1) + "/1",
+	}
+	code := run(context.Background(), func(k string) string { return env[k] }, world.NewFakeClock(time.Unix(0, 0)), &syncBuffer{})
+	if code != 1 {
+		t.Fatalf("exit code %d, want 1", code)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(bodies) != 1 || !strings.Contains(bodies[0], "http server failed") {
+		t.Fatalf("sentry got %q, want the http server failure", bodies)
 	}
 }

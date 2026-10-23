@@ -49,6 +49,8 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		log.Error("bad config", "err", err)
 		return 2
 	}
+	// Deliver error reports logged on any exit path before main calls os.Exit.
+	defer reporter.Flush(context.Background())
 	log = slog.New(reporter.WrapHandler(log.Handler()))
 	log.Info("starting", "version", version, "env", cfg.Env, "listen", cfg.ListenAddr, "tick_rate", cfg.TickRate)
 
