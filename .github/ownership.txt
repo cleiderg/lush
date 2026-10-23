@@ -8,7 +8,9 @@
 
 gate: .github/* scripts/ci/* .claude/* CONSTITUTION.md CLAUDE.md */CLAUDE.md
 
-protocol: protocol/* server/internal/protocol/* client/src/protocol/*
+# The protocol role may also edit the dependency files, only to add or bump the
+# flatbuffers runtime its generated code needs (owner decision in issue #21).
+protocol: protocol/* server/internal/protocol/* client/src/protocol/* server/go.mod server/go.sum client/package.json client/package-lock.json
 
 server-world: server/internal/world/* server/internal/systems/* server/internal/interest/* server/go.mod server/go.sum
 
