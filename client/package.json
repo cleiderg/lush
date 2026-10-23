@@ -11,6 +11,7 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@sentry/browser": "11.9.0",
     "flatbuffers": "25.9.23",
     "three": "0.186.1"
   },
