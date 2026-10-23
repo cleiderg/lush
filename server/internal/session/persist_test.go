@@ -1,10 +1,14 @@
 package session_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log/slog"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -24,6 +28,7 @@ type spyStore struct {
 	hashes  chan string // every hash seen, buffered
 	block   chan struct{}
 	failErr error
+	inLoad  atomic.Int32 // loads currently parked on block
 }
 
 func newSpy() *spyStore {
@@ -42,6 +47,8 @@ func (s *spyStore) LoadByTokenHash(ctx context.Context, h string) (store.Player,
 		return store.Player{}, s.failErr
 	}
 	if s.block != nil {
+		s.inLoad.Add(1)
+		defer s.inLoad.Add(-1)
 		select {
 		case <-s.block:
 		case <-ctx.Done():
@@ -183,32 +190,70 @@ func TestReclaimedSessionIdResumesUnderNewId(t *testing.T) {
 
 func TestBlockedStoreDoesNotStallTicks(t *testing.T) {
 	spy := newSpy()
-	r := newRigStore(t, 16, cfg(), spy)
+	c := cfg()
+	c.HelloTimeout = time.Minute // the parked load must outlast the checks below
+	r := newRigStore(t, 16, c, spy)
 	v := uint16(protocol.ProtocolVersionCurrent)
 	a := r.dial(hello(v, ""))
 	_, tok := r.expectWelcome(a)
+	<-spy.hashes // a's CreateGuest
 
 	spy.block = make(chan struct{})
 	defer close(spy.block)
-	r.dial(hello(v, tok)) // handshake parks in LoadByTokenHash
-	for len(spy.hashes) > 0 {
-		<-spy.hashes
+	r.dial(hello(v, tok))
+	select {
+	case <-spy.hashes: // the handshake is now inside LoadByTokenHash
+	case <-time.After(5 * time.Second):
+		t.Fatal("handshake never reached the store")
 	}
-	time.Sleep(50 * time.Millisecond)
 
+	// Tick on another goroutine so a tick stuck behind the store fails the
+	// test instead of hanging it.
 	start := r.w.TickCount()
-	typ, _ := r.next(a) // ticks the world while waiting
-	_ = typ
-	r.waitFor(a, protocol.MessageSnapshot)
-	if r.w.TickCount() <= start {
-		t.Fatal("ticks did not advance while the store blocked")
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 5; i++ {
+			r.w.Tick()
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ticks stalled while the store blocked")
 	}
+	if got := r.w.TickCount(); got != start+5 {
+		t.Fatalf("tick count %d, want %d", got, start+5)
+	}
+	r.waitFor(a, protocol.MessageSnapshot)
+	if spy.inLoad.Load() != 1 {
+		t.Fatal("store load returned before the checks; they proved nothing")
+	}
+}
+
+// syncBuf is a goroutine-safe log sink.
+type syncBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
 }
 
 func TestStoreErrorEndsConnection(t *testing.T) {
 	spy := newSpy()
 	spy.failErr = errors.New("db down")
-	r := newRigStore(t, 16, cfg(), spy)
+	logs := &syncBuf{}
+	r := newRigLog(t, 16, cfg(), spy, slog.New(slog.NewTextHandler(logs, nil)))
 	c := r.dial(hello(uint16(protocol.ProtocolVersionCurrent), "some-token"))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -217,5 +262,10 @@ func TestStoreErrorEndsConnection(t *testing.T) {
 	}
 	if n := len(r.w.Players()); n != 0 {
 		t.Fatalf("%d players in world, want 0", n)
+	}
+	for deadline := time.Now().Add(5 * time.Second); !strings.Contains(logs.String(), "db down"); time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("store error not logged; log: %q", logs.String())
+		}
 	}
 }
