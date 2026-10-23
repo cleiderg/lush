@@ -1,4 +1,8 @@
 import { GameLoop } from './core/loop';
+import { encodeInput } from './net/codec';
+import { localTokenStore, Session } from './net/session';
+import { WebSocketTransport } from './net/transport';
+import { GameState } from './state/world';
 import { Controls } from './ui/controls';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
@@ -17,9 +21,20 @@ const controls = new Controls({
   getCameraYaw: () => 0,
 });
 
+const game = new GameState();
+const session = new Session({
+  factory: () => new WebSocketTransport(),
+  store: localTokenStore(),
+  onMessage: (msg) => game.handle(msg, performance.now()),
+  onReload: () => location.reload(),
+});
+session.start();
+
 new GameLoop({
-  update: () => {
-    controls.worldMove();
+  update: (stepMs) => {
+    const m = controls.worldMove();
+    const input = game.prediction.applyInput(m.x, m.y, stepMs / 1000);
+    session.send(encodeInput(input.seq, m.x, m.y, game.heading));
   },
   render: () => {
     if (!ctx) return;
