@@ -49,6 +49,14 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		log.Error("bad config", "err", err)
 		return 2
 	}
+	reporter, err := ops.NewReporter(cfg, version, nil)
+	if err != nil {
+		log.Error("bad config", "err", err)
+		return 2
+	}
+	// Deliver error reports logged on any exit path before main calls os.Exit.
+	defer reporter.Flush(context.Background())
+	log = slog.New(reporter.WrapHandler(log.Handler()))
 	log.Info("starting", "version", version, "env", cfg.Env, "listen", cfg.ListenAddr, "tick_rate", cfg.TickRate)
 
 	var players store.Players
@@ -83,6 +91,7 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		Spawn:        world.Vec2{X: cfg.SpawnX, Y: cfg.SpawnZ},
 		MoveSpeed:    cfg.MoveSpeed,
 		SaveInterval: cfg.SaveInterval,
+		OnPanic:      reporter.Recovered,
 	}, w, clock, players, log)
 	// Order matters: movement applies inputs, chat delivers, session snapshots last.
 	for _, s := range []world.System{mover, chat.New(chat.DefaultConfig(), clock, sess), sess} {
@@ -136,6 +145,7 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 			log.Info("restart countdown", "seconds", int(r.Seconds()))
 			sess.BroadcastRestartCountdown(r)
 		},
+		Flush: reporter.Flush,
 		Save: func(ctx context.Context) error {
 			sess.BroadcastReload("server restarting")
 			log.Info("saving players")

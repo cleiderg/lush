@@ -15,6 +15,8 @@ type ShutdownHooks struct {
 	Announce func(remaining time.Duration)
 	// Save persists every player. Called once after the countdown.
 	Save func(ctx context.Context) error
+	// Flush delivers buffered error reports. Called last, even if Save failed.
+	Flush func(ctx context.Context)
 }
 
 // GracefulShutdown runs the countdown on clock, then the save hook. It
@@ -44,10 +46,14 @@ func GracefulShutdown(ctx context.Context, clock world.Clock, countdown time.Dur
 			}
 		}
 	}
+	var err error
 	if h.Save != nil {
-		if err := h.Save(context.WithoutCancel(ctx)); err != nil {
-			return fmt.Errorf("save players: %w", err)
+		if e := h.Save(context.WithoutCancel(ctx)); e != nil {
+			err = fmt.Errorf("save players: %w", e)
 		}
 	}
-	return nil
+	if h.Flush != nil {
+		h.Flush(context.WithoutCancel(ctx))
+	}
+	return err
 }
