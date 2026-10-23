@@ -1,8 +1,9 @@
 /**
- * Placeholder walk speed in metres per second. The PRD has not decided the real value
- * (the server takes it from config); keep in sync with the server's MaxSpeed.
+ * Walk speed in metres per second, decided in PRD D-044 (walk 4 m/s, run 7 m/s).
+ * The server is the source of truth: this must match the server's LUSH_MOVE_SPEED default,
+ * and will be replaced by the value the server sends in Welcome.
  */
-export const MOVE_SPEED = 6;
+export const MOVE_SPEED = 4;
 
 export interface PendingInput {
   seq: number;
