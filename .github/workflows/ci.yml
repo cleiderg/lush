@@ -1,7 +1,7 @@
 # Required checks for every pull request and every push to main.
 # Jobs skip themselves until their part of the repo exists, so this file can be
 # committed on day one. Branch protection requires: server, client, protocol,
-# smoke, path-guard.
+# smoke, deploy, path-guard.
 name: ci
 
 on:
@@ -137,10 +137,22 @@ jobs:
       - name: Bot smoke test
         if: steps.has.outputs.yes == 'true'
         run: make smoke
+  
+  # shellcheck, systemd-analyze and the stub-based deploy script tests (owner decision in #58).
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect deploy-check target
+        id: has
+        run: if [ -f Makefile ] && grep -q '^deploy-check:' Makefile; then echo "yes=true" >> "$GITHUB_OUTPUT"; else echo "yes=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Deploy config checks
+        if: steps.has.outputs.yes == 'true'
+        run: make deploy-check
 
   alert-main-broken:
     runs-on: ubuntu-latest
-    needs: [server, client, protocol, smoke]
+    needs: [server, client, protocol, smoke, deploy]
     if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Post to Discord
