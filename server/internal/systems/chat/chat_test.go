@@ -92,8 +92,8 @@ func TestRateLimit(t *testing.T) {
 	for _, m := range r.got[2] {
 		texts = append(texts, m.Text)
 	}
-	if got := strings.Join(texts, "|"); got != "one|two" {
-		t.Errorf("player 2 heard %q, want one|two", got)
+	if got := strings.Join(texts, "|"); got != "one|other player ok|two" {
+		t.Errorf("player 2 heard %q, want one|other player ok|two", got)
 	}
 	if n := len(r.got[1]); n != 3 { // one, other player ok, two
 		t.Errorf("player 1 heard %d, want 3", n)
