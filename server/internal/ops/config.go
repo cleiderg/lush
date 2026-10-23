@@ -19,6 +19,8 @@ import (
 //	LUSH_MOVE_SPEED       walk speed, world units/s (default 4, PRD decision D-044)
 //	LUSH_SPAWN_X, LUSH_SPAWN_Z  guest spawn position (default 0, 0: map origin, centre of central campus)
 //	LUSH_SHUTDOWN_COUNTDOWN  restart countdown, Go duration (default 60s in production, 5s otherwise)
+//	LUSH_SAVE_INTERVAL    how often connected players' positions are saved, Go duration, > 0
+//	                      (default 5s, owner decision on #40); also saved on logout and shutdown
 //	LUSH_WS_ORIGINS       comma-separated page origins allowed to open a WebSocket
 //	                      besides the server's own host, e.g. "play.example.com,localhost:*"
 //	                      (default none: same-origin only)
@@ -31,11 +33,12 @@ type Config struct {
 	MoveSpeed         float32
 	SpawnX, SpawnZ    float32
 	WSOrigins         []string
+	SaveInterval      time.Duration
 }
 
 // LoadConfig builds a Config from getenv (os.Getenv in production).
 func LoadConfig(getenv func(string) string) (Config, error) {
-	c := Config{ListenAddr: ":8080", TickRate: 20, Env: "development"}
+	c := Config{ListenAddr: ":8080", TickRate: 20, Env: "development", SaveInterval: 5 * time.Second}
 	if v := getenv("LUSH_LISTEN_ADDR"); v != "" {
 		c.ListenAddr = v
 	}
@@ -79,6 +82,13 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 			return c, fmt.Errorf("LUSH_SHUTDOWN_COUNTDOWN %q: must be a non-negative duration", v)
 		}
 		c.ShutdownCountdown = d
+	}
+	if v := getenv("LUSH_SAVE_INTERVAL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 {
+			return c, fmt.Errorf("LUSH_SAVE_INTERVAL %q: must be a duration > 0", v)
+		}
+		c.SaveInterval = d
 	}
 	return c, nil
 }

@@ -25,6 +25,9 @@ import (
 // version is set at build time: -ldflags "-X main.version=1.2.3".
 var version = "dev"
 
+// saveTimeout bounds the final save so a stuck database cannot outlast the systemd stop timeout.
+const saveTimeout = 20 * time.Second
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	code := run(ctx, os.Getenv, realClock{}, os.Stdout)
@@ -52,9 +55,10 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		return 2
 	}
 	sess := session.New(session.Config{
-		TickRate:  cfg.TickRate,
-		Spawn:     world.Vec2{X: cfg.SpawnX, Y: cfg.SpawnZ},
-		MoveSpeed: cfg.MoveSpeed,
+		TickRate:     cfg.TickRate,
+		Spawn:        world.Vec2{X: cfg.SpawnX, Y: cfg.SpawnZ},
+		MoveSpeed:    cfg.MoveSpeed,
+		SaveInterval: cfg.SaveInterval,
 	}, w, clock, store.NewMemory(), log) // pgx store comes in P7
 	// Order matters: movement applies inputs, chat delivers, session snapshots last.
 	for _, s := range []world.System{mover, chat.New(chat.DefaultConfig(), clock, sess), sess} {
@@ -103,17 +107,21 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 	}
 
 	log.Info("shutdown requested", "countdown", cfg.ShutdownCountdown.String())
-	// Broadcast and save are placeholders until transport and store land.
 	err = ops.GracefulShutdown(context.Background(), clock, cfg.ShutdownCountdown, ops.ShutdownHooks{
 		Announce: func(r time.Duration) { log.Info("restart countdown", "seconds", int(r.Seconds())) },
-		Save: func(context.Context) error {
-			log.Info("saving players") // placeholder until the store lands
+		Save: func(ctx context.Context) error {
 			sess.BroadcastReload("server restarting")
-			return nil
+			log.Info("saving players")
+			ctx, cancel := context.WithTimeout(ctx, saveTimeout)
+			defer cancel()
+			cancelLoop() // stop the tick so the snapshot can read world state
+			<-loopDone
+			return sess.SaveAll(ctx)
 		},
 	})
 	cancelLoop()
 	<-loopDone
+	sess.Close()
 	shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if e := srv.Shutdown(shutCtx); e != nil && !errors.Is(e, http.ErrServerClosed) {

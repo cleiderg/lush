@@ -43,6 +43,9 @@ type Config struct {
 	// taken, the guest that has been offline longest loses its session id and
 	// the id is reused; that player gets a new id on its next Hello.
 	MaxGuests int
+	// SaveInterval is how often live players' positions are saved
+	// (0 = DefaultSaveInterval).
+	SaveInterval time.Duration
 }
 
 // InputCommand is a client Input as a world command.
@@ -61,6 +64,7 @@ type guest struct {
 	// Guarded by Server.mu.
 	id      world.PlayerID
 	storeID int64
+	ver     int64         // store version at load; immutable
 	pos     world.Vec2    // last position, restored on resume
 	conns   int           // connections that completed the handshake and have not ended
 	idle    *list.Element // in Server.idle while conns == 0
@@ -93,12 +97,16 @@ type Server struct {
 	ops    []op
 	conns  map[transport.Conn]struct{}
 
+	saver *saver
+
 	// Tick-goroutine only.
-	live map[world.PlayerID]*guest
-	grid *interest.Grid
-	hits []interest.Hit
-	ents []*world.Player
-	bld  *flatbuffers.Builder
+	live     map[world.PlayerID]*guest
+	nextSave time.Time
+	saves    []saveReq
+	grid     *interest.Grid
+	hits     []interest.Hit
+	ents     []*world.Player
+	bld      *flatbuffers.Builder
 }
 
 // New creates the Server. Register it on w after the movement and chat systems.
@@ -115,10 +123,13 @@ func New(cfg Config, w *world.World, clock world.Clock, players store.Players, l
 	if cfg.TickRate <= 0 {
 		cfg.TickRate = int(time.Second / w.TickInterval())
 	}
+	if cfg.SaveInterval <= 0 {
+		cfg.SaveInterval = DefaultSaveInterval
+	}
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &Server{cfg: cfg, w: w, log: log, clock: clock, store: players,
+	return &Server{saver: newSaver(players, log), cfg: cfg, w: w, log: log, clock: clock, store: players,
 		guests: map[int64]*guest{}, idle: list.New(), conns: map[transport.Conn]struct{}{},
 		live: map[world.PlayerID]*guest{}, grid: interest.NewGrid(), bld: flatbuffers.NewBuilder(1024)}
 }
@@ -287,7 +298,7 @@ func (s *Server) guestLocked(sp store.Player, fresh bool) (*guest, error) {
 	if !fresh && sp.Version > 1 { // version 1 has never been saved
 		pos = world.Vec2{X: sp.X, Y: sp.Z}
 	}
-	g := &guest{id: id, storeID: sp.ID, pos: pos}
+	g := &guest{id: id, storeID: sp.ID, ver: sp.Version, pos: pos}
 	s.guests[sp.ID] = g
 	return g, nil
 }
@@ -360,6 +371,13 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		}
 	}
 
+	if now := s.clock.Now(); !now.Before(s.nextSave) {
+		if !s.nextSave.IsZero() {
+			s.saver.submit(s.collectSaves())
+		}
+		s.nextSave = now.Add(s.cfg.SaveInterval)
+	}
+
 	for _, p := range w.Players() {
 		s.grid.Set(p.ID, p.Pos)
 	}
@@ -417,6 +435,10 @@ func (s *Server) leave(g *guest, c transport.Conn) {
 		g.pos = p.Pos
 		s.mu.Unlock()
 	}
+	s.mu.Lock()
+	pos := g.pos
+	s.mu.Unlock()
+	s.saver.submit([]saveReq{{storeID: g.storeID, x: pos.X, z: pos.Y, ver: g.ver}})
 	s.w.RemovePlayer(g.id)
 	s.grid.Remove(g.id)
 	delete(s.live, g.id)
@@ -429,3 +451,28 @@ func (s *Server) Deliver(to world.PlayerID, m chat.Message) {
 		g.conn.Send(encodeChat(m.From, m.Text))
 	}
 }
+
+// collectSaves copies (store id, position, version) of every live player into
+// a reused buffer. Tick goroutine only; the saver copies what it keeps.
+func (s *Server) collectSaves() []saveReq {
+	s.saves = s.saves[:0]
+	for id, g := range s.live {
+		if p := s.w.Player(id); p != nil {
+			s.saves = append(s.saves, saveReq{storeID: g.storeID, x: p.Pos.X, z: p.Pos.Y, ver: g.ver})
+		}
+	}
+	return s.saves
+}
+
+// SaveAll saves every connected player and waits until all pending saves are
+// written. The caller must have stopped the world tick first, because it reads
+// world state from the calling goroutine. It returns an error if ctx ends
+// first or any save failed.
+func (s *Server) SaveAll(ctx context.Context) error {
+	s.saver.submit(s.collectSaves())
+	return s.saver.flush(ctx)
+}
+
+// Close stops the saver after its current write. Call SaveAll first to keep
+// pending saves.
+func (s *Server) Close() { s.saver.close() }

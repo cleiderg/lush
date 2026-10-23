@@ -14,6 +14,19 @@ import (
 
 func env(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
 
+func TestSaveInterval(t *testing.T) {
+	for _, tc := range []struct {
+		v    string
+		want time.Duration
+		err  bool
+	}{{"", 5 * time.Second, false}, {"12s", 12 * time.Second, false}, {"0", 0, true}, {"-1s", 0, true}, {"often", 0, true}} {
+		got, err := LoadConfig(env(map[string]string{"LUSH_SAVE_INTERVAL": tc.v}))
+		if (err != nil) != tc.err || (!tc.err && got.SaveInterval != tc.want) {
+			t.Errorf("%q: got %v, %v", tc.v, got.SaveInterval, err)
+		}
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	tests := []struct {
 		name string
@@ -21,12 +34,12 @@ func TestLoadConfig(t *testing.T) {
 		want Config
 		err  bool
 	}{
-		{"defaults", nil, Config{":8080", 20, "", "development", 5 * time.Second, 4, 0, 0, nil}, false},
-		{"production default countdown", map[string]string{"LUSH_ENV": "production"}, Config{":8080", 20, "", "production", 60 * time.Second, 4, 0, 0, nil}, false},
+		{"defaults", nil, Config{":8080", 20, "", "development", 5 * time.Second, 4, 0, 0, nil, 5 * time.Second}, false},
+		{"production default countdown", map[string]string{"LUSH_ENV": "production"}, Config{":8080", 20, "", "production", 60 * time.Second, 4, 0, 0, nil, 5 * time.Second}, false},
 		{"overrides", map[string]string{"LUSH_LISTEN_ADDR": ":9", "LUSH_TICK_RATE": "10", "LUSH_DATABASE_URL": "x", "LUSH_ENV": "production", "LUSH_SHUTDOWN_COUNTDOWN": "7s"},
-			Config{":9", 10, "x", "production", 7 * time.Second, 4, 0, 0, nil}, false},
+			Config{":9", 10, "x", "production", 7 * time.Second, 4, 0, 0, nil, 5 * time.Second}, false},
 		{"ws origins", map[string]string{"LUSH_WS_ORIGINS": " play.example.com, ,localhost:*"},
-			Config{":8080", 20, "", "development", 5 * time.Second, 4, 0, 0, []string{"play.example.com", "localhost:*"}}, false},
+			Config{":8080", 20, "", "development", 5 * time.Second, 4, 0, 0, []string{"play.example.com", "localhost:*"}, 5 * time.Second}, false},
 		{"bad tick", map[string]string{"LUSH_TICK_RATE": "0"}, Config{}, true},
 		{"bad countdown", map[string]string{"LUSH_SHUTDOWN_COUNTDOWN": "soon"}, Config{}, true},
 	}
