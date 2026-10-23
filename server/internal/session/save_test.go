@@ -30,12 +30,14 @@ type recStore struct {
 	store.Players
 	mu    sync.Mutex
 	saves []saveRec
+	calls int // Save calls started
 	fail  error
 	block chan struct{}
 }
 
 func (s *recStore) Save(ctx context.Context, p store.Player) (store.Player, error) {
 	s.mu.Lock()
+	s.calls++
 	fail, block := s.fail, s.block
 	s.mu.Unlock()
 	if block != nil {
@@ -60,6 +62,12 @@ func (s *recStore) set(fail error, block chan struct{}) {
 	s.mu.Lock()
 	s.fail, s.block = fail, block
 	s.mu.Unlock()
+}
+
+func (s *recStore) started() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls
 }
 
 func (s *recStore) snapshot() []saveRec {
@@ -208,35 +216,57 @@ func TestDisconnectSavesFinalPosition(t *testing.T) {
 
 func TestSavesInterleaveWithoutStaleVersion(t *testing.T) {
 	r := newSaveRig(t)
-	id, sid, c := r.join()
-	r.w.Tick()
-
-	// Hold the first periodic save in flight while a second interval and the
-	// disconnect queue behind it.
-	block := make(chan struct{})
-	r.st.set(nil, block)
-	r.intervalPasses()
-	r.intervalPasses()
-	c.c.CloseNow()
-	r.tickUntilGone(id)
-	close(block)
-
-	// Reconnect with the same guest and run a shutdown save too.
-	r.st.waitFor(t, "disconnect save", func() bool { ok, _ := r.st.count(sid); return ok >= 2 })
-	for _, rec := range r.st.snapshot() {
-		if rec.err != nil {
-			t.Fatalf("save failed: %v", rec.err)
-		}
-	}
-	if err := r.sess.SaveAll(context.Background()); err != nil {
+	v := uint16(protocol.ProtocolVersionCurrent)
+	c := r.dial(hello(v, ""))
+	pid, tok := r.expectWelcome(c)
+	id := world.PlayerID(pid)
+	sp, err := r.st.Players.LoadByTokenHash(context.Background(), sha(tok))
+	if err != nil {
 		t.Fatal(err)
 	}
-	prev := int64(0)
-	for _, rec := range r.st.snapshot() {
-		if rec.p.Version <= prev {
-			t.Fatalf("versions not increasing: %+v", r.st.snapshot())
+	sid := sp.ID
+	r.w.Tick()
+
+	// The store lets one save through per receive on gate, so each save is
+	// held in flight while the next one queues behind it.
+	gate := make(chan struct{})
+	r.st.set(nil, gate)
+
+	// Periodic save in flight; the disconnect save queues behind it.
+	r.intervalPasses()
+	r.st.waitFor(t, "periodic save started", func() bool { return r.st.started() == 1 })
+	c.c.CloseNow()
+	r.tickUntilGone(id)
+	gate <- struct{}{}
+	r.st.waitFor(t, "disconnect save started", func() bool { return r.st.started() == 2 })
+
+	// The same guest reconnects (its session still holds the version it was
+	// first loaded with) and the server shuts down while the disconnect save
+	// is in flight.
+	r.expectWelcome(r.dial(hello(v, tok)))
+	want := r.w.Player(id).Pos
+	errc := make(chan error, 1)
+	go func() { errc <- r.sess.SaveAll(context.Background()) }()
+	close(gate)
+	if err := <-errc; err != nil {
+		t.Fatalf("shutdown save: %v", err)
+	}
+
+	recs := r.st.snapshot()
+	if len(recs) != 3 {
+		t.Fatalf("got %d saves, want periodic, disconnect and shutdown: %+v", len(recs), recs)
+	}
+	for i, rec := range recs {
+		if rec.err != nil || rec.p.ID != sid || rec.p.Version != int64(i+1) {
+			t.Fatalf("save %d: %+v (err %v), want version %d with no error", i, rec.p, rec.err, i+1)
 		}
-		prev = rec.p.Version
+	}
+	got, err := r.st.Players.LoadByTokenHash(context.Background(), sha(tok))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != 4 || got.X != want.X || got.Z != want.Y {
+		t.Fatalf("stored %+v, want version 4 at %v", got, want)
 	}
 }
 
