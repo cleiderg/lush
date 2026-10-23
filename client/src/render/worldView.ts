@@ -1,0 +1,13 @@
+/** Read-only snapshot of what the renderer needs. src/state provides it; render never mutates it. */
+export interface PlayerView {
+  readonly id: number;
+  readonly x: number;
+  readonly z: number;
+  /** Facing in radians around +Y; 0 faces +Z. */
+  readonly heading: number;
+}
+
+export interface WorldView {
+  readonly local: PlayerView;
+  readonly remotes: readonly PlayerView[];
+}
