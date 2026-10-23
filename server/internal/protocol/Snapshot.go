@@ -17,19 +17,11 @@ func GetRootAsSnapshot(buf []byte, offset flatbuffers.UOffsetT) *Snapshot {
 	return x
 }
 
-func FinishSnapshotBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.Finish(offset)
-}
-
 func GetSizePrefixedRootAsSnapshot(buf []byte, offset flatbuffers.UOffsetT) *Snapshot {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &Snapshot{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
-}
-
-func FinishSizePrefixedSnapshotBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *Snapshot) Init(buf []byte, i flatbuffers.UOffsetT) {

@@ -17,19 +17,11 @@ func GetRootAsReload(buf []byte, offset flatbuffers.UOffsetT) *Reload {
 	return x
 }
 
-func FinishReloadBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.Finish(offset)
-}
-
 func GetSizePrefixedRootAsReload(buf []byte, offset flatbuffers.UOffsetT) *Reload {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &Reload{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
-}
-
-func FinishSizePrefixedReloadBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *Reload) Init(buf []byte, i flatbuffers.UOffsetT) {

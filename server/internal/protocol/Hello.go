@@ -17,19 +17,11 @@ func GetRootAsHello(buf []byte, offset flatbuffers.UOffsetT) *Hello {
 	return x
 }
 
-func FinishHelloBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.Finish(offset)
-}
-
 func GetSizePrefixedRootAsHello(buf []byte, offset flatbuffers.UOffsetT) *Hello {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &Hello{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
-}
-
-func FinishSizePrefixedHelloBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *Hello) Init(buf []byte, i flatbuffers.UOffsetT) {

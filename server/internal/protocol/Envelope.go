@@ -17,19 +17,11 @@ func GetRootAsEnvelope(buf []byte, offset flatbuffers.UOffsetT) *Envelope {
 	return x
 }
 
-func FinishEnvelopeBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.Finish(offset)
-}
-
 func GetSizePrefixedRootAsEnvelope(buf []byte, offset flatbuffers.UOffsetT) *Envelope {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &Envelope{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
-}
-
-func FinishSizePrefixedEnvelopeBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *Envelope) Init(buf []byte, i flatbuffers.UOffsetT) {

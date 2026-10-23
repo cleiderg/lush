@@ -17,19 +17,11 @@ func GetRootAsPing(buf []byte, offset flatbuffers.UOffsetT) *Ping {
 	return x
 }
 
-func FinishPingBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.Finish(offset)
-}
-
 func GetSizePrefixedRootAsPing(buf []byte, offset flatbuffers.UOffsetT) *Ping {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &Ping{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
-}
-
-func FinishSizePrefixedPingBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *Ping) Init(buf []byte, i flatbuffers.UOffsetT) {

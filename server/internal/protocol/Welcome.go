@@ -17,19 +17,11 @@ func GetRootAsWelcome(buf []byte, offset flatbuffers.UOffsetT) *Welcome {
 	return x
 }
 
-func FinishWelcomeBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.Finish(offset)
-}
-
 func GetSizePrefixedRootAsWelcome(buf []byte, offset flatbuffers.UOffsetT) *Welcome {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &Welcome{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
-}
-
-func FinishSizePrefixedWelcomeBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *Welcome) Init(buf []byte, i flatbuffers.UOffsetT) {

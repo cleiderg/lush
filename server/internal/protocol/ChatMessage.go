@@ -17,19 +17,11 @@ func GetRootAsChatMessage(buf []byte, offset flatbuffers.UOffsetT) *ChatMessage 
 	return x
 }
 
-func FinishChatMessageBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.Finish(offset)
-}
-
 func GetSizePrefixedRootAsChatMessage(buf []byte, offset flatbuffers.UOffsetT) *ChatMessage {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &ChatMessage{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
-}
-
-func FinishSizePrefixedChatMessageBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *ChatMessage) Init(buf []byte, i flatbuffers.UOffsetT) {
