@@ -1,8 +1,8 @@
 import * as flatbuffers from 'flatbuffers';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Envelope, Hello, Message, Reload, Welcome, Vec2 } from '../protocol';
 import { decode } from './codec';
-import { Session, type TokenStore } from './session';
+import { localTokenStore, Session, TOKEN_KEY, type TokenStore } from './session';
 import type { Transport } from './transport';
 
 class FakeTransport implements Transport {
@@ -103,5 +103,30 @@ describe('Session', () => {
 
   it('decodes welcome', () => {
     expect(decode(welcome('x'))).toMatchObject({ type: 'welcome', playerId: 7, guestToken: 'x', tickRate: 20 });
+  });
+});
+
+describe('localTokenStore', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('keeps the guest token in localStorage', () => {
+    const data = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => data.get(k) ?? null,
+      setItem: (k: string, v: string) => { data.set(k, v); },
+    });
+    const store = localTokenStore();
+    expect(store.get()).toBe('');
+    store.set('guest-9');
+    expect(data.get(TOKEN_KEY)).toBe('guest-9');
+    expect(store.get()).toBe('guest-9');
+  });
+
+  it('survives storage that throws', () => {
+    const boom = () => { throw new Error('SecurityError'); };
+    vi.stubGlobal('localStorage', { getItem: boom, setItem: boom });
+    const store = localTokenStore();
+    expect(() => store.set('guest-9')).not.toThrow();
+    expect(store.get()).toBe('');
   });
 });

@@ -33,6 +33,8 @@ session.start();
 new GameLoop({
   update: (stepMs) => {
     const m = controls.worldMove();
+    // Inputs the server will never see would pile up unacknowledged; Welcome resets prediction anyway.
+    if (!session.connected) return;
     const input = game.prediction.applyInput(m.x, m.y, stepMs / 1000);
     session.send(encodeInput(input.seq, m.x, m.y, game.heading));
   },
