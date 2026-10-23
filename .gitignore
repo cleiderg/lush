@@ -15,3 +15,7 @@ dist/
 
 # Agent worktrees
 .claude/worktrees/
+
+# Bots: build-time copy of the generated protocol code, and built binaries
+/tools/bots/internal/protocol/
+/tools/bots/bin/
