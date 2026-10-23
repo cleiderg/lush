@@ -28,6 +28,9 @@ func TestMovementClamp(t *testing.T) {
 		{"normal move", world.Vec2{X: 0.2, Y: 0}, world.Vec2{X: 0.2, Y: 0}, world.AnimWalk, true},
 		{"over-speed move", world.Vec2{X: 3, Y: 0}, world.Vec2{X: 0.3, Y: 0}, world.AnimWalk, false},
 		{"teleport attempt", world.Vec2{X: 3000, Y: 4000}, world.Vec2{X: 0.18, Y: 0.24}, world.AnimWalk, false},
+		{"huge finite target", world.Vec2{X: math.MaxFloat32, Y: 0}, world.Vec2{X: 0.3, Y: 0}, world.AnimWalk, false},
+		{"NaN target ignored", world.Vec2{X: float32(math.NaN()), Y: 0}, world.Vec2{}, world.AnimIdle, true},
+		{"Inf target ignored", world.Vec2{X: 0, Y: float32(math.Inf(-1))}, world.Vec2{}, world.AnimIdle, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
