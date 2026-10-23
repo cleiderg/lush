@@ -1,0 +1,24 @@
+[Unit]
+Description=Lush game server (staging)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=lush
+Group=lush
+EnvironmentFile=/etc/lush/staging.env
+ExecStart=/opt/lush/staging/current/lush-server
+WorkingDirectory=/opt/lush/staging/current
+Restart=on-failure
+RestartSec=2s
+# SIGTERM starts the in-game restart countdown (60s in production), then the
+# final save (20s) and HTTP shutdown (5s); 150s leaves headroom.
+KillSignal=SIGTERM
+TimeoutStopSec=150s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,6 @@
 # Root build entry points. Parts of the repo that don't exist yet are skipped.
 SHELL := /bin/bash
-.PHONY: protocol test lint build smoke loadtest bots
+.PHONY: protocol test lint build smoke loadtest bots deploy-check
 
 HAS_GO  := $(wildcard server/go.mod)
 HAS_NPM := $(wildcard client/package.json)
@@ -84,3 +84,9 @@ else
 	$(MAKE) --no-print-directory bots
 	tools/bots/bin/bots -url "$(LOADTEST_URL)" -bots 1000 -radius 25 -ramp 30s -duration 60s -out "$(LOADTEST_OUT)"
 endif
+
+# Static checks of deploy/ (units and env templates). In CI (CI=true) a missing
+# systemd-analyze is a failure.
+deploy-check:
+	scripts/dev/deploy-check.sh --self-test
+	scripts/dev/deploy-check.sh
