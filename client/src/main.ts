@@ -1,9 +1,12 @@
+import { initErrorReporting } from './core/errorReporting';
 import { GameLoop } from './core/loop';
 import { encodeInput } from './net/codec';
 import { localTokenStore, Session } from './net/session';
 import { WebSocketTransport } from './net/transport';
 import { GameState } from './state/world';
 import { Controls } from './ui/controls';
+
+initErrorReporting();
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d');
