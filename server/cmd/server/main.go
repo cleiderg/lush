@@ -14,6 +14,7 @@ import (
 
 	"github.com/cleiderg/lush/server/internal/ops"
 	"github.com/cleiderg/lush/server/internal/session"
+	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
 	"github.com/cleiderg/lush/server/internal/systems/movement"
 	"github.com/cleiderg/lush/server/internal/transport"
@@ -53,7 +54,7 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		TickRate:  cfg.TickRate,
 		Spawn:     world.Vec2{X: cfg.SpawnX, Y: cfg.SpawnZ},
 		MoveSpeed: cfg.MoveSpeed,
-	}, w, clock, log)
+	}, w, clock, store.NewMemory(), log) // pgx store comes in P7
 	// Order matters: movement applies inputs, chat delivers, session snapshots last.
 	for _, s := range []world.System{mover, chat.New(chat.DefaultConfig(), clock, sess), sess} {
 		if err := w.Register(s); err != nil {

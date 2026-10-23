@@ -1,0 +1,221 @@
+package session_test
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/coder/websocket"
+
+	"github.com/cleiderg/lush/server/internal/protocol"
+	"github.com/cleiderg/lush/server/internal/session"
+	"github.com/cleiderg/lush/server/internal/store"
+	"github.com/cleiderg/lush/server/internal/world"
+)
+
+// spyStore records what the session hands the store and can block or fail loads.
+type spyStore struct {
+	store.Players
+	creates atomic.Int32
+	hashes  chan string // every hash seen, buffered
+	block   chan struct{}
+	failErr error
+}
+
+func newSpy() *spyStore {
+	return &spyStore{Players: store.NewMemory(), hashes: make(chan string, 64)}
+}
+
+func (s *spyStore) CreateGuest(ctx context.Context, h string) (store.Player, error) {
+	s.creates.Add(1)
+	s.hashes <- h
+	return s.Players.CreateGuest(ctx, h)
+}
+
+func (s *spyStore) LoadByTokenHash(ctx context.Context, h string) (store.Player, error) {
+	s.hashes <- h
+	if s.failErr != nil {
+		return store.Player{}, s.failErr
+	}
+	if s.block != nil {
+		select {
+		case <-s.block:
+		case <-ctx.Done():
+			return store.Player{}, ctx.Err()
+		}
+	}
+	return s.Players.LoadByTokenHash(ctx, h)
+}
+
+func sha(tok string) string {
+	h := sha256.Sum256([]byte(tok))
+	return hex.EncodeToString(h[:])
+}
+
+func cfg() session.Config {
+	return session.Config{TickRate: 20, MoveSpeed: 5, HelloTimeout: time.Second, Spawn: world.Vec2{X: 7, Y: 9}}
+}
+
+func welcomeSpawn(t *testing.T, r *rig, c *client) (uint16, float32, float32) {
+	t.Helper()
+	typ, tbl := r.next(c)
+	if typ != protocol.MessageWelcome {
+		t.Fatalf("got %v, want Welcome", typ)
+	}
+	var w protocol.Welcome
+	w.Init(tbl.Bytes, tbl.Pos)
+	return w.PlayerId(), w.Spawn(nil).X(), w.Spawn(nil).Z()
+}
+
+func TestRestartResumesStoredPlayerAtStoredPosition(t *testing.T) {
+	spy := newSpy()
+	v := uint16(protocol.ProtocolVersionCurrent)
+	r1 := newRigStore(t, 16, cfg(), spy)
+	c1 := r1.dial(hello(v, ""))
+	_, tok := r1.expectWelcome(c1)
+	sp, err := spy.Players.LoadByTokenHash(context.Background(), sha(tok))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := spy.Players.Save(context.Background(), store.Player{ID: sp.ID, X: 40, Z: 50, Version: sp.Version}); err != nil {
+		t.Fatal(err)
+	}
+
+	// "Restart": a new world and session over the same store.
+	r2 := newRigStore(t, 16, cfg(), spy)
+	before := spy.creates.Load()
+	c2 := r2.dial(hello(v, tok))
+	_, x, z := welcomeSpawn(t, r2, c2)
+	if x != 40 || z != 50 {
+		t.Fatalf("resumed at %v,%v, want 40,50", x, z)
+	}
+	if spy.creates.Load() != before {
+		t.Fatal("resume created a new stored player")
+	}
+	got, err := spy.Players.LoadByTokenHash(context.Background(), sha(tok))
+	if err != nil || got.ID != sp.ID {
+		t.Fatalf("store id %d err %v, want %d", got.ID, err, sp.ID)
+	}
+}
+
+func TestOnlyTokenHashReachesStore(t *testing.T) {
+	spy := newSpy()
+	r := newRigStore(t, 16, cfg(), spy)
+	c := r.dial(hello(uint16(protocol.ProtocolVersionCurrent), ""))
+	_, tok := r.expectWelcome(c)
+	c2 := r.dial(hello(uint16(protocol.ProtocolVersionCurrent), tok))
+	r.expectWelcome(c2)
+	close(spy.hashes)
+	for h := range spy.hashes {
+		if h == tok || h != sha(tok) {
+			t.Fatalf("store saw %q, want only sha256(token)", h)
+		}
+	}
+}
+
+func TestUnknownTokenCreatesPlayerAtSpawn(t *testing.T) {
+	spy := newSpy()
+	r := newRigStore(t, 16, cfg(), spy)
+	c := r.dial(hello(uint16(protocol.ProtocolVersionCurrent), "stale-or-forged"))
+	_, x, z := welcomeSpawn(t, r, c)
+	if x != 7 || z != 9 {
+		t.Fatalf("spawned at %v,%v, want 7,9", x, z)
+	}
+	if spy.creates.Load() != 1 {
+		t.Fatalf("creates = %d, want 1", spy.creates.Load())
+	}
+}
+
+func TestReclaimedSessionIdResumesUnderNewId(t *testing.T) {
+	spy := newSpy()
+	c0 := cfg()
+	c0.MaxGuests = 2
+	r := newRigStore(t, 16, c0, spy)
+	v := uint16(protocol.ProtocolVersionCurrent)
+	a := r.dial(hello(v, ""))
+	idA, tokA := r.expectWelcome(a)
+	b := r.dial(hello(v, ""))
+	idB, _ := r.expectWelcome(b)
+
+	a.c.Close(websocket.StatusNormalClosure, "")
+	for deadline := time.Now().Add(5 * time.Second); len(r.w.Players()) != 1; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("first guest never left")
+		}
+		r.w.Tick()
+	}
+	d := r.dial(hello(v, ""))
+	if id, _ := r.expectWelcome(d); id != idA {
+		t.Fatalf("new guest id %d, want reclaimed %d", id, idA)
+	}
+	b.c.Close(websocket.StatusNormalClosure, "")
+	for deadline := time.Now().Add(5 * time.Second); len(r.w.Players()) != 1; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("guests never left")
+		}
+		r.w.Tick()
+	}
+	// A's session id now belongs to someone else; A resumes the same stored player.
+	want, err := spy.Players.LoadByTokenHash(context.Background(), sha(tokA))
+	if err != nil {
+		t.Fatal(err)
+	}
+	creates := spy.creates.Load()
+	a2 := r.dial(hello(v, tokA))
+	id, tok := r.expectWelcome(a2)
+	if tok != tokA || spy.creates.Load() != creates {
+		t.Fatal("old token did not resume its stored player")
+	}
+	if id != idB {
+		t.Fatalf("resumed under id %d, want the id %d freed by the other guest", id, idB)
+	}
+	if id == idA {
+		t.Fatalf("resumed under the reclaimed id %d", id)
+	}
+	if got, _ := spy.Players.LoadByTokenHash(context.Background(), sha(tokA)); got.ID != want.ID {
+		t.Fatal("store id changed")
+	}
+}
+
+func TestBlockedStoreDoesNotStallTicks(t *testing.T) {
+	spy := newSpy()
+	r := newRigStore(t, 16, cfg(), spy)
+	v := uint16(protocol.ProtocolVersionCurrent)
+	a := r.dial(hello(v, ""))
+	_, tok := r.expectWelcome(a)
+
+	spy.block = make(chan struct{})
+	defer close(spy.block)
+	r.dial(hello(v, tok)) // handshake parks in LoadByTokenHash
+	for len(spy.hashes) > 0 {
+		<-spy.hashes
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	start := r.w.TickCount()
+	typ, _ := r.next(a) // ticks the world while waiting
+	_ = typ
+	r.waitFor(a, protocol.MessageSnapshot)
+	if r.w.TickCount() <= start {
+		t.Fatal("ticks did not advance while the store blocked")
+	}
+}
+
+func TestStoreErrorEndsConnection(t *testing.T) {
+	spy := newSpy()
+	spy.failErr = errors.New("db down")
+	r := newRigStore(t, 16, cfg(), spy)
+	c := r.dial(hello(uint16(protocol.ProtocolVersionCurrent), "some-token"))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, _, err := c.c.Read(ctx); err == nil {
+		t.Fatal("expected the connection to end")
+	}
+	if n := len(r.w.Players()); n != 0 {
+		t.Fatalf("%d players in world, want 0", n)
+	}
+}

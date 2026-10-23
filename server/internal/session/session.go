@@ -11,7 +11,9 @@ import (
 	"container/list"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -23,6 +25,7 @@ import (
 
 	"github.com/cleiderg/lush/server/internal/interest"
 	"github.com/cleiderg/lush/server/internal/protocol"
+	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
 	"github.com/cleiderg/lush/server/internal/transport"
 	"github.com/cleiderg/lush/server/internal/world"
@@ -36,9 +39,9 @@ type Config struct {
 	HelloTimeout time.Duration // how long a connection may stay silent before Hello
 	// MaxMsgPerSec disconnects clients that send faster than this (0 = 120).
 	MaxMsgPerSec int
-	// MaxGuests caps guest ids (0 = 65535, the wire limit). When every id is
-	// taken, the guest that has been offline longest is forgotten and its id
-	// reused.
+	// MaxGuests caps session ids (0 = 65535, the wire limit). When every id is
+	// taken, the guest that has been offline longest loses its session id and
+	// the id is reused; that player gets a new id on its next Hello.
 	MaxGuests int
 }
 
@@ -56,11 +59,11 @@ func (c InputCommand) Target() world.PlayerID { return c.Player }
 
 type guest struct {
 	// Guarded by Server.mu.
-	id    world.PlayerID
-	token string
-	pos   world.Vec2    // last position, restored on resume
-	conns int           // connections that completed the handshake and have not ended
-	idle  *list.Element // in Server.idle while conns == 0
+	id      world.PlayerID
+	storeID int64
+	pos     world.Vec2    // last position, restored on resume
+	conns   int           // connections that completed the handshake and have not ended
+	idle    *list.Element // in Server.idle while conns == 0
 
 	// Tick-goroutine only.
 	conn    transport.Conn
@@ -68,9 +71,10 @@ type guest struct {
 }
 
 type op struct {
-	join bool
-	g    *guest
-	conn transport.Conn
+	join  bool
+	g     *guest
+	conn  transport.Conn
+	token string // raw token, only carried to Welcome
 }
 
 // Server is the session layer. It implements world.System, chat.Sink and
@@ -80,9 +84,10 @@ type Server struct {
 	w     *world.World
 	log   *slog.Logger
 	clock world.Clock
+	store store.Players
 
 	mu     sync.Mutex
-	guests map[string]*guest // by token
+	guests map[int64]*guest // by store id; session ids for known players
 	nextID uint32
 	idle   *list.List // offline guests, longest offline first
 	ops    []op
@@ -97,7 +102,7 @@ type Server struct {
 }
 
 // New creates the Server. Register it on w after the movement and chat systems.
-func New(cfg Config, w *world.World, clock world.Clock, log *slog.Logger) *Server {
+func New(cfg Config, w *world.World, clock world.Clock, players store.Players, log *slog.Logger) *Server {
 	if cfg.HelloTimeout <= 0 {
 		cfg.HelloTimeout = 10 * time.Second
 	}
@@ -113,8 +118,8 @@ func New(cfg Config, w *world.World, clock world.Clock, log *slog.Logger) *Serve
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &Server{cfg: cfg, w: w, log: log, clock: clock,
-		guests: map[string]*guest{}, idle: list.New(), conns: map[transport.Conn]struct{}{},
+	return &Server{cfg: cfg, w: w, log: log, clock: clock, store: players,
+		guests: map[int64]*guest{}, idle: list.New(), conns: map[transport.Conn]struct{}{},
 		live: map[world.PlayerID]*guest{}, grid: interest.NewGrid(), bld: flatbuffers.NewBuilder(1024)}
 }
 
@@ -197,18 +202,24 @@ func (s *Server) handshake(ctx context.Context, c transport.Conn) *guest {
 		return nil
 	}
 
+	// Store calls happen here, on the connection goroutine, outside s.mu.
+	sp, token, fresh, err := s.resolve(hctx, m.helloTok)
+	if err != nil {
+		s.log.Error("resolve guest", "err", err)
+		return nil
+	}
+
 	s.mu.Lock()
-	g, ok := s.guests[m.helloTok]
-	if !ok || m.helloTok == "" {
-		if g, err = s.newGuestLocked(); g == nil {
-			s.mu.Unlock()
-			if err != nil {
-				s.log.Error("guest token", "err", err)
-			} else {
-				c.Send(encodeReload("server full"))
-			}
-			return nil
-		}
+	g, err := s.guestLocked(sp, fresh)
+	if err != nil {
+		s.mu.Unlock()
+		s.log.Error("guest", "err", err)
+		return nil
+	}
+	if g == nil {
+		s.mu.Unlock()
+		c.Send(encodeReload("server full"))
+		return nil
 	}
 	g.conns++
 	if g.idle != nil {
@@ -217,19 +228,48 @@ func (s *Server) handshake(ctx context.Context, c transport.Conn) *guest {
 	}
 	// Welcome is sent by the tick once the player is in the world, so any
 	// command the client sends after receiving it finds its player.
-	s.ops = append(s.ops, op{join: true, g: g, conn: c})
+	s.ops = append(s.ops, op{join: true, g: g, conn: c, token: token})
 	s.mu.Unlock()
 	return g
 }
 
-// newGuestLocked creates a guest with a fresh token. When every id is in use
-// it forgets the guest offline longest and reuses its id; that guest's leave
-// is already queued ahead of the new join. It returns nil if all guests are
-// online. Caller holds s.mu.
-func (s *Server) newGuestLocked() (*guest, error) {
-	tok, err := newToken()
+func hashToken(tok string) string {
+	h := sha256.Sum256([]byte(tok))
+	return hex.EncodeToString(h[:])
+}
+
+// resolve finds the stored player for a Hello token, or creates one with a
+// fresh token when the token is empty or unknown. fresh reports a created
+// player. Only the token's SHA-256 reaches the store.
+func (s *Server) resolve(ctx context.Context, tok string) (sp store.Player, token string, fresh bool, err error) {
+	if tok != "" {
+		sp, err = s.store.LoadByTokenHash(ctx, hashToken(tok))
+		if err == nil {
+			return sp, tok, false, nil
+		}
+		if !errors.Is(err, store.ErrNotFound) {
+			return sp, "", false, fmt.Errorf("load guest: %w", err)
+		}
+	}
+	tok, err = newToken()
 	if err != nil {
-		return nil, err
+		return sp, "", false, err
+	}
+	sp, err = s.store.CreateGuest(ctx, hashToken(tok))
+	if err != nil {
+		return sp, "", false, fmt.Errorf("create guest: %w", err)
+	}
+	return sp, tok, true, nil
+}
+
+// guestLocked returns the session guest for a stored player, assigning a
+// session id if it has none. When every id is in use it drops the id of the
+// guest offline longest and reuses it; that guest's leave is already queued
+// ahead of the new join. It returns nil if all guests are online.
+// Caller holds s.mu.
+func (s *Server) guestLocked(sp store.Player, fresh bool) (*guest, error) {
+	if g := s.guests[sp.ID]; g != nil {
+		return g, nil
 	}
 	var id world.PlayerID
 	if int(s.nextID) < s.cfg.MaxGuests {
@@ -237,13 +277,18 @@ func (s *Server) newGuestLocked() (*guest, error) {
 		id = world.PlayerID(s.nextID)
 	} else if e := s.idle.Front(); e != nil {
 		old := s.idle.Remove(e).(*guest)
-		delete(s.guests, old.token)
+		old.idle = nil
+		delete(s.guests, old.storeID)
 		id = old.id
 	} else {
 		return nil, nil
 	}
-	g := &guest{id: id, token: tok, pos: s.cfg.Spawn}
-	s.guests[tok] = g
+	pos := s.cfg.Spawn
+	if !fresh && sp.Version > 1 { // version 1 has never been saved
+		pos = world.Vec2{X: sp.X, Y: sp.Z}
+	}
+	g := &guest{id: id, storeID: sp.ID, pos: pos}
+	s.guests[sp.ID] = g
 	return g, nil
 }
 
@@ -309,7 +354,7 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 	s.mu.Unlock()
 	for _, o := range ops {
 		if o.join {
-			s.join(o.g, o.conn)
+			s.join(o.g, o.conn, o.token)
 		} else {
 			s.leave(o.g, o.conn)
 		}
@@ -337,7 +382,7 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 	}
 }
 
-func (s *Server) join(g *guest, c transport.Conn) {
+func (s *Server) join(g *guest, c transport.Conn, token string) {
 	if g.conn != nil && g.conn != c {
 		go g.conn.Close() // same token reconnected: replace the old connection
 	}
@@ -345,7 +390,7 @@ func (s *Server) join(g *guest, c transport.Conn) {
 	g.lastSeq = 0 // input sequence numbers are per connection
 	if p := s.w.Player(g.id); p != nil && s.live[g.id] == g {
 		// Still in the world from the previous connection.
-		c.Send(encodeWelcome(g.id, g.token, p.Pos, s.cfg.TickRate))
+		c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate))
 		return
 	}
 	s.mu.Lock()
@@ -358,7 +403,7 @@ func (s *Server) join(g *guest, c transport.Conn) {
 		return
 	}
 	s.live[g.id] = g
-	c.Send(encodeWelcome(g.id, g.token, pos, s.cfg.TickRate))
+	c.Send(encodeWelcome(g.id, token, pos, s.cfg.TickRate))
 	s.log.Info("player joined", "player", g.id, "transport", "websocket")
 }
 
