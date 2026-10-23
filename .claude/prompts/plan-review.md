@@ -13,6 +13,8 @@ Check each issue and fix the batch directly:
 - **Checkable criteria:** each criterion can be proven by a test or command in CI. Rewrite vague ones ("works well") into checkable ones, or remove the issue.
 - **Right size and area:** one area, one agent session. Split or trim if needed.
 - **Dependencies:** `blocked_by` is correct and has no loops; nothing duplicates an existing issue.
+- **Gate needs asked up front:** every issue that will need a gate-file change (a CI service, a CI job, an `ownership.txt` entry, a `CLAUDE.md` edit) is blocked on a question with `gate_change` filled in. Add any the planner missed.
+- **Not stuck:** prefer issues that don't wait on open questions or parked issues (`waiting_on` in the inventory).
 - **Constitution:** nothing in the batch would break `CONSTITUTION.md`.
 
 Return the corrected batch in the same format, with a `summary` of what you changed. If the batch is beyond repair, return it with `rejected: true` and say why in `summary`.

@@ -65,7 +65,7 @@ The acceptance criteria are the contract. Done means every criterion is met and 
 5. **Don't open, merge or close pull requests or issues, and don't edit labels.** The runner does that.
 6. **Never push to `main`, never force-push, never create tags.**
 7. **If you need another area to change something** (for example a protocol field), don't make the change. Finish with status `blocked_by_issue` and describe the change in `new_issue`.
-8. **If you need a decision** (a PRD TBD, or a product choice the PRD doesn't make), finish with status `needs_owner` and fill in `question`.
+8. **If you need a decision** (a PRD TBD, or a product choice the PRD doesn't make), finish with status `needs_owner` and fill in `question`. **If you need a gate file changed** (CI, `ownership.txt`, a `CLAUDE.md`, and so on), do the same, with your recommended option in `recommendation` and the exact change in `question.gate_change`; the owner's watcher drafts it as a pull request.
 9. **Finish with the status object** your prompt asks for. Only say `done` when the work is committed and pushed and the checks for your area pass locally. The runner verifies this against git.
 
 ## Secrets

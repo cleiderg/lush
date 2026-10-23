@@ -30,6 +30,6 @@ Review pull request #{{PR}} for issue #{{ISSUE}}: {{TITLE}}
    - Security: input validation, no secrets, no unbounded memory.
 5. **If there are blocker or major findings:** fix them all as your role describes, re-run the area's checks, commit, push to `{{BRANCH}}`, and return verdict `fixed`. Mark each finding `fixed: true` or explain why not.
 6. **If there are none:** change nothing and return verdict `pass` with `reviewed_head` set to `{{HEAD}}`. Minor findings may be listed; they don't block.
-7. **If a decision only the owner can make blocks the PR:** return `needs_owner` with the question.
+7. **If a decision only the owner can make blocks the PR:** return `needs_owner` with the question. If the fix needs a gate file changed, put the exact change in `question.gate_change`.
 
 Your final answer is the verdict object. `reviewed_head` is always `{{HEAD}}`.

@@ -4,29 +4,97 @@
   "description": "Issues drafted from the PRD. The runner creates them only after the reviewer returns the checked batch.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["summary", "issues", "questions"],
+  "required": [
+    "summary",
+    "issues",
+    "questions"
+  ],
   "properties": {
-    "summary": {"type": "string", "description": "One or two sentences: which milestone this batch covers and what is left."},
-    "nothing_left": {"type": "boolean", "description": "True when the PRD has no remaining Phase 1 work that isn't already an issue."},
-    "rejected": {"type": "boolean", "description": "Reviewer only: true to drop the whole batch (explain in summary)."},
+    "summary": {
+      "type": "string",
+      "description": "One or two sentences: which milestone this batch covers and what is left."
+    },
+    "nothing_left": {
+      "type": "boolean",
+      "description": "True when the PRD has no remaining Phase 1 work that isn't already an issue."
+    },
+    "rejected": {
+      "type": "boolean",
+      "description": "Reviewer only: true to drop the whole batch (explain in summary)."
+    },
     "issues": {
       "type": "array",
       "maxItems": 10,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["key", "title", "area", "milestone", "goal", "context", "criteria", "out_of_scope", "blocked_by"],
+        "required": [
+          "key",
+          "title",
+          "area",
+          "milestone",
+          "goal",
+          "context",
+          "criteria",
+          "out_of_scope",
+          "blocked_by"
+        ],
         "properties": {
-          "key": {"type": "string", "description": "Short id inside this batch, e.g. P1, P2."},
-          "title": {"type": "string"},
-          "area": {"type": "string", "enum": ["area:protocol", "area:server-world", "area:server-platform", "area:client", "area:client-render", "area:infra"]},
-          "milestone": {"type": "string", "description": "An existing milestone title, e.g. M3."},
-          "goal": {"type": "string"},
-          "context": {"type": "array", "items": {"type": "string"}, "description": "PRD sections, decision ids and spec files this comes from."},
-          "criteria": {"type": "array", "minItems": 2, "items": {"type": "string"}},
-          "out_of_scope": {"type": "array", "items": {"type": "string"}},
-          "blocked_by": {"type": "array", "items": {"type": "string"}, "description": "Batch keys (P1) or existing issue numbers (#12)."},
-          "stretch": {"type": "boolean"}
+          "key": {
+            "type": "string",
+            "description": "Short id inside this batch, e.g. P1, P2."
+          },
+          "title": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string",
+            "enum": [
+              "area:protocol",
+              "area:server-world",
+              "area:server-platform",
+              "area:client",
+              "area:client-render",
+              "area:infra"
+            ]
+          },
+          "milestone": {
+            "type": "string",
+            "description": "An existing milestone title, e.g. M3."
+          },
+          "goal": {
+            "type": "string"
+          },
+          "context": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "PRD sections, decision ids and spec files this comes from."
+          },
+          "criteria": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "string"
+            }
+          },
+          "out_of_scope": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blocked_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Batch keys (P1) or existing issue numbers (#12)."
+          },
+          "stretch": {
+            "type": "boolean"
+          }
         }
       }
     },
@@ -36,13 +104,35 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["key", "title", "question"],
+        "required": [
+          "key",
+          "title",
+          "question"
+        ],
         "properties": {
-          "key": {"type": "string", "description": "Short id, e.g. Q1. Issues can list it in blocked_by."},
-          "title": {"type": "string"},
-          "question": {"type": "string"},
-          "options": {"type": "array", "items": {"type": "string"}},
-          "recommendation": {"type": "string"}
+          "key": {
+            "type": "string",
+            "description": "Short id, e.g. Q1. Issues can list it in blocked_by."
+          },
+          "title": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recommendation": {
+            "type": "string"
+          },
+          "gate_change": {
+            "type": "string",
+            "description": "Only when accepting the recommendation means changing an owner-only gate file (.github/ including workflows and ownership.txt, scripts/ci/, .claude/, CONSTITUTION.md, any CLAUDE.md, docs/): the file(s) and the exact change, e.g. 'In .github/workflows/ci.yml, server job: add a postgres:16 service and set LUSH_TEST_DATABASE_URL for the test step.' The watcher drafts this as a PR for the owner. Leave empty otherwise."
+          }
         }
       }
     }
