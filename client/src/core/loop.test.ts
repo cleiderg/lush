@@ -40,6 +40,25 @@ describe('GameLoop', () => {
     }
   });
 
+  it('keeps 30 fps on real display timings without exceeding the cap', () => {
+    const displays: Record<string, (i: number) => number> = {
+      '60.05 Hz': (i) => i * (1000 / 60.05),
+      '60 Hz, 1 ms timer': (i) => Math.round(i * (1000 / 60)),
+      '120 Hz, 1 ms timer': (i) => Math.round(i * (1000 / 120)),
+      '144 Hz': (i) => i * (1000 / 144),
+    };
+    for (const [name, at] of Object.entries(displays)) {
+      const renderTimes: number[] = [];
+      let now = 0;
+      const loop = new GameLoop({ update: () => {}, render: () => renderTimes.push(now) });
+      for (let i = 0; (now = at(i)) <= 10_000; i++) loop.frame(now);
+      expect(renderTimes.length / 10, name).toBeGreaterThanOrEqual(28);
+      for (let i = 30; i < renderTimes.length; i++) {
+        expect(renderTimes[i] - renderTimes[i - 30], name).toBeGreaterThanOrEqual(1000);
+      }
+    }
+  });
+
   it('caps catch-up steps after a long stall', () => {
     let updates = 0;
     const loop = new GameLoop({ update: () => updates++, render: () => {} });
