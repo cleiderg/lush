@@ -16,8 +16,8 @@ import (
 //	LUSH_TICK_RATE        world ticks per second    (default 20)
 //	LUSH_DATABASE_URL     Postgres URL placeholder  (default "", unused until the store lands)
 //	LUSH_ENV              "development" or "production" (default "development")
-//	LUSH_MOVE_SPEED       walk speed, world units/s (default 5; PLACEHOLDER, PRD open question)
-//	LUSH_SPAWN_X, LUSH_SPAWN_Z  guest spawn position (default 0, 0; PLACEHOLDER until the map lands)
+//	LUSH_MOVE_SPEED       walk speed, world units/s (default 4, PRD decision D-044)
+//	LUSH_SPAWN_X, LUSH_SPAWN_Z  guest spawn position (default 0, 0: map origin, centre of central campus)
 //	LUSH_SHUTDOWN_COUNTDOWN  restart countdown, Go duration (default 60s in production, 5s otherwise)
 //	LUSH_WS_ORIGINS       comma-separated page origins allowed to open a WebSocket
 //	                      besides the server's own host, e.g. "play.example.com,localhost:*"
@@ -46,7 +46,7 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		}
 		c.TickRate = n
 	}
-	c.MoveSpeed = 5
+	c.MoveSpeed = 4
 	for _, f := range []struct {
 		key string
 		dst *float32

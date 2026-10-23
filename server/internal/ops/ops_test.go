@@ -21,12 +21,12 @@ func TestLoadConfig(t *testing.T) {
 		want Config
 		err  bool
 	}{
-		{"defaults", nil, Config{":8080", 20, "", "development", 5 * time.Second, 5, 0, 0, nil}, false},
-		{"production default countdown", map[string]string{"LUSH_ENV": "production"}, Config{":8080", 20, "", "production", 60 * time.Second, 5, 0, 0, nil}, false},
+		{"defaults", nil, Config{":8080", 20, "", "development", 5 * time.Second, 4, 0, 0, nil}, false},
+		{"production default countdown", map[string]string{"LUSH_ENV": "production"}, Config{":8080", 20, "", "production", 60 * time.Second, 4, 0, 0, nil}, false},
 		{"overrides", map[string]string{"LUSH_LISTEN_ADDR": ":9", "LUSH_TICK_RATE": "10", "LUSH_DATABASE_URL": "x", "LUSH_ENV": "production", "LUSH_SHUTDOWN_COUNTDOWN": "7s"},
-			Config{":9", 10, "x", "production", 7 * time.Second, 5, 0, 0, nil}, false},
+			Config{":9", 10, "x", "production", 7 * time.Second, 4, 0, 0, nil}, false},
 		{"ws origins", map[string]string{"LUSH_WS_ORIGINS": " play.example.com, ,localhost:*"},
-			Config{":8080", 20, "", "development", 5 * time.Second, 5, 0, 0, []string{"play.example.com", "localhost:*"}}, false},
+			Config{":8080", 20, "", "development", 5 * time.Second, 4, 0, 0, []string{"play.example.com", "localhost:*"}}, false},
 		{"bad tick", map[string]string{"LUSH_TICK_RATE": "0"}, Config{}, true},
 		{"bad countdown", map[string]string{"LUSH_SHUTDOWN_COUNTDOWN": "soon"}, Config{}, true},
 	}
