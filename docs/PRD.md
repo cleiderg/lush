@@ -243,6 +243,7 @@ Cloudflare Pages for the client, a Vultr VM in Los Angeles for the server (stagi
 | D-041 | Up to 2 coding agents in parallel, never two in the same area | Balances speed against Pro usage limits and merge conflicts |
 | D-042 | Every issue follows one format (Goal, Context, Acceptance criteria, Out of scope, Blocked by); the runner won't start one that doesn't | Acceptance criteria are the contract the reviewer checks |
 | D-043 | When fewer than 3 issues are in the pipeline, the planner drafts up to 10 from this PRD; the reviewer checks the batch and they start without owner approval. TBDs become question issues. | Work never stalls waiting for the owner, without inventing scope |
+| D-044 | Movement speed: walk 4 m/s, run 7 m/s. The server's config is the only source of these numbers, and the server sends them to the client in Welcome so prediction always matches (until Welcome carries them, the client constant must equal the server default). Tuned after playtests. | Server authority (D-005); client and server speeds that differ cause rubber-banding |
 
 ---
 
