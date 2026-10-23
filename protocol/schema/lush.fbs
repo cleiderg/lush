@@ -1,0 +1,109 @@
+// Lush wire protocol. Source of truth for every message between client and
+// server. Run `make protocol` after editing; never edit generated code.
+//
+// Rules:
+//  - Bump ProtocolVersion.Current on EVERY change to this file.
+//  - Prefer additive changes (new fields at the end of a table).
+//  - Every message on the wire is an Envelope.
+//  - A Snapshot of 100 entities must stay well under 1,200 bytes.
+
+namespace protocol;
+
+// The protocol version. The value of Current is the version constant.
+// Hello carries it; a server that sees a different value replies with Reload.
+enum ProtocolVersion : ushort {
+  Current = 1
+}
+
+// Position of an entity, in world units (metres) from the map origin.
+struct Vec2 {
+  x: float;
+  z: float;
+}
+
+// Input.actions bit flags.
+enum ActionFlags : ubyte (bit_flags) {
+  Interact,
+  Attack,
+  Jump
+}
+
+// A player or other entity inside a Snapshot. Packed to 8 bytes.
+// Ids are session-scoped 16-bit entity ids (also used as player id).
+struct Entity {
+  id: uint16;
+  x: int16;         // decimetres (0.1 m) from the map origin
+  z: int16;         // decimetres (0.1 m) from the map origin
+  rotation: uint8;  // facing, 0..255 = 0..2*pi radians
+  animation: uint8; // animation id, game-defined
+}
+
+// Client -> server, first message on a connection.
+table Hello {
+  protocol_version: ushort;
+  guest_token: string; // empty or absent for a new guest
+}
+
+// Server -> client, reply to an accepted Hello.
+table Welcome {
+  player_id: ushort;
+  guest_token: string;
+  spawn: Vec2;
+  tick_rate: ubyte; // server ticks per second
+}
+
+// Client -> server, one per client tick.
+table Input {
+  seq: uint32;      // input sequence number, increases by 1 per input
+  move: Vec2;       // movement vector, each axis -1..1 (x = east, z = south)
+  facing: float;    // radians
+  actions: ubyte;   // ActionFlags bits
+}
+
+// Server -> client, per tick, only entities in view.
+table Snapshot {
+  tick: uint32;
+  last_input_seq: uint32; // last Input.seq the server processed for this client
+  entities: [Entity];
+}
+
+table ChatSend {
+  text: string;
+}
+
+table ChatMessage {
+  speaker_id: ushort;
+  text: string;
+}
+
+table Ping {
+  token: uint32;
+}
+
+// Echoes Ping.token.
+table Pong {
+  token: uint32;
+}
+
+// Server -> client: protocol mismatch or server restart, reload the page.
+table Reload {
+  reason: string;
+}
+
+union Message {
+  Hello,
+  Welcome,
+  Input,
+  Snapshot,
+  ChatSend,
+  ChatMessage,
+  Ping,
+  Pong,
+  Reload
+}
+
+table Envelope {
+  msg: Message;
+}
+
+root_type Envelope;

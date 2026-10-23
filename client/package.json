@@ -11,6 +11,7 @@
     "test": "vitest"
   },
   "dependencies": {
+    "flatbuffers": "25.9.23",
     "three": "0.186.1"
   },
   "devDependencies": {
