@@ -204,7 +204,7 @@ export class Controls {
   private injectStyle(): void {
     const s = document.createElement('style');
     s.textContent = `
-#control-tray { position: relative; display: flex; justify-content: space-between; align-items: center; padding: 12px; box-sizing: border-box; user-select: none; -webkit-user-select: none; touch-action: none; }
+#control-tray { position: relative; display: flex; justify-content: space-between; align-items: center; padding: 12px 12px calc(12px + env(safe-area-inset-bottom)); box-sizing: border-box; user-select: none; -webkit-user-select: none; touch-action: none; }
 #control-tray.chat { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 6px; }
 .lush-stick { width: 128px; height: 128px; border-radius: 50%; background: #2c2c3a; display: flex; align-items: center; justify-content: center; align-self: flex-end; margin-bottom: 8px; touch-action: none; }
 .lush-knob { width: 56px; height: 56px; border-radius: 50%; background: #8a8aa8; pointer-events: none; }
