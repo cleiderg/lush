@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { WorldScene } from './scene';
+import { showAttribution } from './attribution';
 import type { WorldView } from './worldView';
 
 export interface GameRenderer {
@@ -23,6 +24,7 @@ export function createRenderer(canvas: HTMLCanvasElement): GameRenderer {
     world.rig.camera.updateProjectionMatrix();
   };
   resize();
+  const hideAttribution = showAttribution();
   return {
     world,
     render(view) {
@@ -32,6 +34,7 @@ export function createRenderer(canvas: HTMLCanvasElement): GameRenderer {
     resize,
     dispose() {
       detach();
+      hideAttribution();
       renderer.dispose();
     },
   };

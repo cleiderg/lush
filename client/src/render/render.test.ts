@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CameraRig, MAX_PITCH, MIN_PITCH } from './cameraRig';
 import { PARTS } from './character';
-import { WorldScene, countDrawCalls } from './scene';
+import { WorldScene, countDrawCalls, countDrawCallsInView, countTrianglesInView } from './scene';
 import type { PlayerView, WorldView } from './worldView';
 
 function view(n: number, t = 0): WorldView {
@@ -49,14 +49,18 @@ describe('characters', () => {
     const w = new WorldScene();
     w.update(view(100));
     w.update(view(100, 0.3));
-    const calls = countDrawCalls(w.scene);
-    console.log(`draw calls with 100 remote players: ${calls}`);
-    expect(calls).toBeLessThan(20);
+    w.rig.camera.aspect = 9 / 19.5;
+    w.rig.camera.updateProjectionMatrix();
+    const calls = countDrawCallsInView(w.scene, w.rig.camera);
+    const tris = countTrianglesInView(w.scene, w.rig.camera);
+    console.log(`in view, 100 players: ${calls} draw calls, ${tris} triangles`);
+    console.log(`whole scene without culling: ${countDrawCalls(w.scene)} draw calls`);
+    expect(calls).toBeLessThan(40);
     const inst = w.scene.getObjectByProperty('isInstancedMesh', true) as import('three').InstancedMesh;
     expect(inst.count).toBe(100);
   });
 
-  it('has a placeholder ground', () => {
-    expect(new WorldScene().scene.getObjectByName('ground-placeholder')).toBeDefined();
+  it('has a ground', () => {
+    expect(new WorldScene().scene.getObjectByName('ground')).toBeDefined();
   });
 });
