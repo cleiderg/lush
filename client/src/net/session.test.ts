@@ -1,6 +1,7 @@
 import * as flatbuffers from 'flatbuffers';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Envelope, Hello, Message, Reload, Welcome, Vec2 } from '../protocol';
+import { Envelope, Hello, Message, Reload, RestartCountdown, Welcome, Vec2 } from '../protocol';
+import { GameState } from '../state/world';
 import { decode } from './codec';
 import { localTokenStore, Session, TOKEN_KEY, type TokenStore } from './session';
 import type { Transport } from './transport';
@@ -29,6 +30,12 @@ function welcome(token: string): Uint8Array {
 function reload(): Uint8Array {
   const b = new flatbuffers.Builder(32);
   b.finish(Envelope.createEnvelope(b, Message.Reload, Reload.createReload(b, b.createString('v'))));
+  return b.asUint8Array().slice();
+}
+
+function countdown(n: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  b.finish(Envelope.createEnvelope(b, Message.RestartCountdown, RestartCountdown.createRestartCountdown(b, n)));
   return b.asUint8Array().slice();
 }
 
@@ -128,5 +135,21 @@ describe('localTokenStore', () => {
     const store = localTokenStore();
     expect(() => store.set('guest-9')).not.toThrow();
     expect(store.get()).toBe('');
+  });
+});
+
+describe('restart countdown', () => {
+  it('decodes and the session passes it on to game state', () => {
+    expect(decode(countdown(42))).toEqual({ type: 'restartCountdown', seconds: 42 });
+    const t = new FakeTransport();
+    const game = new GameState();
+    const s = new Session({
+      factory: () => t,
+      store: { get: () => '', set: () => {} },
+      onMessage: (m) => game.handle(m, 0),
+    });
+    s.start();
+    t.onMessage?.(countdown(42));
+    expect(game.restartSeconds).toBe(42);
   });
 });

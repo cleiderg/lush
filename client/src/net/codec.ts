@@ -1,7 +1,7 @@
 import * as flatbuffers from 'flatbuffers';
 import {
   ChatMessage, ChatSend, Entity, Envelope, Hello, Input, Message, Ping, Pong, ProtocolVersion,
-  Reload, Snapshot, Vec2, Welcome,
+  Reload, RestartCountdown, Snapshot, Vec2, Welcome,
 } from '../protocol';
 
 export interface EntityState {
@@ -19,7 +19,8 @@ export type ServerMessage =
   | { type: 'snapshot'; tick: number; lastInputSeq: number; entities: EntityState[] }
   | { type: 'chat'; speakerId: number; text: string }
   | { type: 'pong'; token: number }
-  | { type: 'reload'; reason: string };
+  | { type: 'reload'; reason: string }
+  | { type: 'restartCountdown'; seconds: number };
 
 function wrap(b: flatbuffers.Builder, type: Message, msg: flatbuffers.Offset): Uint8Array {
   b.finish(Envelope.createEnvelope(b, type, msg));
@@ -95,6 +96,8 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
       return { type: 'pong', token: (env.msg(new Pong()) as Pong).token() };
     case Message.Reload:
       return { type: 'reload', reason: (env.msg(new Reload()) as Reload).reason() ?? '' };
+    case Message.RestartCountdown:
+      return { type: 'restartCountdown', seconds: (env.msg(new RestartCountdown()) as RestartCountdown).secondsRemaining() };
     default:
       return null;
   }
