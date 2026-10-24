@@ -102,6 +102,7 @@ type message struct {
 	moveZ     float32
 	facing    float32
 	chatText  string
+	emote     protocol.Emote
 	pingToken uint32
 }
 
@@ -136,6 +137,10 @@ func decode(buf []byte) (m message, err error) {
 		var ch protocol.ChatSend
 		ch.Init(tbl.Bytes, tbl.Pos)
 		m.chatText = string(ch.Text())
+	case protocol.MessageEmoteSend:
+		var es protocol.EmoteSend
+		es.Init(tbl.Bytes, tbl.Pos)
+		m.emote = es.Emote()
 	case protocol.MessagePing:
 		var p protocol.Ping
 		p.Init(tbl.Bytes, tbl.Pos)

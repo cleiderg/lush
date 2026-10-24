@@ -16,6 +16,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/session"
 	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
+	"github.com/cleiderg/lush/server/internal/systems/emote"
 	"github.com/cleiderg/lush/server/internal/systems/movement"
 	"github.com/cleiderg/lush/server/internal/transport"
 	"github.com/cleiderg/lush/server/internal/world"
@@ -59,7 +60,7 @@ func newRigLog(t *testing.T, queue int, cfg session.Config, players store.Player
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []world.System{mv, chat.New(chat.DefaultConfig(), clock, sess), sess} {
+	for _, s := range []world.System{mv, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess), sess} {
 		if err := w.Register(s); err != nil {
 			t.Fatal(err)
 		}
@@ -405,4 +406,53 @@ func TestGuestIdsRecycledWhenFull(t *testing.T) {
 	if typ, _ := r.next(r.dial(hello(v, tokA))); typ != protocol.MessageReload {
 		t.Fatalf("forgotten token got %v, want Reload", typ)
 	}
+}
+
+func emoteSend(e protocol.Emote) []byte {
+	return envelope(protocol.MessageEmoteSend, func(b *flatbuffers.Builder) flatbuffers.UOffsetT {
+		protocol.EmoteSendStart(b)
+		protocol.EmoteSendAddEmote(b, e)
+		return protocol.EmoteSendEnd(b)
+	})
+}
+
+func TestAnimationConstantsMatchProtocol(t *testing.T) {
+	if byte(world.AnimIdle) != byte(protocol.AnimationIdle) ||
+		byte(world.AnimWalk) != byte(protocol.AnimationWalk) ||
+		byte(world.AnimWave) != byte(protocol.AnimationWave) {
+		t.Fatal("world.Anim constants differ from protocol.Animation")
+	}
+}
+
+func TestEmoteSendWaveVisibleToNearbyClient(t *testing.T) {
+	r := newRig(t, 16)
+	v := uint16(protocol.ProtocolVersionCurrent)
+	a := r.dial(hello(v, ""))
+	idA, _ := r.expectWelcome(a)
+	b := r.dial(hello(v, ""))
+	r.expectWelcome(b)
+
+	a.send(emoteSend(protocol.Emote(200))) // unknown: dropped, A stays connected
+	a.send(emoteSend(protocol.EmoteWave))
+	for i := 0; i < 200; i++ {
+		tbl := r.waitFor(b, protocol.MessageSnapshot)
+		var s protocol.Snapshot
+		s.Init(tbl.Bytes, tbl.Pos)
+		var e protocol.Entity
+		for j := 0; j < s.EntitiesLength(); j++ {
+			if s.Entities(&e, j) && e.Id() == idA && protocol.Animation(e.Animation()) == protocol.AnimationWave {
+				return
+			}
+		}
+	}
+	t.Fatal("B never saw A waving")
+}
+
+func TestUnknownEmoteDoesNotDisconnect(t *testing.T) {
+	r := newRig(t, 16)
+	a := r.dial(hello(uint16(protocol.ProtocolVersionCurrent), ""))
+	r.expectWelcome(a)
+	a.send(emoteSend(protocol.Emote(200)))
+	a.send(ping(9))
+	r.waitFor(a, protocol.MessagePong)
 }
