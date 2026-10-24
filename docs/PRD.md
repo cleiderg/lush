@@ -191,6 +191,8 @@ Cloudflare Pages for the client, a Vultr VM in Los Angeles for the server (stagi
 3. **Saving progress:** player identity, Postgres, migrations, periodic saves, HTTP API skeleton.
 4. **Going live:** domain, Cloudflare Pages, Vultr VM with Caddy and systemd, secrets, deploys from CI, graceful restart.
 5. **Mobile polish:** PWA manifest, audio unlock, glTF pipeline.
+6. **Playing together:** emotes and interactions, PvE and PvP combat, inventory and equipment, gold and NPC shop, player trading.
+7. **Card tables (stretch).**
 
 **Target:** all milestones complete by mid-December 2026 (end of Fall quarter). This is tight; see the must-have vs. stretch split in 4.1 for what gets cut first.
 
