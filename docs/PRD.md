@@ -54,7 +54,7 @@ An internal test build, deployed and playable by invited testers:
 - **Emotes and interactions:** wave, interact with nearby players and NPCs.
 - **Basic combat** on the 0.6 s tick: fight simple NPCs in a combat area (PvE), and other players only inside a clearly marked PvP zone. Dying in the PvP zone drops everything except a few items.
 - **Inventory and items:** equipment that changes combat stats and shows on the character, plus loot to collect or sell.
-- **Gold:** a starting amount, NPC drops, and a simple NPC shop that buys items.
+- **Gold:** a starting amount, NPC drops, and a simple NPC shop that buys items and sells food and starter gear (D-047).
 - **Player trading:** two players open a trade window and swap items and gold, saved as one database transaction.
 - **Card table area (stretch, first to cut):** players sit at a table and play card games against each other (poker / Texas Hold'em, simple card games in the style of Uno). See 5.4.
 - Progress saved to Postgres, deployed to the production stack, with Sentry.
@@ -246,6 +246,9 @@ Cloudflare Pages for the client, a Vultr VM in Los Angeles for the server (stagi
 | D-042 | Every issue follows one format (Goal, Context, Acceptance criteria, Out of scope, Blocked by); the runner won't start one that doesn't | Acceptance criteria are the contract the reviewer checks |
 | D-043 | When fewer than 3 issues are in the pipeline, the planner drafts up to 10 from this PRD; the reviewer checks the batch and they start without owner approval. TBDs become question issues. | Work never stalls waiting for the owner, without inventing scope |
 | D-044 | Movement speed: walk 4 m/s, run 7 m/s. The server's config is the only source of these numbers, and the server sends them to the client in Welcome so prediction always matches (until Welcome carries them, the client constant must equal the server default). Tuned after playtests. | Server authority (D-005); client and server speeds that differ cause rubber-banding |
+| D-045 | Phase 1 gameplay is milestone 6 "Playing together" (emotes and interactions, combat, inventory and equipment, gold and the NPC shop, trading); card tables are milestone 7 (stretch) | M1 to M5 keep their meaning, and the planner files gameplay work in order (#97) |
+| D-046 | Gameplay areas: spawn and shop at the centre of Aldrich Park, beginner NPCs in the rest of the park, tougher NPCs in the south fields, and the PvP zone north-east of the park outside Ring Road (positions in the map spec) | A safe start, danger a short walk away, and PvP far from new players (#100) |
+| D-047 | Phase 1 gameplay numbers are OSRS-style placeholders kept in server data files (gameplay spec): one combat level 1 to 30, melee only, 28 inventory slots, 100 starting gold, six NPC types, a shop that also sells food and starter gear, PvP only within 5 levels, gold never dropped, a 2 s wave | A complete, playable loop now, tuned after playtests; selling at the shop gives gold a use (#96, #98, #99) |
 
 ---
 
@@ -257,17 +260,12 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 - One-sentence pitch.
 
 **Gameplay** ([[gameplay]])
-- Combat stats and formulas, NPC types, respawn times, attack range, health regeneration.
-- Inventory size, Phase 1 item list, stacking rules.
-- Starting gold, drop rates, shop prices, gold sinks.
-- PvP death: number of items kept, killer-only loot window, how long drops stay on the ground.
-- Whether dying to NPCs costs anything.
+- Every gameplay number is a placeholder to tune after playtests (D-047): the combat formulas and level curve, the NPC and item tables, shop prices, wave timing, trade distance and the PvP death rules.
+- Whether Phase 1 needs a bank. Without one, players carry everything they own, so a PvP death is costly (gold is never dropped for this reason).
+- More attack styles (ranged, magic) and skills beyond combat. Not in Phase 1 unless decided here.
 
 **Card tables** ([[card-tables]], stretch)
 - Table size, turn timer, disconnect mid-game, house cut as a gold sink.
-
-**Trading** ([[gameplay]])
-- Confirmation flow (OSRS uses two confirmation screens), trade distance, whether trading is allowed inside the PvP zone, trade limits.
 
 **Client and art** ([[architecture]])
 - glTF model budgets per model type (placeholders from #82, enforced by the CI check in #86): `characters/` 1,500 triangles / 150 KB, `props/` 1,000 / 100 KB, `buildings/` 8,000 / 500 KB, anything else 3,000 / 200 KB. Tune after profiling on an iPhone 13.
