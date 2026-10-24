@@ -12,3 +12,14 @@
 ## Phase 1 coverage
 
 Central campus only: Aldrich Park and the ring of buildings around it (D-023).
+
+## Gameplay areas
+
+Where the gameplay places go. The owner names an approximate location for each (for example, "next to <building>"); agents then place it in shared map data. Agents must not pick locations themselves.
+
+| Place | Location |
+|---|---|
+| Combat area (PvE) | **TBD:** owner names the location |
+| PvP zone | **TBD:** owner names the location |
+| NPC shop | **TBD:** owner names the location |
+| Safe spawn point | **TBD:** owner names the location |
