@@ -255,11 +255,9 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 - One-sentence pitch.
 
 **Gameplay** ([[gameplay]])
-- Combat stats and formulas, NPC types, respawn times, attack range, health regeneration.
-- Inventory size, Phase 1 item list, stacking rules.
-- Starting gold, drop rates, shop prices, gold sinks.
+- Placeholders (decided in #98, OSRS-like, kept in a server data/config file, tune after playtests): combat stats and formulas, NPC types, respawn times, attack range, health regeneration; 28-slot inventory, item list and stacking; 100 starting gold, drop rates, shop prices, no gold sinks.
 - PvP death: number of items kept, killer-only loot window, how long drops stay on the ground.
-- Whether dying to NPCs costs anything.
+- Placeholder: dying to NPCs costs nothing.
 
 **Card tables** ([[card-tables]], stretch)
 - Table size, turn timer, disconnect mid-game, house cut as a gold sink.

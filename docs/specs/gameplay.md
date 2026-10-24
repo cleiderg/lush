@@ -20,14 +20,15 @@
 - **PvE:** NPCs in designated combat areas.
 - **PvP:** only inside a clearly marked PvP zone. Players cannot attack each other anywhere else.
 - Fully server-decided: hit chance, damage, and death.
-- **TBD:** stats and formulas, NPC types and respawn times, attack range, health regeneration.
+- Stats, formulas, NPC types, respawn times, attack range and health regeneration are **placeholders** (OSRS-like) kept in a server data/config file, not hard-coded. The owner drafts a short NPC table there. Tune after playtests.
 
 ## Items
 
 - **Equipment:** weapons and armor that change combat stats and appear on the character model.
 - **Loot:** other items to collect or sell.
 - Every item creation and transfer is written to the economy audit log ([[persistence]]).
-- **TBD:** inventory size, item list for Phase 1, stacking rules.
+- **Inventory:** 28 slots (placeholder).
+- The Phase 1 item list and stacking rules are placeholders in a server data/config file; the owner drafts a short item table. Tune after playtests.
 
 ## Gold
 
@@ -38,7 +39,7 @@ Sources in Phase 1:
 
 Gold can be bet at card tables. Gold can never be bought, sold, or exchanged for real money (D-013).
 
-**TBD:** starting amount, drop rates, shop prices, any gold sinks.
+**Starting amount:** 100 gold (placeholder). Drop rates and shop prices are placeholders in the server data/config file, tuned after playtests. No gold sinks in Phase 1.
 
 ## Player trading
 
@@ -57,4 +58,4 @@ Gold can be bet at card tables. Gold can never be bought, sold, or exchanged for
 
 ## Death outside the PvP zone (PvE)
 
-**TBD:** whether dying to NPCs costs anything.
+Dying to NPCs costs nothing (placeholder).
