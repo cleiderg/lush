@@ -7,6 +7,8 @@ export interface PlayerView {
   readonly x: number;
   readonly z: number;
   readonly heading: number;
+  /** Animation id from the latest snapshot (protocol Animation). */
+  readonly animation: number;
 }
 
 /** Game state: predicted local player plus interpolated remotes. */
@@ -14,6 +16,8 @@ export class GameState {
   playerId = -1;
   tickRate = 20;
   heading = 0;
+  /** Local player's animation id from the latest snapshot. */
+  animation = 0;
   /** Seconds until the server restarts, or null when no restart is announced. */
   restartSeconds: number | null = null;
   prediction = new Prediction();
@@ -25,18 +29,22 @@ export class GameState {
       this.tickRate = msg.tickRate;
       this.prediction = new Prediction(msg.spawn);
       this.interp.clear();
+      this.animation = 0;
       this.restartSeconds = null;
     } else if (msg.type === 'restartCountdown') {
       this.restartSeconds = msg.seconds;
     } else if (msg.type === 'snapshot') {
       const me = msg.entities.find((e) => e.id === this.playerId);
-      if (me) this.prediction.reconcile({ x: me.x, z: me.z }, msg.lastInputSeq);
+      if (me) {
+        this.prediction.reconcile({ x: me.x, z: me.z }, msg.lastInputSeq);
+        this.animation = me.animation;
+      }
       this.interp.push(now, msg.entities.filter((e) => e.id !== this.playerId));
     }
   }
 
   get local(): PlayerView {
-    return { id: this.playerId, x: this.prediction.pos.x, z: this.prediction.pos.z, heading: this.heading };
+    return { id: this.playerId, x: this.prediction.pos.x, z: this.prediction.pos.z, heading: this.heading, animation: this.animation };
   }
 
   remotes(now: number): PlayerView[] {
