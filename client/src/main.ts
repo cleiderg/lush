@@ -2,6 +2,7 @@ import { AudioManager } from './audio';
 import { initErrorReporting } from './core/errorReporting';
 import { GameLoop } from './core/loop';
 import { buildWorldView, controlYaw } from './core/view';
+import { sendWave } from './core/wave';
 import { encodeInput } from './net/codec';
 import { localTokenStore, Session } from './net/session';
 import { WebSocketTransport } from './net/transport';
@@ -20,6 +21,7 @@ const renderer = createRenderer(canvas);
 window.addEventListener('resize', () => renderer.resize());
 
 const controls = new Controls({
+  onWave: () => sendWave(session),
   tray: document.getElementById('control-tray') as HTMLElement,
   getCameraYaw: () => controlYaw(renderer.world.rig.yaw),
 });

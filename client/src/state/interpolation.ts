@@ -6,6 +6,7 @@ export interface RemoteState {
   x: number;
   z: number;
   heading: number;
+  animation: number;
 }
 
 interface Frame {
@@ -61,6 +62,7 @@ export class Interpolator {
         x: ea.x + (eb.x - ea.x) * f,
         z: ea.z + (eb.z - ea.z) * f,
         heading: lerpAngle(ea.heading, eb.heading, f),
+        animation: eb.animation,
       });
     }
     return out;

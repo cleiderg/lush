@@ -1,6 +1,6 @@
 import * as flatbuffers from 'flatbuffers';
 import {
-  ChatMessage, ChatSend, Entity, Envelope, Hello, Input, Message, Ping, Pong, ProtocolVersion,
+  ChatMessage, ChatSend, Emote, EmoteSend, Entity, Envelope, Hello, Input, Message, Ping, Pong, ProtocolVersion,
   Reload, RestartCountdown, Snapshot, Vec2, Welcome,
 } from '../protocol';
 
@@ -46,6 +46,11 @@ export function encodeInput(seq: number, moveX: number, moveZ: number, facing: n
 export function encodeChat(text: string): Uint8Array {
   const b = new flatbuffers.Builder(64);
   return wrap(b, Message.ChatSend, ChatSend.createChatSend(b, b.createString(text)));
+}
+
+export function encodeEmote(emote: Emote): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.EmoteSend, EmoteSend.createEmoteSend(b, emote));
 }
 
 export function encodePing(token: number): Uint8Array {
