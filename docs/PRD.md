@@ -255,6 +255,7 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 - One-sentence pitch.
 
 **Gameplay** ([[gameplay]])
+- Wave emote timing (placeholders in the server emote config): shown for 40 ticks (2 s), re-wave ignored while showing, walking ends it.
 - Combat stats and formulas, NPC types, respawn times, attack range, health regeneration.
 - Inventory size, Phase 1 item list, stacking rules.
 - Starting gold, drop rates, shop prices, gold sinks.
