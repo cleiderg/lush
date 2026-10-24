@@ -249,6 +249,7 @@ Cloudflare Pages for the client, a Vultr VM in Los Angeles for the server (stagi
 | D-045 | Phase 1 gameplay is milestone 6 "Playing together" (emotes and interactions, combat, inventory and equipment, gold and the NPC shop, trading); card tables are milestone 7 (stretch) | M1 to M5 keep their meaning, and the planner files gameplay work in order (#97) |
 | D-046 | Gameplay areas: spawn and shop at the centre of Aldrich Park, beginner NPCs in the rest of the park, tougher NPCs in the south fields, and the PvP zone north-east of the park outside Ring Road (positions in the map spec) | A safe start, danger a short walk away, and PvP far from new players (#100) |
 | D-047 | Phase 1 gameplay numbers are OSRS-style placeholders kept in server data files (gameplay spec): one combat level 1 to 30, melee only, 28 inventory slots, 100 starting gold, six NPC types, a shop that also sells food and starter gear, PvP only within 5 levels, gold never dropped, a 2 s wave | A complete, playable loop now, tuned after playtests; selling at the shop gives gold a use (#96, #98, #99) |
+| D-048 | Coders and the planner also run on Opus (amends D-039). While the bot is at its Opus limit they run on Sonnet, and reviews wait for Opus. Estimated-cost caps raised to $40 per run and $150 per issue. | The bot plan had usage to spare; stronger coders mean fewer review rounds and CI fixes, and nothing merges on a weaker review |
 
 ---
 

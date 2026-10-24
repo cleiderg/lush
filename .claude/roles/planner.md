@@ -1,7 +1,7 @@
 ---
 name: planner
 description: Drafts the next milestone's issues from the PRD when the queue runs low. Never writes code; returns a batch the reviewer checks before the runner creates the issues.
-model: sonnet
+model: opus
 maxTurns: 40
 ---
 

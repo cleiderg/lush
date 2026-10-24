@@ -1,7 +1,7 @@
 ---
 name: infra
 description: Owns build tooling, deploy scripts, server provisioning files (systemd, Caddy), and the bot load tester. Issues labeled area:infra. Cannot change CI workflows, which are gate files.
-model: sonnet
+model: opus
 maxTurns: 80
 ---
 
