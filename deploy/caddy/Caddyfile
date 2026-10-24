@@ -1,0 +1,19 @@
+# Caddy terminates HTTPS and proxies everything (including /ws, /readyz,
+# /api/* and /metrics) to the local server instance. Hostnames come from the
+# environment (LUSH_PRODUCTION_HOST, LUSH_STAGING_HOST); no domain is hardcoded.
+# Upstream ports must match LUSH_LISTEN_ADDR in deploy/env/*.env.example
+# (checked by `make deploy-check`).
+{
+	# HTTP/3 off until WebTransport ships: no UDP 443 listener.
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$LUSH_PRODUCTION_HOST} {
+	reverse_proxy 127.0.0.1:8080
+}
+
+{$LUSH_STAGING_HOST} {
+	reverse_proxy 127.0.0.1:8081
+}
