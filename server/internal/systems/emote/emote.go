@@ -12,7 +12,7 @@ import (
 // wave is ignored while one is showing, and walking ends it.
 type Config struct {
 	WaveDurationTicks int // ticks Anim stays AnimWave
-	WaveCooldownTicks int // ticks after a wave starts during which new waves are ignored
+	WaveCooldownTicks int // ticks after a wave starts during which new waves are ignored; walking ends it early
 }
 
 // DefaultConfig returns the Q4 values.
@@ -68,13 +68,14 @@ func (s *System) Tick(w *world.World, _ time.Duration) {
 			delete(s.active, id)
 			continue
 		}
+		if p.Anim == world.AnimWalk {
+			// Walking ends the wave; once none is showing a new one is accepted (Q4).
+			delete(s.active, id)
+			continue
+		}
 		if st.showing > 0 {
-			if p.Anim == world.AnimWalk {
-				st.showing = 0
-			} else {
-				p.Anim = world.AnimWave
-				st.showing--
-			}
+			p.Anim = world.AnimWave
+			st.showing--
 		}
 		if st.cooldown > 0 {
 			st.cooldown--

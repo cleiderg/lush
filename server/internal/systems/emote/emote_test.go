@@ -74,6 +74,25 @@ func TestWaveEndsOnWalk(t *testing.T) {
 	}
 }
 
+func TestWaveAcceptedAfterWalkEndsIt(t *testing.T) {
+	w := setup(t)
+	p := w.Player(1)
+	w.Enqueue(emote.WaveCommand{Player: 1})
+	for i := 0; i < 5; i++ {
+		w.Tick()
+	}
+	w.Enqueue(movement.MoveCommand{Player: 1, To: world.Vec2{X: 0.6, Y: 0}})
+	for i := 0; i < 3; i++ { // two ticks walking, then idle
+		w.Tick()
+	}
+	// No wave is showing any more, so a new one is not ignored (Q4).
+	w.Enqueue(emote.WaveCommand{Player: 1})
+	w.Tick()
+	if p.Anim != world.AnimWave {
+		t.Fatalf("anim %v, want wave", p.Anim)
+	}
+}
+
 func TestWaveOnArrivalTick(t *testing.T) {
 	w := setup(t)
 	p := w.Player(1)
