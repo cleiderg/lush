@@ -19,6 +19,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/session"
 	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
+	"github.com/cleiderg/lush/server/internal/systems/emote"
 	"github.com/cleiderg/lush/server/internal/systems/movement"
 	"github.com/cleiderg/lush/server/internal/transport"
 	"github.com/cleiderg/lush/server/internal/world"
@@ -93,8 +94,8 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		SaveInterval: cfg.SaveInterval,
 		OnPanic:      reporter.Recovered,
 	}, w, clock, players, log)
-	// Order matters: movement applies inputs, chat delivers, session snapshots last.
-	for _, s := range []world.System{mover, chat.New(chat.DefaultConfig(), clock, sess), sess} {
+	// Order matters: movement applies inputs, emote overrides animation, chat delivers, session snapshots last.
+	for _, s := range []world.System{mover, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess), sess} {
 		if err := w.Register(s); err != nil {
 			log.Error("register system", "err", err)
 			return 2

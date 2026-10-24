@@ -27,6 +27,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
+	"github.com/cleiderg/lush/server/internal/systems/emote"
 	"github.com/cleiderg/lush/server/internal/transport"
 	"github.com/cleiderg/lush/server/internal/world"
 )
@@ -112,7 +113,7 @@ type Server struct {
 	bld      *flatbuffers.Builder
 }
 
-// New creates the Server. Register it on w after the movement and chat systems.
+// New creates the Server. Register it on w after the movement, emote and chat systems.
 func New(cfg Config, w *world.World, clock world.Clock, players store.Players, log *slog.Logger) *Server {
 	if cfg.HelloTimeout <= 0 {
 		cfg.HelloTimeout = 10 * time.Second
@@ -201,6 +202,11 @@ func (s *Server) ServeConn(c transport.Conn) {
 				MoveX: m.moveX, MoveZ: m.moveZ, Facing: m.facing, conn: c})
 		case protocol.MessageChatSend:
 			s.w.Enqueue(chat.SendCommand{Player: g.id, Text: m.chatText})
+		case protocol.MessageEmoteSend:
+			// Unknown emote values are dropped, not fatal.
+			if m.emote == protocol.EmoteWave {
+				s.w.Enqueue(emote.WaveCommand{Player: g.id})
+			}
 		case protocol.MessagePing:
 			c.Send(encodePong(m.pingToken))
 		}
