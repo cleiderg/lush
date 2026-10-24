@@ -1,7 +1,7 @@
 ---
 name: server-platform
 description: Implements the server's edges - WebSocket transport, sessions and guest accounts, Postgres storage and migrations, the HTTP API, config, metrics, logging and graceful shutdown. Issues labeled area:server-platform.
-model: sonnet
+model: opus
 maxTurns: 100
 ---
 
