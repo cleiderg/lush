@@ -43,8 +43,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 2 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 2", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 3 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 3", ProtocolVersionCurrent)
 	}
 }
 
@@ -205,5 +205,35 @@ func TestRoundTripRestartCountdown(t *testing.T) {
 	m.Init(tbl.Bytes, tbl.Pos)
 	if m.SecondsRemaining() != 42 {
 		t.Fatalf("seconds_remaining = %d, want 42", m.SecondsRemaining())
+	}
+}
+
+func TestRoundTripEmoteSend(t *testing.T) {
+	b := flatbuffers.NewBuilder(32)
+	EmoteSendStart(b)
+	EmoteSendAddEmote(b, EmoteWave)
+	buf := finish(b, MessageEmoteSend, EmoteSendEnd(b))
+	var m EmoteSend
+	tbl := open(t, buf, MessageEmoteSend)
+	m.Init(tbl.Bytes, tbl.Pos)
+	if m.Emote() != EmoteWave {
+		t.Fatalf("emote = %v, want Wave", m.Emote())
+	}
+}
+
+func TestRoundTripWaveAnimation(t *testing.T) {
+	b := flatbuffers.NewBuilder(64)
+	SnapshotStartEntitiesVector(b, 1)
+	CreateEntity(b, 7, 10, 20, 30, uint8(AnimationWave))
+	ents := b.EndVector(1)
+	SnapshotStart(b)
+	SnapshotAddEntities(b, ents)
+	buf := finish(b, MessageSnapshot, SnapshotEnd(b))
+	var m Snapshot
+	tbl := open(t, buf, MessageSnapshot)
+	m.Init(tbl.Bytes, tbl.Pos)
+	var e Entity
+	if !m.Entities(&e, 0) || Animation(e.Animation()) != AnimationWave {
+		t.Fatalf("animation = %d, want Wave", e.Animation())
 	}
 }

@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 2
+  Current = 3
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -28,6 +28,18 @@ enum ActionFlags : ubyte (bit_flags) {
   Jump
 }
 
+// Entity.animation values, shared by server and client.
+enum Animation : ubyte {
+  Idle = 0,
+  Walk = 1,
+  Wave = 2
+}
+
+// Emotes a client can request with EmoteSend.
+enum Emote : ubyte {
+  Wave
+}
+
 // A player or other entity inside a Snapshot. Packed to 8 bytes.
 // Ids are session-scoped 16-bit entity ids (also used as player id).
 struct Entity {
@@ -35,7 +47,7 @@ struct Entity {
   x: int16;         // decimetres (0.1 m) from the map origin
   z: int16;         // decimetres (0.1 m) from the map origin
   rotation: uint8;  // facing, 0..255 = 0..2*pi radians
-  animation: uint8; // animation id, game-defined
+  animation: uint8; // Animation value
 }
 
 // Client -> server, first message on a connection.
@@ -95,6 +107,11 @@ table RestartCountdown {
   seconds_remaining: ushort;
 }
 
+// Client -> server: play an emote.
+table EmoteSend {
+  emote: Emote;
+}
+
 union Message {
   Hello,
   Welcome,
@@ -105,7 +122,8 @@ union Message {
   Ping,
   Pong,
   Reload,
-  RestartCountdown
+  RestartCountdown,
+  EmoteSend
 }
 
 table Envelope {
