@@ -5,6 +5,8 @@ export interface PlayerView {
   readonly z: number;
   /** Facing in radians around +Y; 0 faces +Z. */
   readonly heading: number;
+  /** Protocol Animation id; missing means Idle. */
+  readonly animation?: number;
 }
 
 export interface WorldView {

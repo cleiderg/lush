@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PARTS, makePartGeometry, makePartMaterial, swingAngle, WALK_SPEED_RAD_PER_UNIT } from './character';
+import { PARTS, makePartGeometry, makePartMaterial, poseRoll, swingAngle, WALK_SPEED_RAD_PER_UNIT } from './character';
 import type { PlayerView } from './worldView';
 
 export const MAX_REMOTE_PLAYERS = 100;
@@ -21,6 +21,7 @@ export class RemotePlayers {
   private readonly pos = new THREE.Vector3();
   private readonly one = new THREE.Vector3(1, 1, 1);
   private readonly axisX = new THREE.Vector3(1, 0, 0);
+  private readonly axisZ = new THREE.Vector3(0, 0, 1);
   private readonly axisY = new THREE.Vector3(0, 1, 0);
 
   constructor(capacity = MAX_REMOTE_PLAYERS) {
@@ -53,7 +54,9 @@ export class RemotePlayers {
       this.q.setFromAxisAngle(this.axisY, p.heading);
       for (let k = 0; k < PARTS.length; k++) {
         const part = PARTS[k];
-        this.qs.setFromAxisAngle(this.axisX, swingAngle(t.phase, part));
+        const roll = poseRoll(part, p.animation ?? 0);
+        if (roll !== 0) this.qs.setFromAxisAngle(this.axisZ, roll);
+        else this.qs.setFromAxisAngle(this.axisX, swingAngle(t.phase, part));
         // world = root(pos, yaw) * pivot translate * swing rotation
         const [px, py, pz] = part.pivot;
         this.pos.set(px, py, pz).applyQuaternion(this.q);
