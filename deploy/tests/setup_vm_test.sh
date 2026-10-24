@@ -9,7 +9,10 @@ trap 'rm -rf "$tmp"' EXIT
 
 mkdir "$tmp/bin"
 for cmd in useradd chown systemctl; do
-  printf '#!/usr/bin/env bash\necho "%s $*" >>"$STUB_LOG"\n' "$cmd" >"$tmp/bin/$cmd"
+  cat >"$tmp/bin/$cmd" <<'STUB'
+#!/usr/bin/env bash
+echo "$(basename "$0") $*" >>"$STUB_LOG"
+STUB
   chmod +x "$tmp/bin/$cmd"
 done
 
