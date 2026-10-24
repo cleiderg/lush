@@ -1,6 +1,9 @@
 [Unit]
 Description=Lush game server (staging)
-After=network.target postgresql.service
+# The database is a managed cluster on the private network (D-007), not a local
+# service: wait for the network to be up before the startup migration.
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
@@ -10,7 +13,9 @@ EnvironmentFile=/etc/lush/staging.env
 ExecStart=/opt/lush/staging/current/lush-server
 WorkingDirectory=/opt/lush/staging/current
 Restart=on-failure
-RestartSec=2s
+# 5s keeps restarts under systemd's default start limit (5 in 10s), so a short
+# database outage doesn't leave the unit failed for good.
+RestartSec=5s
 # SIGTERM starts the in-game restart countdown (60s in production), then the
 # final save (20s) and HTTP shutdown (5s); 150s leaves headroom.
 KillSignal=SIGTERM

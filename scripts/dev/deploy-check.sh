@@ -17,8 +17,9 @@ if [[ "${1:-}" == "--self-test" ]]; then
       echo "self-test: $1 was NOT rejected"; fail=1
     else echo "self-test: $1 rejected (ok)"; fi
   }
-  expect_fail "password in database URL" 's#^LUSH_DATABASE_URL=.*#LUSH_DATABASE_URL=postgres://lush:hunter2@127.0.0.1/lush_production#' env/production.env.example
-  expect_fail "non-placeholder database URL" 's#^LUSH_DATABASE_URL=.*#LUSH_DATABASE_URL=postgres://db.internal/lush_production#' env/production.env.example
+  expect_fail "password in database URL" 's#^LUSH_DATABASE_URL=.*#LUSH_DATABASE_URL=postgres://lush:hunter2@DB_HOST:5432/lush_production?sslmode=require#' env/production.env.example
+  expect_fail "non-placeholder database URL" 's#^LUSH_DATABASE_URL=.*#LUSH_DATABASE_URL=postgres://lush@db.internal:5432/lush_production?sslmode=require#' env/production.env.example
+  expect_fail "database URL without TLS" 's#?sslmode=require##' env/staging.env.example
   expect_fail "short TimeoutStopSec" 's#^TimeoutStopSec=.*#TimeoutStopSec=30s#' systemd/lush-staging.service
   expect_fail "unknown LUSH_ variable" 's#^LUSH_ENV=#LUSH_BOGUS=#' env/staging.env.example
   expect_fail "shared port" 's#127.0.0.1:8081#127.0.0.1:8080#' env/staging.env.example
@@ -80,11 +81,12 @@ for e in production staging; do
   ports+=("${BASH_REMATCH[1]:-}")
   [[ -n "${kv[LUSH_WS_ORIGINS]:-}" ]] || bad "$e: LUSH_WS_ORIGINS required"
   url="${kv[LUSH_DATABASE_URL]:-}"
-  # Only a passwordless, hostless placeholder is allowed: postgres:///<db>?host=/var/run/postgresql
-  if [[ "$url" =~ ^postgres(ql)?:///([a-z_]+)\?host=/var/run/postgresql$ ]]; then
+  # Only a placeholder is allowed: a user with no password, the literal host
+  # DB_HOST, and TLS to the managed cluster (D-007).
+  if [[ "$url" =~ ^postgres(ql)?://[a-z_]+@DB_HOST:[0-9]+/([a-z_]+)\?sslmode=require$ ]]; then
     dbs+=("${BASH_REMATCH[2]}")
   else
-    bad "$e: LUSH_DATABASE_URL must be the placeholder postgres:///<db>?host=/var/run/postgresql (no credentials)"
+    bad "$e: LUSH_DATABASE_URL must be the placeholder postgres://<user>@DB_HOST:<port>/<db>?sslmode=require (no password, no real host)"
     dbs+=("")
   fi
   unset kv
