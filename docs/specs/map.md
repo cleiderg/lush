@@ -12,3 +12,17 @@
 ## Phase 1 coverage
 
 Central campus only: Aldrich Park and the ring of buildings around it (D-023).
+
+## Gameplay areas
+
+Decided in #100. Coordinates are approximate, in metres from the world origin in `shared/map/config.mjs` (x = east, z = south; `campus.json` stores decimetres, so multiply by 10). Agents keep each place where it is listed, snap it to walkable cells, and keep spawn and shop clear of buildings and paths through doors. Don't move a place to a different part of campus without an owner decision.
+
+| Place | Where | Rules |
+|---|---|---|
+| **Safe spawn point** | Centre of Aldrich Park (the park's green area, OSM way 168468694), around (-22, -76) | New players and respawns appear here. No combat within 40 m: NPCs don't enter this safe circle and attacks can't start in it. |
+| **NPC shop** | A market stall about 20 m north of the spawn, around (-22, -96) | Inside the safe circle, so new players find it straight away. |
+| **PvE: Aldrich Park** | The rest of Aldrich Park, outside the safe circle | Beginner NPCs, levels 1 to 5, all passive (they only fight back). |
+| **PvE: South fields** | Open ground south-west of the park, around x -360 to -200, z 240 to 320 | Tougher NPCs, levels 8 to 20; some are aggressive. Roughly 2 minutes' walk from spawn. |
+| **PvP zone** | Open ground north-east of the park, outside Ring Road, around x 200 to 400, z -400 to -280 | The only place players can attack each other. Its border is drawn on the ground in red, and the client shows a warning before a player steps in. No trading inside it. At least 300 m from spawn. |
+
+The areas are polygons in shared map data (one file the client and server both read), so the server decides who is where. All five are placeholders to adjust after playtests.
