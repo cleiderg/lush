@@ -1,3 +1,4 @@
+import { AudioManager } from './audio';
 import { initErrorReporting } from './core/errorReporting';
 import { GameLoop } from './core/loop';
 import { encodeInput } from './net/codec';
@@ -8,6 +9,9 @@ import { Controls } from './ui/controls';
 import { RestartBanner } from './ui/restartBanner';
 
 initErrorReporting();
+
+// Audio starts only after the first user gesture.
+new AudioManager({ factory: () => new AudioContext(), window, document });
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d');
