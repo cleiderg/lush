@@ -267,6 +267,9 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 **Trading** ([[gameplay]])
 - Confirmation flow (OSRS uses two confirmation screens), trade distance, whether trading is allowed inside the PvP zone, trade limits.
 
+**Client and art** ([[architecture]])
+- glTF model budgets per model type (placeholders from #82, enforced by the CI check in #86): `characters/` 1,500 triangles / 150 KB, `props/` 1,000 / 100 KB, `buildings/` 8,000 / 500 KB, anything else 3,000 / 200 KB. Tune after profiling on an iPhone 13.
+
 **Later phases**
 - Launch plan to avoid an empty world (clubs, residence halls, scheduled events).
 - UCI email login, chat moderation, and wider device support before public launch.
