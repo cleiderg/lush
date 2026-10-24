@@ -47,7 +47,7 @@ export class WorldScene {
     const dist = this.lastX === null ? 0 : Math.hypot(local.x - this.lastX, local.z - this.lastZ);
     this.lastX = local.x;
     this.lastZ = local.z;
-    this.player.update(local.x, local.z, local.heading, dist);
+    this.player.update(local.x, local.z, local.heading, dist, local.animation ?? 0);
     this.remotes.update(view.remotes);
     this.rig.follow(local.x, local.z);
   }

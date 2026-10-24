@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Animation } from '../protocol';
 
 /** One box of the slim character. `pivot` is the joint the part swings around. */
 export interface PartDef {
@@ -35,6 +36,14 @@ export function swingAngle(phase: number, part: PartDef): number {
   return Math.sin(phase) * WALK_SWING * part.swing;
 }
 
+export const WAVE_ARM = 'armR';
+export const WAVE_RAISE = 2.6; // radians around Z: arm up and out
+
+/** Roll (around Z) a part has for the given animation id; 0 is the idle pose. */
+export function poseRoll(part: PartDef, animation: number): number {
+  return animation === Animation.Wave && part.name === WAVE_ARM ? WAVE_RAISE : 0;
+}
+
 export function makePartGeometry(part: PartDef): THREE.BoxGeometry {
   const g = new THREE.BoxGeometry(...part.size);
   g.translate(...part.offset);
@@ -62,7 +71,7 @@ export class Character {
   }
 
   /** `distance` is how far the character moved since the last call. */
-  update(x: number, z: number, heading: number, distance: number): void {
+  update(x: number, z: number, heading: number, distance: number, animation = 0): void {
     this.root.position.set(x, 0, z);
     this.root.rotation.y = heading;
     if (distance > 1e-4) {
@@ -70,6 +79,10 @@ export class Character {
     } else {
       this.phase = 0;
     }
-    for (const { part, node } of this.joints) node.rotation.x = swingAngle(this.phase, part);
+    for (const { part, node } of this.joints) {
+      const roll = poseRoll(part, animation);
+      node.rotation.x = roll !== 0 ? 0 : swingAngle(this.phase, part);
+      node.rotation.z = roll;
+    }
   }
 }

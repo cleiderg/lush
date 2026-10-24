@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CameraRig, MAX_PITCH, MIN_PITCH } from './cameraRig';
 import { loadCampus } from './campusMap';
+import { Animation } from '../protocol';
 import { PARTS } from './character';
 import { WorldScene, countDrawCalls, countDrawCallsInView, countTrianglesInView } from './scene';
 import type { PlayerView, WorldView } from './worldView';
@@ -59,6 +60,48 @@ describe('characters', () => {
     expect(calls).toBeLessThan(40);
     const inst = w.scene.getObjectByProperty('isInstancedMesh', true) as import('three').InstancedMesh;
     expect(inst.count).toBe(100);
+  });
+
+  it('raises the local arm for Wave and returns to idle', () => {
+    const w = new WorldScene();
+    const v = (animation: number): WorldView => ({ ...view(0), local: { id: 0, x: 0, z: 0, heading: 0, animation } });
+    const player = () => w.scene.children.find((c) => c.children.length === PARTS.length)!;
+    const arm = () => player().children[PARTS.findIndex((p) => p.name === 'armR')];
+    w.update(v(Animation.Idle));
+    expect(arm().rotation.z).toBe(0);
+    w.update(v(Animation.Wave));
+    expect(Math.abs(arm().rotation.z)).toBeGreaterThan(1);
+    w.update(v(Animation.Idle));
+    expect(arm().rotation.z).toBe(0);
+  });
+
+  it('raises only the waving remote player arm instance', () => {
+    const w = new WorldScene();
+    const base = view(3);
+    w.update(base);
+    const meshes = w.scene.getObjectsByProperty('isInstancedMesh', true) as import('three').InstancedMesh[];
+    const armIdx = PARTS.findIndex((p) => p.name === 'armR');
+    const snap = () => meshes.map((m) => Array.from(m.instanceMatrix.array.slice(0, 48)));
+    const idle = snap();
+    w.update({ ...base, remotes: base.remotes.map((p, i) => (i === 1 ? { ...p, animation: Animation.Wave } : p)) });
+    const waved = snap();
+    const row = (a: number[], i: number) => a.slice(i * 16, i * 16 + 16);
+    meshes.forEach((_, k) => {
+      for (let i = 0; i < 3; i++) {
+        const changed = JSON.stringify(row(idle[k], i)) !== JSON.stringify(row(waved[k], i));
+        expect(changed).toBe(k === armIdx && i === 1);
+      }
+    });
+  });
+
+  it('keeps draw calls the same with players waving', () => {
+    const calls = (wave: boolean) => {
+      const w = new WorldScene();
+      const v = view(100);
+      w.update({ ...v, remotes: v.remotes.map((p, i) => ({ ...p, animation: wave && i % 2 ? Animation.Wave : 0 })) });
+      return countDrawCalls(w.scene);
+    };
+    expect(calls(true)).toBe(calls(false));
   });
 
   it('has a ground that covers the whole map', () => {
