@@ -85,13 +85,16 @@ else
 	tools/bots/bin/bots -url "$(LOADTEST_URL)" -bots 1000 -radius 25 -ramp 30s -duration 60s -out "$(LOADTEST_OUT)"
 endif
 
-# Checks for deploy/ scripts and config: shellcheck plus the stubbed-ufw tests.
+# Checks for deploy/: shellcheck, the stubbed-ufw tests, and the systemd units
+# and env templates. In CI (CI=true) a missing tool is a failure.
 deploy-check:
 	@if command -v shellcheck >/dev/null; then \
-		shellcheck $$(find deploy -name '*.sh'); \
+		shellcheck $$(find deploy -name '*.sh') scripts/dev/deploy-check.sh; \
 	elif [ -n "$$CI" ]; then \
 		echo "deploy-check: shellcheck not installed"; exit 1; \
 	else \
 		echo "deploy-check: shellcheck not installed, skipping (required in CI)"; \
 	fi
 	@for t in deploy/tests/*_test.sh; do echo "== $$t"; bash "$$t" || exit 1; done
+	scripts/dev/deploy-check.sh --self-test
+	scripts/dev/deploy-check.sh
