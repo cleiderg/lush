@@ -146,6 +146,18 @@ jobs:
       - name: Detect deploy-check target
         id: has
         run: if [ -f Makefile ] && grep -q '^deploy-check:' Makefile; then echo "yes=true" >> "$GITHUB_OUTPUT"; else echo "yes=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Install caddy and shellcheck
+        if: steps.has.outputs.yes == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl gpg
+          curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+          curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+          sudo apt-get update
+          sudo apt-get install -y caddy shellcheck
+          sudo systemctl disable --now caddy || true
+          caddy version
+          shellcheck --version
       - name: Deploy config checks
         if: steps.has.outputs.yes == 'true'
         run: make deploy-check
