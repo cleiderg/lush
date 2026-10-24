@@ -36,8 +36,8 @@ describe('Prediction', () => {
 describe('Interpolator', () => {
   it('samples between two snapshots 100 ms behind', () => {
     const i = new Interpolator();
-    i.push(1000, [{ id: 2, x: 0, z: 0, heading: 0 }]);
-    i.push(1050, [{ id: 2, x: 10, z: 20, heading: 0 }]);
+    i.push(1000, [{ id: 2, x: 0, z: 0, heading: 0, animation: 0 }]);
+    i.push(1050, [{ id: 2, x: 10, z: 20, heading: 0, animation: 0 }]);
     const [mid] = i.sample(1125); // render time 1025
     expect(mid.x).toBeCloseTo(5);
     expect(mid.z).toBeCloseTo(10);
@@ -47,8 +47,8 @@ describe('Interpolator', () => {
 
   it('takes the short way around for heading', () => {
     const i = new Interpolator();
-    i.push(0, [{ id: 1, x: 0, z: 0, heading: 6.2 }]);
-    i.push(100, [{ id: 1, x: 0, z: 0, heading: 0.2 }]);
+    i.push(0, [{ id: 1, x: 0, z: 0, heading: 6.2, animation: 0 }]);
+    i.push(100, [{ id: 1, x: 0, z: 0, heading: 0.2, animation: 0 }]);
     const h = i.sample(150)[0].heading;
     expect(Math.cos(h)).toBeGreaterThan(0.99);
   });
