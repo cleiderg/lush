@@ -24,6 +24,9 @@ if [[ "${1:-}" == "--self-test" ]]; then
   expect_fail "unknown LUSH_ variable" 's#^LUSH_ENV=#LUSH_BOGUS=#' env/staging.env.example
   expect_fail "shared port" 's#127.0.0.1:8081#127.0.0.1:8080#' env/staging.env.example
   expect_fail "shared database" 's#lush_staging#lush_production#' env/staging.env.example
+  expect_fail "Caddy port differs from env" 's#reverse_proxy 127.0.0.1:8081#reverse_proxy 127.0.0.1:9999#' caddy/Caddyfile
+  expect_fail "hardcoded Caddy hostname" 's#{$LUSH_STAGING_HOST}#staging.example.com#' caddy/Caddyfile
+  expect_fail "HTTP/3 enabled" 's#protocols h1 h2#protocols h1 h2 h3#' caddy/Caddyfile
   expect_fail "root user" 's#^User=lush#User=root#' systemd/lush-production.service
   exit $fail
 fi
@@ -95,6 +98,37 @@ done
 if [[ "${#ports[@]}" -eq 2 ]]; then
   [[ "${ports[0]}" != "${ports[1]}" ]] || bad "production and staging share port ${ports[0]}"
   [[ "${dbs[0]}" != "${dbs[1]}" || -z "${dbs[0]}" ]] || bad "production and staging share database ${dbs[0]}"
+fi
+
+# Caddyfile: two site blocks on the env-example ports, HTTP/3 off.
+caddyfile="$dir/caddy/Caddyfile"
+if [[ ! -f "$caddyfile" ]]; then
+  bad "missing $caddyfile"
+else
+  for pair in "production:${ports[0]:-}" "staging:${ports[1]:-}"; do
+    e="${pair%%:*}"; port="${pair#*:}"
+    host="LUSH_$(tr a-z A-Z <<<"$e")_HOST"
+    # Body of the site block opened by {$LUSH_<ENV>_HOST} {
+    block="$(awk -v h="{\$$host} {" '$0 == h {f=1; next} f && /^}/ {exit} f' "$caddyfile")"
+    if [[ -z "$block" ]]; then bad "caddy: no site block for {\$$host}"; continue; fi
+    ups="$(sed -n 's/^[[:space:]]*reverse_proxy[[:space:]]\{1,\}//p' <<<"$block")"
+    [[ "$ups" == "127.0.0.1:$port" ]] || bad "caddy: $e must reverse_proxy to 127.0.0.1:$port (got '${ups:-none}')"
+  done
+  [[ "$(grep -c '^{\$LUSH_[A-Z]*_HOST} {' "$caddyfile")" -eq 2 ]] || bad "caddy: expected exactly two {\$LUSH_*_HOST} site blocks"
+  grep -qE '^[[:space:]]*protocols h1 h2$' "$caddyfile" || bad "caddy: global servers { protocols h1 h2 } required"
+  if command -v caddy >/dev/null 2>&1; then
+    export LUSH_PRODUCTION_HOST=production.example.test LUSH_STAGING_HOST=staging.example.test
+    if ! adapted="$(caddy adapt --adapter caddyfile --config "$caddyfile" 2>&1)"; then
+      echo "$adapted" >&2; bad "caddy adapt failed"
+    elif grep -q '"h3"' <<<"$adapted"; then
+      bad "caddy: adapted config enables h3"
+    fi
+    caddy validate --adapter caddyfile --config "$caddyfile" >/dev/null 2>&1 || { caddy validate --adapter caddyfile --config "$caddyfile" >&2 || true; bad "caddy validate failed"; }
+  elif [[ "${CI:-}" == "true" ]]; then
+    bad "caddy not installed (required when CI=true)"
+  else
+    echo "deploy-check: caddy not found, skipping validate (set CI=true to require)"
+  fi
 fi
 
 # systemd-analyze verify
