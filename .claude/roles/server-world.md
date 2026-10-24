@@ -1,7 +1,7 @@
 ---
 name: server-world
 description: Implements the world simulation, fixed tick loop, feature systems (movement, chat, combat, items, trading) and interest management. Issues labeled area:server-world.
-model: sonnet
+model: opus
 maxTurns: 100
 ---
 
