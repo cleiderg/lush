@@ -46,14 +46,19 @@ Gold can be bet at card tables. Gold can never be bought, sold, or exchanged for
 - The swap is saved as **one database transaction**: either everything moves or nothing does.
 - Both inventories are re-checked on the server at the moment of commit; a trade fails if either side no longer has what it offered.
 - Every trade is written to the economy audit log.
-- **TBD:** confirmation flow (OSRS uses two confirmation screens to prevent scams), maximum trade distance, whether trading is allowed inside the PvP zone, any limits.
+- **Confirmation:** two confirmation screens (as in OSRS) to prevent scams.
+- **Distance:** the players must be within 3 tiles of each other.
+- **PvP zone:** trading is not allowed inside it.
+- **Limits:** none beyond the above.
 
 ## Death in the PvP zone
 
 - The player respawns at a safe spawn point.
 - They **drop everything except a few items**, OSRS Wilderness style. The killer can loot the drop.
 - Trades and drops must be handled as single transactions so items can never be duplicated.
-- **TBD:** how many items are kept (OSRS keeps the 3 most valuable), whether loot is reserved for the killer for a short time before anyone can take it, how long drops stay on the ground.
+- **Kept items:** the 3 most valuable.
+- **Killer-only window:** drops are reserved for the killer for 60 s, then anyone can take them.
+- **Drop lifetime:** drops stay on the ground for 3 minutes.
 
 ## Death outside the PvP zone (PvE)
 

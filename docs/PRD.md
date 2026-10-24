@@ -258,14 +258,14 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 - Combat stats and formulas, NPC types, respawn times, attack range, health regeneration.
 - Inventory size, Phase 1 item list, stacking rules.
 - Starting gold, drop rates, shop prices, gold sinks.
-- PvP death: number of items kept, killer-only loot window, how long drops stay on the ground.
 - Whether dying to NPCs costs anything.
 
 **Card tables** ([[card-tables]], stretch)
 - Table size, turn timer, disconnect mid-game, house cut as a gold sink.
 
-**Trading** ([[gameplay]])
-- Confirmation flow (OSRS uses two confirmation screens), trade distance, whether trading is allowed inside the PvP zone, trade limits.
+**Trading and PvP death** ([[gameplay]], decided in #99)
+- Trading: two confirmation screens, 3 tiles maximum distance, not allowed in the PvP zone, no other limits.
+- PvP death: keep the 3 most valuable items, 60 s killer-only loot window, drops last 3 minutes.
 
 **Client and art** ([[architecture]])
 - glTF model budgets per model type (placeholders from #82, enforced by the CI check in #86): `characters/` 1,500 triangles / 150 KB, `props/` 1,000 / 100 KB, `buildings/` 8,000 / 500 KB, anything else 3,000 / 200 KB. Tune after profiling on an iPhone 13.
