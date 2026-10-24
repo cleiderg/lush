@@ -18,6 +18,7 @@ const (
 	MessagePong             Message = 8
 	MessageReload           Message = 9
 	MessageRestartCountdown Message = 10
+	MessageEmoteSend        Message = 11
 )
 
 var EnumNamesMessage = map[Message]string{
@@ -32,6 +33,7 @@ var EnumNamesMessage = map[Message]string{
 	MessagePong:             "Pong",
 	MessageReload:           "Reload",
 	MessageRestartCountdown: "RestartCountdown",
+	MessageEmoteSend:        "EmoteSend",
 }
 
 var EnumValuesMessage = map[string]Message{
@@ -46,6 +48,7 @@ var EnumValuesMessage = map[string]Message{
 	"Pong":             MessagePong,
 	"Reload":           MessageReload,
 	"RestartCountdown": MessageRestartCountdown,
+	"EmoteSend":        MessageEmoteSend,
 }
 
 func (v Message) String() string {

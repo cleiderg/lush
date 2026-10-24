@@ -1,7 +1,7 @@
 import * as flatbuffers from 'flatbuffers';
 import { describe, expect, it } from 'vitest';
 import {
-  ActionFlags, ChatMessage, ChatSend, Entity, Envelope, Hello, Input, Message, Ping, Pong,
+  ActionFlags, Animation, ChatMessage, ChatSend, Emote, EmoteSend, Entity, Envelope, Hello, Input, Message, Ping, Pong,
   ProtocolVersion, Reload, RestartCountdown, Snapshot, Vec2, Welcome,
 } from './index.js';
 
@@ -32,7 +32,7 @@ function buildSnapshot(n: number): Uint8Array {
 
 describe('protocol', () => {
   it('exposes the version constant', () => {
-    expect(ProtocolVersion.Current).toBe(2);
+    expect(ProtocolVersion.Current).toBe(3);
   });
 
   it('keeps a 101-entity snapshot under 1200 bytes', () => {
@@ -127,5 +127,22 @@ describe('protocol', () => {
     const buf = finish(b, Message.RestartCountdown, RestartCountdown.createRestartCountdown(b, 42));
     const m = open(buf, Message.RestartCountdown, new RestartCountdown());
     expect(m.secondsRemaining()).toBe(42);
+  });
+
+  it('round-trips EmoteSend', () => {
+    const b = new flatbuffers.Builder(32);
+    const buf = finish(b, Message.EmoteSend, EmoteSend.createEmoteSend(b, Emote.Wave));
+    expect(open(buf, Message.EmoteSend, new EmoteSend()).emote()).toBe(Emote.Wave);
+  });
+
+  it('round-trips a waving entity', () => {
+    const b = new flatbuffers.Builder(64);
+    Snapshot.startEntitiesVector(b, 1);
+    Entity.createEntity(b, 7, 10, 20, 30, Animation.Wave);
+    const ents = b.endVector();
+    Snapshot.startSnapshot(b);
+    Snapshot.addEntities(b, ents);
+    const buf = finish(b, Message.Snapshot, Snapshot.endSnapshot(b));
+    expect(open(buf, Message.Snapshot, new Snapshot()).entities(0)!.animation()).toBe(Animation.Wave);
   });
 });
