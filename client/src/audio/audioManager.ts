@@ -6,8 +6,8 @@ export interface AudioContextLike {
 }
 
 export interface AudioTarget {
-  addEventListener(type: string, listener: () => void): void;
-  removeEventListener(type: string, listener: () => void): void;
+  addEventListener(type: string, listener: (e: Event) => void): void;
+  removeEventListener(type: string, listener: (e: Event) => void): void;
 }
 
 export interface AudioManagerOptions<C extends AudioContextLike> {
@@ -20,7 +20,14 @@ export interface AudioManagerOptions<C extends AudioContextLike> {
 export class AudioManager<C extends AudioContextLike = AudioContextLike> {
   private ctx: C | null = null;
   private unlocked = false;
-  private readonly onGesture = (): void => this.unlock();
+  private readonly onGesture = (e: Event): void => {
+    // Only user-activation events may start audio (HTML spec): a touch or pen pointerdown
+    // comes before activation, so the touchend that follows it unlocks instead.
+    const { pointerType, key } = e as Partial<PointerEvent & KeyboardEvent>;
+    if (e.type === 'pointerdown' && pointerType !== 'mouse') return;
+    if (e.type === 'keydown' && key === 'Escape') return;
+    this.unlock();
+  };
   private readonly onVisibility = (): void => {
     if (!this.ctx || this.opts.document.visibilityState !== 'visible') return;
     if (this.ctx.state === 'suspended' || this.ctx.state === 'interrupted') {

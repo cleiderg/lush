@@ -2,17 +2,18 @@ import { describe, expect, it, vi } from 'vitest';
 import { AudioManager } from './audioManager';
 
 class Target {
-  private l = new Map<string, Set<() => void>>();
+  private l = new Map<string, Set<(e: Event) => void>>();
   visibilityState = 'visible';
-  addEventListener(t: string, f: () => void): void {
+  addEventListener(t: string, f: (e: Event) => void): void {
     if (!this.l.has(t)) this.l.set(t, new Set());
     this.l.get(t)!.add(f);
   }
-  removeEventListener(t: string, f: () => void): void {
+  removeEventListener(t: string, f: (e: Event) => void): void {
     this.l.get(t)?.delete(f);
   }
-  fire(t: string): void {
-    for (const f of [...(this.l.get(t) ?? [])]) f();
+  fire(t: string, extra: Record<string, string> = {}): void {
+    const e = { type: t, pointerType: 'mouse', key: 'a', ...extra } as unknown as Event;
+    for (const f of [...(this.l.get(t) ?? [])]) f(e);
   }
   count(): number {
     let n = 0;
@@ -54,6 +55,18 @@ describe('AudioManager', () => {
     expect(ctx.resume).toHaveBeenCalledTimes(1);
     expect(win.count()).toBe(0);
     expect(doc.count()).toBe(1); // visibilitychange stays
+  });
+
+  it('ignores touch pointerdown and Escape, then unlocks on the touchend', () => {
+    const { win, doc, ctx, factory } = setup();
+    win.fire('pointerdown', { pointerType: 'touch' });
+    win.fire('pointerdown', { pointerType: 'pen' });
+    doc.fire('keydown', { key: 'Escape' });
+    win.fire('keydown', { key: 'Escape' });
+    expect(factory).not.toHaveBeenCalled();
+    win.fire('touchend');
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(ctx.resume).toHaveBeenCalledTimes(1);
   });
 
   it('resumes on visibilitychange when suspended or interrupted, not when running', () => {
