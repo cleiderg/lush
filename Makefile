@@ -1,6 +1,6 @@
 # Root build entry points. Parts of the repo that don't exist yet are skipped.
 SHELL := /bin/bash
-.PHONY: protocol test lint build smoke loadtest bots
+.PHONY: protocol test lint build smoke loadtest bots deploy-check
 
 HAS_GO  := $(wildcard server/go.mod)
 HAS_NPM := $(wildcard client/package.json)
@@ -84,3 +84,14 @@ else
 	$(MAKE) --no-print-directory bots
 	tools/bots/bin/bots -url "$(LOADTEST_URL)" -bots 1000 -radius 25 -ramp 30s -duration 60s -out "$(LOADTEST_OUT)"
 endif
+
+# Checks for deploy/ scripts and config: shellcheck plus the stubbed-ufw tests.
+deploy-check:
+	@if command -v shellcheck >/dev/null; then \
+		shellcheck $$(find deploy -name '*.sh'); \
+	elif [ -n "$$CI" ]; then \
+		echo "deploy-check: shellcheck not installed"; exit 1; \
+	else \
+		echo "deploy-check: shellcheck not installed, skipping (required in CI)"; \
+	fi
+	@for t in deploy/tests/*_test.sh; do echo "== $$t"; bash "$$t" || exit 1; done
