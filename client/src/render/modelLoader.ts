@@ -1,4 +1,4 @@
-import type { Object3D } from 'three';
+import { LoaderUtils, type Object3D } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 const loader = new GLTFLoader();
@@ -8,7 +8,10 @@ async function fetchModel(url: string): Promise<Object3D> {
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const gltf = await loader.parseAsync(await res.arrayBuffer(), url);
+    const gltf = await loader.parseAsync(
+      await res.arrayBuffer(),
+      LoaderUtils.extractUrlBase(url),
+    );
     return gltf.scene;
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);

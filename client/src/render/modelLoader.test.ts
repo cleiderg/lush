@@ -56,6 +56,30 @@ describe('loadModel', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('resolves external glTF buffers relative to the model url', async () => {
+    const gltf = JSON.stringify({
+      asset: { version: '2.0' },
+      scene: 0,
+      scenes: [{ nodes: [0] }],
+      nodes: [{ name: 'root', mesh: 0 }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      accessors: [
+        { bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', min: [0, 0, 0], max: [1, 1, 0] },
+      ],
+      bufferViews: [{ buffer: 0, byteLength: 36 }],
+      buffers: [{ uri: 'tri.bin', byteLength: 36 }],
+    });
+    const bin = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer;
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url === 'https://cdn.test/models/tri.bin') return respond(bin);
+      if (url === 'https://cdn.test/models/tri.gltf') return respond(new TextEncoder().encode(gltf).buffer);
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const model = await loadModel('https://cdn.test/models/tri.gltf');
+    expect(model.getObjectByName('root')).toBeDefined();
+  });
+
   it('rejects with the url on invalid GLB and retries later', async () => {
     fetchMock.mockResolvedValueOnce(respond(new Uint8Array([1, 2, 3, 4]).buffer));
     const err = await loadModel('/m/junk.glb').catch((e: unknown) => e);
