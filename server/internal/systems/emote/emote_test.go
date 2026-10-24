@@ -57,12 +57,32 @@ func TestWaveEndsOnWalk(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		w.Tick()
 	}
-	w.Enqueue(movement.MoveCommand{Player: 1, To: world.Vec2{X: 100, Y: 0}})
-	for i := 0; i < 3; i++ {
+	// 0.6 units at 6 u/s is two ticks of walking.
+	w.Enqueue(movement.MoveCommand{Player: 1, To: world.Vec2{X: 0.6, Y: 0}})
+	for i := 0; i < 2; i++ {
 		w.Tick()
 		if p.Anim != world.AnimWalk {
 			t.Fatalf("anim %v, want walk", p.Anim)
 		}
+	}
+	// The wave ended: it does not resume once the player stops.
+	for i := 0; i < 40; i++ {
+		w.Tick()
+		if p.Anim != world.AnimIdle {
+			t.Fatalf("tick %d after stopping: anim %v, want idle", i+1, p.Anim)
+		}
+	}
+}
+
+func TestWaveOnArrivalTick(t *testing.T) {
+	w := setup(t)
+	p := w.Player(1)
+	w.Enqueue(movement.MoveCommand{Player: 1, To: world.Vec2{X: 0.3, Y: 0}})
+	w.Tick() // arrives this tick; Anim is still walk
+	w.Enqueue(emote.WaveCommand{Player: 1})
+	w.Tick()
+	if p.Anim != world.AnimWave {
+		t.Fatalf("anim %v, want wave", p.Anim)
 	}
 }
 

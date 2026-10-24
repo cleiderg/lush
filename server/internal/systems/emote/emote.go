@@ -50,7 +50,7 @@ func (s *System) Handle(cmd world.Command, p *world.Player) {
 	if st != nil && st.cooldown > 0 {
 		return
 	}
-	if p.HasDesired || p.Anim == world.AnimWalk {
+	if p.HasDesired {
 		return
 	}
 	if st == nil {
