@@ -1,7 +1,7 @@
 ---
 name: client
 description: Implements the client's game loop, networking, game state, prediction and interpolation, input (joystick, buttons, keyboard), HTML/CSS UI including chat mode, and audio. Issues labeled area:client.
-model: sonnet
+model: opus
 maxTurns: 100
 ---
 
