@@ -20,6 +20,7 @@ type Anim uint8
 const (
 	AnimIdle Anim = iota
 	AnimWalk
+	AnimWave // matches protocol Animation.Wave (2)
 )
 
 // Player is an entity in the world. Only the tick may mutate it.
