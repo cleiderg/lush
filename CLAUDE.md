@@ -6,9 +6,9 @@ Lush is a browser-based, mobile-first MMO set on a low-poly recreation of the UC
 
 A program called the **runner** (plain Python, no AI) does all the bookkeeping: it picks issues, creates a git worktree and branch for each, starts the agent for that issue's area, opens the pull request, watches CI, runs the reviewer, and merges. Agents only do the part that needs judgment:
 
-- **Coding agents** (one per area, Sonnet) implement one issue in their own worktree.
+- **Coding agents** (one per area, Opus) implement one issue in their own worktree.
 - **The reviewer** (Opus) checks a pull request against its issue, fixes what it finds, or approves it.
-- **The planner** (Sonnet) drafts the next milestone's issues from the PRD.
+- **The planner** (Opus) drafts the next milestone's issues from the PRD.
 
 You are always started already inside the right worktree, on the right branch. Your role's instructions are appended to this prompt.
 
