@@ -73,9 +73,9 @@ type guest struct {
 	// Guarded by Server.mu.
 	id      world.PlayerID
 	storeID int64
-	ver     int64         // store version at load; immutable
-	pos     world.Vec2    // last position, restored on resume
-	xp      int           // combat XP, restored on resume
+	ver     int64      // store version at load; immutable
+	pos     world.Vec2 // last position, restored on resume
+	xp      int        // combat XP, restored on resume
 	inv     world.Inventory
 	conns   int           // connections that completed the handshake and have not ended
 	idle    *list.Element // in Server.idle while conns == 0
@@ -105,7 +105,7 @@ type Server struct {
 	store store.Players
 	data  *gamedata.Data
 
-	catalog  []byte                   // encoded ItemCatalog, shared by every connection
+	catalog  []byte                 // encoded ItemCatalog, shared by every connection
 	newToken func() (string, error) // replaced by tests
 
 	mu     sync.Mutex
