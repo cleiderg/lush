@@ -43,8 +43,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 6 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 6", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 7 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 7", ProtocolVersionCurrent)
 	}
 }
 
@@ -598,6 +598,130 @@ func TestRoundTripShopResult(t *testing.T) {
 		m.Init(tbl.Bytes, tbl.Pos)
 		if m.Code() != code {
 			t.Fatalf("shop result = %v, want %v", m.Code(), code)
+		}
+	}
+}
+
+func TestRoundTripAttackTarget(t *testing.T) {
+	for _, id := range []uint16{0, 300, 65535} {
+		b := flatbuffers.NewBuilder(32)
+		AttackTargetStart(b)
+		AttackTargetAddTargetId(b, id)
+		buf := finish(b, MessageAttackTarget, AttackTargetEnd(b))
+
+		var m AttackTarget
+		tbl := open(t, buf, MessageAttackTarget)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.TargetId() != id {
+			t.Fatalf("target id = %d, want %d", m.TargetId(), id)
+		}
+	}
+}
+
+type hit struct {
+	attacker, target uint16
+	damage           uint8
+	died             bool
+}
+
+func buildCombatHit(tick uint32, hits []hit) []byte {
+	b := flatbuffers.NewBuilder(256)
+	CombatHitStartHitsVector(b, len(hits))
+	for i := len(hits) - 1; i >= 0; i-- {
+		h := hits[i]
+		CreateHit(b, h.attacker, h.target, h.damage, h.died)
+	}
+	vec := b.EndVector(len(hits))
+	CombatHitStart(b)
+	CombatHitAddTick(b, tick)
+	CombatHitAddHits(b, vec)
+	return finish(b, MessageCombatHit, CombatHitEnd(b))
+}
+
+func TestRoundTripCombatHit(t *testing.T) {
+	want := []hit{{1, 300, 3, false}, {300, 1, 0, false}, {2, 300, 255, true}, {65535, 65535, 0, true}}
+	buf := buildCombatHit(123456, want)
+
+	var m CombatHit
+	tbl := open(t, buf, MessageCombatHit)
+	m.Init(tbl.Bytes, tbl.Pos)
+	if m.Tick() != 123456 {
+		t.Fatalf("tick = %d, want 123456", m.Tick())
+	}
+	if m.HitsLength() != len(want) {
+		t.Fatalf("hits = %d, want %d", m.HitsLength(), len(want))
+	}
+	var h Hit
+	for i, w := range want {
+		if !m.Hits(&h, i) {
+			t.Fatalf("hit %d missing", i)
+		}
+		got := hit{h.Attacker(), h.Target(), h.Damage(), h.Died()}
+		if got != w {
+			t.Fatalf("hit %d = %+v, want %+v", i, got, w)
+		}
+	}
+}
+
+// A CombatHit with 20 hits fits the networking spec's datagram budget, and
+// each hit is a fixed 6-byte struct.
+func TestCombatHitSize(t *testing.T) {
+	hits := make([]hit, 20)
+	for i := range hits {
+		hits[i] = hit{uint16(i), uint16(1000 + i), uint8(i), i%5 == 0}
+	}
+	buf := buildCombatHit(99999, hits)
+	if len(buf) >= 1200 {
+		t.Fatalf("CombatHit with 20 hits is %d bytes, want < 1200", len(buf))
+	}
+	t.Logf("CombatHit with 20 hits: %d bytes", len(buf))
+	// Compare even counts: the vector length is 4-byte aligned, so an odd
+	// count can add 2 bytes of padding.
+	if d := len(buildCombatHit(1, hits[:12])) - len(buildCombatHit(1, hits[:10])); d != 12 {
+		t.Fatalf("two more hits add %d bytes, want 12", d)
+	}
+}
+
+func TestRoundTripNpcCatalog(t *testing.T) {
+	type npc struct {
+		id    uint16
+		name  string
+		level uint8
+	}
+	want := []npc{{1, "Squirrel", 1}, {6, "Feral Anteater", 20}, {65535, "", 255}}
+	b := flatbuffers.NewBuilder(128)
+	offs := make([]flatbuffers.UOffsetT, len(want))
+	for i, w := range want {
+		name := b.CreateString(w.name)
+		NpcDefStart(b)
+		NpcDefAddId(b, w.id)
+		NpcDefAddName(b, name)
+		NpcDefAddCombatLevel(b, w.level)
+		offs[i] = NpcDefEnd(b)
+	}
+	NpcCatalogStartNpcsVector(b, len(offs))
+	for i := len(offs) - 1; i >= 0; i-- {
+		b.PrependUOffsetT(offs[i])
+	}
+	vec := b.EndVector(len(offs))
+	NpcCatalogStart(b)
+	NpcCatalogAddNpcs(b, vec)
+	buf := finish(b, MessageNpcCatalog, NpcCatalogEnd(b))
+
+	var m NpcCatalog
+	tbl := open(t, buf, MessageNpcCatalog)
+	m.Init(tbl.Bytes, tbl.Pos)
+	if m.NpcsLength() != len(want) {
+		t.Fatalf("npcs = %d, want %d", m.NpcsLength(), len(want))
+	}
+	var d NpcDef
+	for i, w := range want {
+		if !m.Npcs(&d, i) {
+			t.Fatalf("npc %d missing", i)
+		}
+		got := npc{d.Id(), string(d.Name()), d.CombatLevel()}
+		if got != w {
+			t.Fatalf("npc %d = %+v, want %+v", i, got, w)
 		}
 	}
 }

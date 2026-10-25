@@ -1,7 +1,7 @@
 import * as flatbuffers from 'flatbuffers';
 import { describe, expect, it } from 'vitest';
 import {
-  ActionFlags, Animation, ChatMessage, ChatSend, Emote, EmoteSend, EmptyItem, Entity, EntityHealth, EntityInfo,
+  ActionFlags, Animation, AttackTarget, CombatHit, Hit, NpcCatalog, NpcDef, ChatMessage, ChatSend, Emote, EmoteSend, EmptyItem, Entity, EntityHealth, EntityInfo,
   EntityKind, Envelope, EquipSlot, GroundItem, GroundItems, Hello, Input, ItemAction, ItemActionKind, PickUp,
   ShopBuy, ShopResult, ShopResultCode, ShopSell,
   InventorySlot, InventoryState, HealthRatio, ItemCatalog, ItemDef, ItemKind, Message, Ping, PlayerStats, Pong,
@@ -35,7 +35,7 @@ function buildSnapshot(n: number): Uint8Array {
 
 describe('protocol', () => {
   it('exposes the version constant', () => {
-    expect(ProtocolVersion.Current).toBe(6);
+    expect(ProtocolVersion.Current).toBe(7);
   });
 
   it('keeps a 101-entity snapshot under 1200 bytes', () => {
@@ -319,6 +319,47 @@ describe('protocol', () => {
       const b = new flatbuffers.Builder(32);
       const buf = finish(b, Message.ShopResult, ShopResult.createShopResult(b, code));
       expect(open(buf, Message.ShopResult, new ShopResult()).code()).toBe(code);
+    }
+  });
+
+  it('round-trips AttackTarget', () => {
+    for (const id of [0, 300, 65535]) {
+      const b = new flatbuffers.Builder(32);
+      const buf = finish(b, Message.AttackTarget, AttackTarget.createAttackTarget(b, id));
+      expect(open(buf, Message.AttackTarget, new AttackTarget()).targetId()).toBe(id);
+    }
+  });
+
+  it('round-trips CombatHit', () => {
+    const want: [number, number, number, boolean][] = [
+      [1, 300, 3, false], [300, 1, 0, false], [2, 300, 255, true], [65535, 65535, 0, true],
+    ];
+    const b = new flatbuffers.Builder(64);
+    CombatHit.startHitsVector(b, want.length);
+    for (let i = want.length - 1; i >= 0; i--) {
+      Hit.createHit(b, ...want[i]);
+    }
+    const buf = finish(b, Message.CombatHit, CombatHit.createCombatHit(b, 123456, b.endVector()));
+    const m = open(buf, Message.CombatHit, new CombatHit());
+    expect(m.tick()).toBe(123456);
+    expect(m.hitsLength()).toBe(want.length);
+    expect(Hit.sizeOf()).toBe(6);
+    for (let i = 0; i < want.length; i++) {
+      const h = m.hits(i)!;
+      expect([h.attacker(), h.target(), h.damage(), h.died()]).toEqual(want[i]);
+    }
+  });
+
+  it('round-trips NpcCatalog', () => {
+    const want: [number, string, number][] = [[1, 'Squirrel', 1], [6, 'Feral Anteater', 20], [65535, '', 255]];
+    const b = new flatbuffers.Builder(128);
+    const offs = want.map(([id, name, level]) => NpcDef.createNpcDef(b, id, b.createString(name), level));
+    const buf = finish(b, Message.NpcCatalog, NpcCatalog.createNpcCatalog(b, NpcCatalog.createNpcsVector(b, offs)));
+    const m = open(buf, Message.NpcCatalog, new NpcCatalog());
+    expect(m.npcsLength()).toBe(want.length);
+    for (let i = 0; i < want.length; i++) {
+      const d = m.npcs(i)!;
+      expect([d.id(), d.name(), d.combatLevel()]).toEqual(want[i]);
     }
   });
 });

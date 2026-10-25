@@ -30,6 +30,9 @@ const (
 	MessageShopBuy          Message = 20
 	MessageShopSell         Message = 21
 	MessageShopResult       Message = 22
+	MessageAttackTarget     Message = 23
+	MessageCombatHit        Message = 24
+	MessageNpcCatalog       Message = 25
 )
 
 var EnumNamesMessage = map[Message]string{
@@ -56,6 +59,9 @@ var EnumNamesMessage = map[Message]string{
 	MessageShopBuy:          "ShopBuy",
 	MessageShopSell:         "ShopSell",
 	MessageShopResult:       "ShopResult",
+	MessageAttackTarget:     "AttackTarget",
+	MessageCombatHit:        "CombatHit",
+	MessageNpcCatalog:       "NpcCatalog",
 }
 
 var EnumValuesMessage = map[string]Message{
@@ -82,6 +88,9 @@ var EnumValuesMessage = map[string]Message{
 	"ShopBuy":          MessageShopBuy,
 	"ShopSell":         MessageShopSell,
 	"ShopResult":       MessageShopResult,
+	"AttackTarget":     MessageAttackTarget,
+	"CombatHit":        MessageCombatHit,
+	"NpcCatalog":       MessageNpcCatalog,
 }
 
 func (v Message) String() string {
