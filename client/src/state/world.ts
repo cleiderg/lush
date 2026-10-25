@@ -1,6 +1,7 @@
 import type { ServerMessage } from '../net/codec';
 import type { CollisionGrid } from './collision';
 import { Interpolator } from './interpolation';
+import { ItemState } from './items';
 import { Prediction } from './prediction';
 
 export interface PlayerView {
@@ -25,6 +26,8 @@ export class GameState {
   /** Collision grid for prediction; null (not loaded yet) means free movement. */
   private collision: CollisionGrid | null = null;
   readonly interp = new Interpolator();
+  /** Stats, inventory, item catalog, entity info and health; subscribe for changes. */
+  readonly items = new ItemState();
 
   /** Gives prediction the collision grid; it applies now and after every Welcome. */
   setCollision(grid: CollisionGrid | null): void {
@@ -40,6 +43,7 @@ export class GameState {
       this.interp.clear();
       this.animation = 0;
       this.restartSeconds = null;
+      this.items.resetEntities();
     } else if (msg.type === 'restartCountdown') {
       this.restartSeconds = msg.seconds;
     } else if (msg.type === 'snapshot') {
@@ -49,6 +53,17 @@ export class GameState {
         this.animation = me.animation;
       }
       this.interp.push(now, msg.entities.filter((e) => e.id !== this.playerId));
+      this.items.setVisible(msg.entities.map((e) => e.id));
+    } else if (msg.type === 'playerStats') {
+      this.items.setStats(msg);
+    } else if (msg.type === 'inventory') {
+      this.items.setInventory(msg);
+    } else if (msg.type === 'itemCatalog') {
+      this.items.setCatalog(msg.items);
+    } else if (msg.type === 'entityInfo') {
+      this.items.setEntityInfo(msg);
+    } else if (msg.type === 'entityHealth') {
+      this.items.setHealth(msg.entries);
     }
   }
 

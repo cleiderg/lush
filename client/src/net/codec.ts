@@ -1,7 +1,8 @@
 import * as flatbuffers from 'flatbuffers';
 import {
-  ChatMessage, ChatSend, Emote, EmoteSend, Entity, Envelope, Hello, Input, Message, Ping, Pong, ProtocolVersion,
-  Reload, RestartCountdown, Snapshot, Vec2, Welcome,
+  ChatMessage, ChatSend, Emote, EmoteSend, Entity, EntityHealth, EntityInfo, EntityKind, Envelope, EquipSlot, Hello,
+  HealthRatio, Input, InventorySlot, InventoryState, ItemCatalog, ItemDef, ItemKind, Message, Ping, PlayerStats, Pong,
+  ProtocolVersion, Reload, RestartCountdown, Snapshot, Vec2, Welcome,
 } from '../protocol';
 
 export interface EntityState {
@@ -14,13 +15,75 @@ export interface EntityState {
   animation: number;
 }
 
+export interface PlayerStatsState {
+  hp: number;
+  maxHp: number;
+  combatLevel: number;
+  xp: number;
+  gold: number;
+}
+
+/** Item ids worn in each equipment slot; 0 (EmptyItem.Id) when empty. */
+export interface Equipment {
+  weapon: number;
+  head: number;
+  body: number;
+  shield: number;
+}
+
+/** One inventory slot; an empty slot is itemId 0, quantity 0. */
+export interface SlotState {
+  itemId: number;
+  quantity: number;
+}
+
+export interface InventoryView {
+  slots: SlotState[];
+  equipment: Equipment;
+}
+
+export interface ItemInfo {
+  id: number;
+  name: string;
+  kind: ItemKind;
+  equipSlot: EquipSlot;
+  levelToEquip: number;
+  accuracy: number;
+  strength: number;
+  defence: number;
+  attackSpeed: number;
+  heal: number;
+  shopBuysFor: number;
+  shopSells: boolean;
+  shopSellsFor: number;
+}
+
+export interface EntityInfoState {
+  id: number;
+  kind: EntityKind;
+  npcType: number;
+  combatLevel: number;
+  equipment: Equipment;
+}
+
+/** Health bar entry; ratio is hp / max_hp in 0..1. */
+export interface HealthEntry {
+  id: number;
+  ratio: number;
+}
+
 export type ServerMessage =
   | { type: 'welcome'; playerId: number; guestToken: string; spawn: { x: number; z: number }; tickRate: number }
   | { type: 'snapshot'; tick: number; lastInputSeq: number; entities: EntityState[] }
   | { type: 'chat'; speakerId: number; text: string }
   | { type: 'pong'; token: number }
   | { type: 'reload'; reason: string }
-  | { type: 'restartCountdown'; seconds: number };
+  | { type: 'restartCountdown'; seconds: number }
+  | ({ type: 'playerStats' } & PlayerStatsState)
+  | ({ type: 'inventory' } & InventoryView)
+  | { type: 'itemCatalog'; items: ItemInfo[] }
+  | ({ type: 'entityInfo' } & EntityInfoState)
+  | { type: 'entityHealth'; entries: HealthEntry[] };
 
 function wrap(b: flatbuffers.Builder, type: Message, msg: flatbuffers.Offset): Uint8Array {
   b.finish(Envelope.createEnvelope(b, type, msg));
@@ -103,6 +166,69 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
       return { type: 'reload', reason: (env.msg(new Reload()) as Reload).reason() ?? '' };
     case Message.RestartCountdown:
       return { type: 'restartCountdown', seconds: (env.msg(new RestartCountdown()) as RestartCountdown).secondsRemaining() };
+    case Message.PlayerStats: {
+      const m = env.msg(new PlayerStats()) as PlayerStats;
+      return { type: 'playerStats', hp: m.hp(), maxHp: m.maxHp(), combatLevel: m.combatLevel(), xp: m.xp(), gold: m.gold() };
+    }
+    case Message.InventoryState: {
+      const m = env.msg(new InventoryState()) as InventoryState;
+      const slots: SlotState[] = [];
+      const s = new InventorySlot();
+      for (let i = 0; i < m.slotsLength(); i++) {
+        m.slots(i, s);
+        slots.push({ itemId: s.itemId(), quantity: s.quantity() });
+      }
+      return {
+        type: 'inventory',
+        slots,
+        equipment: { weapon: m.weapon(), head: m.head(), body: m.body(), shield: m.shield() },
+      };
+    }
+    case Message.ItemCatalog: {
+      const m = env.msg(new ItemCatalog()) as ItemCatalog;
+      const items: ItemInfo[] = [];
+      const d = new ItemDef();
+      for (let i = 0; i < m.itemsLength(); i++) {
+        m.items(i, d);
+        items.push({
+          id: d.id(),
+          name: d.name() ?? '',
+          kind: d.kind(),
+          equipSlot: d.equipSlot(),
+          levelToEquip: d.levelToEquip(),
+          accuracy: d.accuracy(),
+          strength: d.strength(),
+          defence: d.defence(),
+          attackSpeed: d.attackSpeed(),
+          heal: d.heal(),
+          shopBuysFor: d.shopBuysFor(),
+          shopSells: d.shopSells(),
+          shopSellsFor: d.shopSellsFor(),
+        });
+      }
+      return { type: 'itemCatalog', items };
+    }
+    case Message.EntityInfo: {
+      const m = env.msg(new EntityInfo()) as EntityInfo;
+      return {
+        type: 'entityInfo',
+        id: m.id(),
+        kind: m.kind(),
+        npcType: m.npcType(),
+        combatLevel: m.combatLevel(),
+        equipment: { weapon: m.weapon(), head: m.head(), body: m.body(), shield: m.shield() },
+      };
+    }
+    case Message.EntityHealth: {
+      const m = env.msg(new EntityHealth()) as EntityHealth;
+      const entries: HealthEntry[] = [];
+      const h = new HealthRatio();
+      for (let i = 0; i < m.entriesLength(); i++) {
+        m.entries(i, h);
+        entries.push({ id: h.id(), ratio: h.ratio() / 255 });
+      }
+      return { type: 'entityHealth', entries };
+    }
     default:
       return null;
   }
