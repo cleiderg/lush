@@ -3,6 +3,7 @@ import { Character } from './character';
 import { CameraRig } from './cameraRig';
 import { RemotePlayers } from './remotePlayers';
 import { CampusMap, loadCampus } from './campusMap';
+import { AreaMarkers, loadAreas } from './gameAreas';
 import type { CampusData } from './mapData';
 import type { WorldView } from './worldView';
 
@@ -28,6 +29,7 @@ export class WorldScene {
   readonly scene = new THREE.Scene();
   readonly rig = new CameraRig();
   readonly map = new CampusMap(loadCampus());
+  readonly areas = new AreaMarkers(loadAreas());
   private readonly player = new Character();
   private readonly remotes = new RemotePlayers();
   private lastX: number | null = null;
@@ -39,7 +41,7 @@ export class WorldScene {
     const sun = new THREE.DirectionalLight(0xffffff, 1.6);
     sun.position.set(30, 60, 20);
     this.scene.add(sun);
-    this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.player.root, this.remotes.group);
+    this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.areas.group, this.player.root, this.remotes.group);
   }
 
   update(view: WorldView): void {
