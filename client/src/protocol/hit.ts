@@ -35,7 +35,7 @@ static sizeOf():number {
 
 static createHit(builder:flatbuffers.Builder, attacker: number, target: number, damage: number, died: boolean):flatbuffers.Offset {
   builder.prep(2, 6);
-  builder.writeInt8(Number(Boolean(died)));
+  builder.writeInt8(+died);
   builder.writeInt8(damage);
   builder.writeInt16(target);
   builder.writeInt16(attacker);
