@@ -61,10 +61,24 @@ type System interface {
 type Config struct {
 	// TickRate in Hz. Default 20.
 	TickRate int
+	// NPCIDMin and NPCIDMax bound the ids AddNPC hands out (both inclusive).
+	// Players and NPCs share the 16-bit wire entity id space, so AddPlayer
+	// rejects ids in this range. Both zero means the default range; a range
+	// with NPCIDMin > NPCIDMax is empty.
+	NPCIDMin, NPCIDMax NPCID
 }
 
+// Default NPC id range: the top quarter of the 16-bit entity id space, leaving
+// 1..49151 for players.
+const (
+	DefaultNPCIDMin NPCID = 0xC000
+	DefaultNPCIDMax NPCID = 0xFFFF
+)
+
 // DefaultConfig returns the default configuration.
-func DefaultConfig() Config { return Config{TickRate: 20} }
+func DefaultConfig() Config {
+	return Config{TickRate: 20, NPCIDMin: DefaultNPCIDMin, NPCIDMax: DefaultNPCIDMax}
+}
 
 type registered struct {
 	sys   System
@@ -79,6 +93,10 @@ type World struct {
 	systems []registered
 	tick    uint64
 
+	npcs     map[NPCID]*NPC
+	npcOrder []*NPC // insertion order, for deterministic iteration
+	nextNPC  NPCID  // next id AddNPC tries
+
 	qmu   sync.Mutex
 	queue []Command
 	spare []Command
@@ -89,7 +107,15 @@ func New(cfg Config) *World {
 	if cfg.TickRate <= 0 {
 		cfg.TickRate = DefaultConfig().TickRate
 	}
-	return &World{cfg: cfg, players: make(map[PlayerID]*Player)}
+	if cfg.NPCIDMin == 0 && cfg.NPCIDMax == 0 {
+		cfg.NPCIDMin, cfg.NPCIDMax = DefaultNPCIDMin, DefaultNPCIDMax
+	}
+	return &World{
+		cfg:     cfg,
+		players: make(map[PlayerID]*Player),
+		npcs:    make(map[NPCID]*NPC),
+		nextNPC: cfg.NPCIDMin,
+	}
 }
 
 // TickInterval is the duration of one tick.
@@ -119,6 +145,9 @@ func (w *World) RegisterEvery(s System, n int) error {
 func (w *World) AddPlayer(p *Player) error {
 	if _, ok := w.players[p.ID]; ok {
 		return fmt.Errorf("add player %d: already exists", p.ID)
+	}
+	if w.isNPCID(uint64(p.ID)) {
+		return fmt.Errorf("add player %d: id is in the NPC range %d..%d", p.ID, w.cfg.NPCIDMin, w.cfg.NPCIDMax)
 	}
 	w.players[p.ID] = p
 	w.order = append(w.order, p)
