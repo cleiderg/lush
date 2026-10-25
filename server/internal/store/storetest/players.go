@@ -16,7 +16,7 @@ func RunPlayers(t *testing.T, factory func(t *testing.T) store.Players) {
 
 	t.Run("create and load", func(t *testing.T) {
 		s := factory(t)
-		c, err := s.CreateGuest(ctx, "h1")
+		c, err := s.CreateGuest(ctx, "h1", store.Holdings{}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -32,6 +32,52 @@ func RunPlayers(t *testing.T, factory func(t *testing.T) store.Players) {
 		}
 	})
 
+	t.Run("create with holdings", func(t *testing.T) {
+		s := factory(t)
+		want := SampleHoldings()
+		c, err := s.CreateGuest(ctx, "h1", want, []store.Entry{{Kind: "item_create", Payload: map[string]any{"item": 1}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.Holdings != want || c.XP != 0 || c.Version != 1 {
+			t.Fatalf("created %+v, want holdings %+v at version 1", c, want)
+		}
+		l, err := s.LoadByTokenHash(ctx, "h1")
+		if err != nil || l != c {
+			t.Fatalf("load = %+v, %v; want %+v", l, err, c)
+		}
+	})
+
+	t.Run("create failure creates nothing", func(t *testing.T) {
+		bad := SampleHoldings()
+		bad.Inventory[27] = store.Stack{Item: 2, Qty: -1}
+		for _, tc := range []struct {
+			name    string
+			start   store.Holdings
+			entries []store.Entry
+			wantErr error
+		}{
+			{"invalid holding", bad, []store.Entry{{Kind: "item_create"}}, store.ErrInvalid},
+			{"unknown counterparty", SampleHoldings(), []store.Entry{{Kind: "item_create"}, {Kind: "trade", Counterparty: 999}}, store.ErrNotFound},
+			{"unencodable payload", SampleHoldings(), []store.Entry{{Kind: "item_create", Payload: func() {}}}, nil},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				s := factory(t)
+				_, err := s.CreateGuest(ctx, "h1", tc.start, tc.entries)
+				if err == nil || (tc.wantErr != nil && !errors.Is(err, tc.wantErr)) {
+					t.Fatalf("err = %v, want %v", err, tc.wantErr)
+				}
+				if _, err := s.LoadByTokenHash(ctx, "h1"); !errors.Is(err, store.ErrNotFound) {
+					t.Fatalf("load after failed create: err = %v, want ErrNotFound", err)
+				}
+				// The hash is still free.
+				if _, err := s.CreateGuest(ctx, "h1", store.Holdings{}, nil); err != nil {
+					t.Fatalf("create after failed create: %v", err)
+				}
+			})
+		}
+	})
+
 	t.Run("load unknown", func(t *testing.T) {
 		_, err := factory(t).LoadByTokenHash(ctx, "nope")
 		if !errors.Is(err, store.ErrNotFound) {
@@ -41,18 +87,18 @@ func RunPlayers(t *testing.T, factory func(t *testing.T) store.Players) {
 
 	t.Run("duplicate hash", func(t *testing.T) {
 		s := factory(t)
-		if _, err := s.CreateGuest(ctx, "h1"); err != nil {
+		if _, err := s.CreateGuest(ctx, "h1", store.Holdings{}, nil); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.CreateGuest(ctx, "h1"); err == nil {
+		if _, err := s.CreateGuest(ctx, "h1", store.Holdings{}, nil); err == nil {
 			t.Fatal("duplicate CreateGuest succeeded")
 		}
 	})
 
 	t.Run("distinct ids", func(t *testing.T) {
 		s := factory(t)
-		a, _ := s.CreateGuest(ctx, "a")
-		b, _ := s.CreateGuest(ctx, "b")
+		a, _ := s.CreateGuest(ctx, "a", store.Holdings{}, nil)
+		b, _ := s.CreateGuest(ctx, "b", store.Holdings{}, nil)
 		if a.ID == b.ID {
 			t.Fatalf("same id %d", a.ID)
 		}
@@ -60,7 +106,7 @@ func RunPlayers(t *testing.T, factory func(t *testing.T) store.Players) {
 
 	t.Run("save increments version and stores position", func(t *testing.T) {
 		s := factory(t)
-		p, _ := s.CreateGuest(ctx, "h1")
+		p, _ := s.CreateGuest(ctx, "h1", store.Holdings{}, nil)
 		p.X, p.Z = 12.5, -3
 		saved, err := s.Save(ctx, p)
 		if err != nil {
@@ -77,7 +123,7 @@ func RunPlayers(t *testing.T, factory func(t *testing.T) store.Players) {
 
 	t.Run("stale save rejected and changes nothing", func(t *testing.T) {
 		s := factory(t)
-		p, _ := s.CreateGuest(ctx, "h1")
+		p, _ := s.CreateGuest(ctx, "h1", store.Holdings{}, nil)
 		first := p
 		first.X = 1
 		saved, err := s.Save(ctx, first)
@@ -102,7 +148,7 @@ func RunPlayers(t *testing.T, factory func(t *testing.T) store.Players) {
 
 	t.Run("concurrent saves: exactly one wins", func(t *testing.T) {
 		s := factory(t)
-		p, _ := s.CreateGuest(ctx, "h1")
+		p, _ := s.CreateGuest(ctx, "h1", store.Holdings{}, nil)
 		const n = 16
 		var wg sync.WaitGroup
 		var mu sync.Mutex
@@ -130,7 +176,7 @@ func RunPlayers(t *testing.T, factory func(t *testing.T) store.Players) {
 
 	t.Run("save stores xp", func(t *testing.T) {
 		s := factory(t)
-		p, _ := s.CreateGuest(ctx, "h1")
+		p, _ := s.CreateGuest(ctx, "h1", store.Holdings{}, nil)
 		p.XP = 1234
 		saved, err := s.Save(ctx, p)
 		if err != nil {
@@ -147,7 +193,7 @@ func RunPlayers(t *testing.T, factory func(t *testing.T) store.Players) {
 
 	t.Run("stale save does not store xp", func(t *testing.T) {
 		s := factory(t)
-		p, _ := s.CreateGuest(ctx, "h1")
+		p, _ := s.CreateGuest(ctx, "h1", store.Holdings{}, nil)
 		saved, err := s.Save(ctx, p)
 		if err != nil {
 			t.Fatal(err)
@@ -164,7 +210,7 @@ func RunPlayers(t *testing.T, factory func(t *testing.T) store.Players) {
 
 	t.Run("save never changes holdings", func(t *testing.T) {
 		s := factory(t)
-		p, _ := s.CreateGuest(ctx, "h1")
+		p, _ := s.CreateGuest(ctx, "h1", store.Holdings{}, nil)
 		want := SampleHoldings()
 		if err := s.ApplyEconomy(ctx, []store.EconomyChange{{PlayerID: p.ID, Holdings: want}}, nil); err != nil {
 			t.Fatal(err)
@@ -199,8 +245,8 @@ func RunPlayers(t *testing.T, factory func(t *testing.T) store.Players) {
 
 	t.Run("apply economy round trip", func(t *testing.T) {
 		s := factory(t)
-		a, _ := s.CreateGuest(ctx, "a")
-		b, _ := s.CreateGuest(ctx, "b")
+		a, _ := s.CreateGuest(ctx, "a", store.Holdings{}, nil)
+		b, _ := s.CreateGuest(ctx, "b", store.Holdings{}, nil)
 		ha := SampleHoldings()
 		var hb store.Holdings
 		hb.Gold = 40
@@ -228,7 +274,7 @@ func RunPlayers(t *testing.T, factory func(t *testing.T) store.Players) {
 
 	t.Run("apply economy keeps version so the next save succeeds", func(t *testing.T) {
 		s := factory(t)
-		p, _ := s.CreateGuest(ctx, "h1")
+		p, _ := s.CreateGuest(ctx, "h1", store.Holdings{}, nil)
 		if err := s.ApplyEconomy(ctx, []store.EconomyChange{{PlayerID: p.ID, Holdings: SampleHoldings()}},
 			[]store.Entry{{Kind: "item_create", Actor: p.ID}}); err != nil {
 			t.Fatal(err)
@@ -276,8 +322,8 @@ func RunPlayers(t *testing.T, factory func(t *testing.T) store.Players) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				s := factory(t)
-				a, _ := s.CreateGuest(ctx, "a")
-				b, _ := s.CreateGuest(ctx, "b")
+				a, _ := s.CreateGuest(ctx, "a", store.Holdings{}, nil)
+				b, _ := s.CreateGuest(ctx, "b", store.Holdings{}, nil)
 				var entries []store.Entry
 				if tc.entries != nil {
 					entries = tc.entries(a.ID, b.ID)
@@ -300,7 +346,7 @@ func RunPlayers(t *testing.T, factory func(t *testing.T) store.Players) {
 
 	t.Run("apply economy unknown player or duplicate", func(t *testing.T) {
 		s := factory(t)
-		a, _ := s.CreateGuest(ctx, "a")
+		a, _ := s.CreateGuest(ctx, "a", store.Holdings{}, nil)
 		err := s.ApplyEconomy(ctx, []store.EconomyChange{{PlayerID: a.ID, Holdings: SampleHoldings()}, {PlayerID: a.ID + 100}}, nil)
 		if !errors.Is(err, store.ErrNotFound) {
 			t.Fatalf("unknown player err = %v, want ErrNotFound", err)

@@ -16,8 +16,8 @@ func TestMemoryPlayers(t *testing.T) {
 func TestMemoryApplyEconomyAudit(t *testing.T) {
 	ctx := context.Background()
 	m := store.NewMemory()
-	a, _ := m.CreateGuest(ctx, "a")
-	b, _ := m.CreateGuest(ctx, "b")
+	a, _ := m.CreateGuest(ctx, "a", store.Holdings{}, nil)
+	b, _ := m.CreateGuest(ctx, "b", store.Holdings{}, nil)
 	ok := []store.Entry{{Kind: "trade", Actor: a.ID, Counterparty: b.ID}}
 	if err := m.ApplyEconomy(ctx, []store.EconomyChange{{PlayerID: a.ID, Holdings: storetest.SampleHoldings()}}, ok); err != nil {
 		t.Fatal(err)

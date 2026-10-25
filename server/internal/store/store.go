@@ -88,9 +88,12 @@ type Player struct {
 // Players stores player records.
 type Players interface {
 	// CreateGuest creates a new player with the given token hash at version 1,
-	// with no XP and empty holdings.
+	// with no XP and the holdings start, and appends entries to the economy
+	// audit log with Actor set to the new player's id, all in one transaction:
+	// on any error (an invalid holding, an unknown counterparty, an entry that
+	// can't be encoded) no player is created and nothing is logged.
 	// It returns an error wrapping ErrAlreadyExists if the hash is taken.
-	CreateGuest(ctx context.Context, tokenHash string) (Player, error)
+	CreateGuest(ctx context.Context, tokenHash string, start Holdings, entries []Entry) (Player, error)
 	// LoadByTokenHash returns the player, or an error wrapping ErrNotFound.
 	LoadByTokenHash(ctx context.Context, tokenHash string) (Player, error)
 	// Save stores the position and XP of p if p.Version matches the stored

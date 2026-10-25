@@ -7,6 +7,7 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 
 	"github.com/cleiderg/lush/server/internal/protocol"
+	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/world"
 )
 
@@ -147,4 +148,86 @@ func decode(buf []byte) (m message, err error) {
 		m.pingToken = p.Token()
 	}
 	return m, nil
+}
+
+// clampU16 and friends saturate a count into a wire field.
+func clampU16(v int) uint16 { return uint16(min(max(v, 0), math.MaxUint16)) }
+func clampU8(v int) uint8   { return uint8(min(max(v, 0), math.MaxUint8)) }
+func clampU32(v int) uint32 { return uint32(min(max(v, 0), math.MaxUint32)) }
+func clampI16(v int) int16  { return int16(min(max(v, math.MinInt16), math.MaxInt16)) }
+
+func encodePlayerStats(b *flatbuffers.Builder, st stats) []byte {
+	b.Reset()
+	protocol.PlayerStatsStart(b)
+	protocol.PlayerStatsAddHp(b, clampU16(st.hp))
+	protocol.PlayerStatsAddMaxHp(b, clampU16(st.maxHP))
+	protocol.PlayerStatsAddCombatLevel(b, clampU8(st.level))
+	protocol.PlayerStatsAddXp(b, clampU32(st.xp))
+	protocol.PlayerStatsAddGold(b, clampU32(st.gold))
+	return finish(b, protocol.MessagePlayerStats, protocol.PlayerStatsEnd(b))
+}
+
+func encodeInventoryState(b *flatbuffers.Builder, inv *world.Inventory) []byte {
+	b.Reset()
+	protocol.InventoryStateStartSlotsVector(b, len(inv.Slots))
+	for i := len(inv.Slots) - 1; i >= 0; i-- {
+		s := inv.Slots[i]
+		protocol.CreateInventorySlot(b, uint16(s.Item), clampU32(s.Qty))
+	}
+	slots := b.EndVector(len(inv.Slots))
+	protocol.InventoryStateStart(b)
+	protocol.InventoryStateAddSlots(b, slots)
+	protocol.InventoryStateAddWeapon(b, uint16(inv.Equipment.Weapon))
+	protocol.InventoryStateAddHead(b, uint16(inv.Equipment.Head))
+	protocol.InventoryStateAddBody(b, uint16(inv.Equipment.Body))
+	protocol.InventoryStateAddShield(b, uint16(inv.Equipment.Shield))
+	return finish(b, protocol.MessageInventoryState, protocol.InventoryStateEnd(b))
+}
+
+var wireItemKinds = map[gamedata.ItemKind]protocol.ItemKind{
+	gamedata.KindLoot:   protocol.ItemKindLoot,
+	gamedata.KindWeapon: protocol.ItemKindWeapon,
+	gamedata.KindArmor:  protocol.ItemKindArmor,
+	gamedata.KindFood:   protocol.ItemKindFood,
+}
+
+var wireEquipSlots = map[gamedata.Slot]protocol.EquipSlot{
+	gamedata.SlotNone:   protocol.EquipSlotNone,
+	gamedata.SlotWeapon: protocol.EquipSlotWeapon,
+	gamedata.SlotHead:   protocol.EquipSlotHead,
+	gamedata.SlotBody:   protocol.EquipSlotBody,
+	gamedata.SlotShield: protocol.EquipSlotShield,
+}
+
+// encodeItemCatalog builds an ItemCatalog of every item in d, in table order.
+func encodeItemCatalog(d *gamedata.Data) []byte {
+	b := flatbuffers.NewBuilder(4096)
+	defs := make([]flatbuffers.UOffsetT, len(d.Items))
+	for i, it := range d.Items {
+		name := b.CreateString(it.Name)
+		price, sells := d.ShopSellPrice(it.ID)
+		protocol.ItemDefStart(b)
+		protocol.ItemDefAddId(b, uint16(it.ID))
+		protocol.ItemDefAddName(b, name)
+		protocol.ItemDefAddKind(b, wireItemKinds[it.Kind])
+		protocol.ItemDefAddEquipSlot(b, wireEquipSlots[it.Slot])
+		protocol.ItemDefAddLevelToEquip(b, clampU8(it.LevelToEquip))
+		protocol.ItemDefAddAccuracy(b, clampI16(it.Accuracy))
+		protocol.ItemDefAddStrength(b, clampI16(it.Strength))
+		protocol.ItemDefAddDefence(b, clampI16(it.Defence))
+		protocol.ItemDefAddAttackSpeed(b, clampU8(it.AttackSpeed))
+		protocol.ItemDefAddHeal(b, clampU16(it.Heals))
+		protocol.ItemDefAddShopBuysFor(b, clampU32(it.ShopBuysFor))
+		protocol.ItemDefAddShopSells(b, sells)
+		protocol.ItemDefAddShopSellsFor(b, clampU32(price))
+		defs[i] = protocol.ItemDefEnd(b)
+	}
+	protocol.ItemCatalogStartItemsVector(b, len(defs))
+	for i := len(defs) - 1; i >= 0; i-- {
+		b.PrependUOffsetT(defs[i])
+	}
+	items := b.EndVector(len(defs))
+	protocol.ItemCatalogStart(b)
+	protocol.ItemCatalogAddItems(b, items)
+	return finish(b, protocol.MessageItemCatalog, protocol.ItemCatalogEnd(b))
 }

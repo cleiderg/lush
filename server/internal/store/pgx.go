@@ -33,13 +33,21 @@ type querier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 }
 
-func (s *PGPlayers) CreateGuest(ctx context.Context, tokenHash string) (Player, error) {
-	p := Player{TokenHash: tokenHash}
+// CreateGuest inserts the player row, its holdings and the audit entries in
+// one transaction; the schema's constraints reject an invalid holding.
+func (s *PGPlayers) CreateGuest(ctx context.Context, tokenHash string, start Holdings, entries []Entry) (Player, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Player{}, fmt.Errorf("create guest: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after Commit
+
+	p := Player{TokenHash: tokenHash, Holdings: start}
 	var x, z float64
-	err := s.pool.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		`INSERT INTO players (token_hash, version) VALUES ($1, 1)
-		 RETURNING id, x, z, combat_xp, gold, version`,
-		[]byte(tokenHash)).Scan(&p.ID, &x, &z, &p.XP, &p.Gold, &p.Version)
+		 RETURNING id, x, z, combat_xp, version`,
+		[]byte(tokenHash)).Scan(&p.ID, &x, &z, &p.XP, &p.Version)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
@@ -48,6 +56,19 @@ func (s *PGPlayers) CreateGuest(ctx context.Context, tokenHash string) (Player, 
 		return Player{}, fmt.Errorf("create guest: %w", err)
 	}
 	p.X, p.Z = float32(x), float32(z)
+	if err := writeHoldings(ctx, tx, EconomyChange{PlayerID: p.ID, Holdings: start}); err != nil {
+		return Player{}, fmt.Errorf("create guest %d: %w", p.ID, classify(err))
+	}
+	var audit PGAudit
+	for _, e := range entries {
+		e.Actor = p.ID
+		if err := audit.Append(ctx, tx, e); err != nil {
+			return Player{}, fmt.Errorf("create guest %d: %w", p.ID, classify(err))
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Player{}, fmt.Errorf("create guest: %w", err)
+	}
 	return p, nil
 }
 

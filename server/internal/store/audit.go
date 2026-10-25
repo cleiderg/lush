@@ -40,19 +40,15 @@ var _ Audit = PGAudit{}
 
 // Append inserts entry using q. An unknown actor or counterparty id fails.
 func (PGAudit) Append(ctx context.Context, q Execer, e Entry) error {
-	payload := []byte("{}")
-	if e.Payload != nil {
-		b, err := json.Marshal(e.Payload)
-		if err != nil {
-			return fmt.Errorf("store: audit payload: %w", err)
-		}
-		payload = b
+	payload, err := encodePayload(e)
+	if err != nil {
+		return err
 	}
 	var counterparty *int64
 	if e.Counterparty != 0 {
 		counterparty = &e.Counterparty
 	}
-	_, err := q.Exec(ctx,
+	_, err = q.Exec(ctx,
 		`INSERT INTO economy_audit (kind, actor_player_id, counterparty_player_id, payload)
 		 VALUES ($1, $2, $3, $4)`,
 		e.Kind, e.Actor, counterparty, payload)
@@ -60,6 +56,24 @@ func (PGAudit) Append(ctx context.Context, q Execer, e Entry) error {
 		return fmt.Errorf("store: audit append: %w", err)
 	}
 	return nil
+}
+
+// encodePayload returns e.Payload as JSON, {} for nil.
+func encodePayload(e Entry) ([]byte, error) {
+	if e.Payload == nil {
+		return []byte("{}"), nil
+	}
+	b, err := json.Marshal(e.Payload)
+	if err != nil {
+		return nil, fmt.Errorf("store: audit payload: %w", err)
+	}
+	return b, nil
+}
+
+// checkPayload fails, as PGAudit.Append would, if e.Payload can't be encoded.
+func checkPayload(e Entry) error {
+	_, err := encodePayload(e)
+	return err
 }
 
 // MemoryAudit records entries in order, for tests in other packages. The q
