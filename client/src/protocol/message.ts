@@ -7,15 +7,21 @@ import { ChatSend } from '../protocol/chat-send';
 import { EmoteSend } from '../protocol/emote-send';
 import { EntityHealth } from '../protocol/entity-health';
 import { EntityInfo } from '../protocol/entity-info';
+import { GroundItems } from '../protocol/ground-items';
 import { Hello } from '../protocol/hello';
 import { Input } from '../protocol/input';
 import { InventoryState } from '../protocol/inventory-state';
+import { ItemAction } from '../protocol/item-action';
 import { ItemCatalog } from '../protocol/item-catalog';
+import { PickUp } from '../protocol/pick-up';
 import { Ping } from '../protocol/ping';
 import { PlayerStats } from '../protocol/player-stats';
 import { Pong } from '../protocol/pong';
 import { Reload } from '../protocol/reload';
 import { RestartCountdown } from '../protocol/restart-countdown';
+import { ShopBuy } from '../protocol/shop-buy';
+import { ShopResult } from '../protocol/shop-result';
+import { ShopSell } from '../protocol/shop-sell';
 import { Snapshot } from '../protocol/snapshot';
 import { Welcome } from '../protocol/welcome';
 
@@ -37,13 +43,19 @@ export enum Message {
   InventoryState = 13,
   ItemCatalog = 14,
   EntityInfo = 15,
-  EntityHealth = 16
+  EntityHealth = 16,
+  ItemAction = 17,
+  GroundItems = 18,
+  PickUp = 19,
+  ShopBuy = 20,
+  ShopSell = 21,
+  ShopResult = 22
 }
 
 export function unionToMessage(
   type: Message,
-  accessor: (obj:ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome) => ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome|null
-): ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome|null {
+  accessor: (obj:ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|Welcome) => ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|Welcome|null
+): ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|Welcome|null {
   switch(Message[type]) {
     case 'NONE': return null; 
     case 'Hello': return accessor(new Hello())! as Hello;
@@ -62,15 +74,21 @@ export function unionToMessage(
     case 'ItemCatalog': return accessor(new ItemCatalog())! as ItemCatalog;
     case 'EntityInfo': return accessor(new EntityInfo())! as EntityInfo;
     case 'EntityHealth': return accessor(new EntityHealth())! as EntityHealth;
+    case 'ItemAction': return accessor(new ItemAction())! as ItemAction;
+    case 'GroundItems': return accessor(new GroundItems())! as GroundItems;
+    case 'PickUp': return accessor(new PickUp())! as PickUp;
+    case 'ShopBuy': return accessor(new ShopBuy())! as ShopBuy;
+    case 'ShopSell': return accessor(new ShopSell())! as ShopSell;
+    case 'ShopResult': return accessor(new ShopResult())! as ShopResult;
     default: return null;
   }
 }
 
 export function unionListToMessage(
   type: Message, 
-  accessor: (index: number, obj:ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome) => ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome|null, 
+  accessor: (index: number, obj:ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|Welcome) => ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|Welcome|null, 
   index: number
-): ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome|null {
+): ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|Welcome|null {
   switch(Message[type]) {
     case 'NONE': return null; 
     case 'Hello': return accessor(index, new Hello())! as Hello;
@@ -89,6 +107,12 @@ export function unionListToMessage(
     case 'ItemCatalog': return accessor(index, new ItemCatalog())! as ItemCatalog;
     case 'EntityInfo': return accessor(index, new EntityInfo())! as EntityInfo;
     case 'EntityHealth': return accessor(index, new EntityHealth())! as EntityHealth;
+    case 'ItemAction': return accessor(index, new ItemAction())! as ItemAction;
+    case 'GroundItems': return accessor(index, new GroundItems())! as GroundItems;
+    case 'PickUp': return accessor(index, new PickUp())! as PickUp;
+    case 'ShopBuy': return accessor(index, new ShopBuy())! as ShopBuy;
+    case 'ShopSell': return accessor(index, new ShopSell())! as ShopSell;
+    case 'ShopResult': return accessor(index, new ShopResult())! as ShopResult;
     default: return null;
   }
 }
