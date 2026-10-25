@@ -1,0 +1,12 @@
+{
+  "name": "Campus Market",
+  "sells": [
+    {"item": "wooden_stick", "price": 5},
+    {"item": "bronze_dagger", "price": 40},
+    {"item": "hoodie", "price": 15},
+    {"item": "cardboard_shield", "price": 10},
+    {"item": "bike_helmet", "price": 80},
+    {"item": "boba", "price": 5},
+    {"item": "burrito", "price": 15}
+  ]
+}

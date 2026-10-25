@@ -1,0 +1,101 @@
+package gamedata_test
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"testing/fstest"
+
+	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+)
+
+// fixture returns the real data files with one replacement applied to file.
+func fixture(t *testing.T, file, old, new string) fstest.MapFS {
+	t.Helper()
+	fsys := fstest.MapFS{}
+	for _, name := range []string{gamedata.ItemsFile, gamedata.NPCsFile, gamedata.ShopFile, gamedata.RulesFile} {
+		b, err := os.ReadFile(filepath.Join("data", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := string(b)
+		if name == file {
+			if !strings.Contains(s, old) {
+				t.Fatalf("%s does not contain %q", file, old)
+			}
+			s = strings.Replace(s, old, new, 1)
+		}
+		fsys[name] = &fstest.MapFile{Data: []byte(s)}
+	}
+	return fsys
+}
+
+func TestLoadRejectsBadData(t *testing.T) {
+	tests := []struct {
+		name     string
+		file     string
+		old, new string
+		wantErr  string
+	}{
+		{"drop of missing item", gamedata.NPCsFile,
+			`"item": "acorn"`, `"item": "pinecone"`,
+			`npcs.json: npc 2 ("squirrel") drop: unknown item "pinecone"`},
+		{"shop entry for missing item", gamedata.ShopFile,
+			`"item": "burrito"`, `"item": "taco"`,
+			`shop.json: entry: unknown item "taco"`},
+		{"starting kit equips missing item", gamedata.RulesFile,
+			`"equipped": ["wooden_stick"`, `"equipped": ["laser_sword"`,
+			`rules.json: starting kit equipped: unknown item "laser_sword"`},
+		{"starting kit inventory has missing item", gamedata.RulesFile,
+			`{"item": "boba"`, `{"item": "tea"`,
+			`rules.json: starting kit inventory: unknown item "tea"`},
+		{"equipment without slot", gamedata.ItemsFile,
+			`"kind": "armor",  "slot": "body",   "accuracy": 0,  "strength": 0,  "defence": 4`,
+			`"kind": "armor",  "accuracy": 0,  "strength": 0,  "defence": 4`,
+			`items.json: item 4 ("hoodie"): equipment slot "" is not weapon, head, body or shield`},
+		{"equipment with unknown slot", gamedata.ItemsFile,
+			`"slot": "shield"`, `"slot": "feet"`,
+			`items.json: item 5 ("cardboard_shield"): equipment slot "feet" is not weapon, head, body or shield`},
+		{"duplicate item id", gamedata.ItemsFile,
+			`"id": 2,`, `"id": 1,`,
+			`items.json: item 1 ("bronze_dagger"): duplicate id 1 (also "wooden_stick")`},
+		{"duplicate item key", gamedata.ItemsFile,
+			`"key": "bronze_dagger"`, `"key": "wooden_stick"`,
+			`items.json: item 2 ("wooden_stick"): duplicate key "wooden_stick"`},
+		{"duplicate NPC id", gamedata.NPCsFile,
+			`"id": 2,`, `"id": 1,`,
+			`npcs.json: npc 1 ("squirrel"): duplicate id 1 (also "rabbit")`},
+		{"duplicate NPC key", gamedata.NPCsFile,
+			`"key": "squirrel"`, `"key": "rabbit"`,
+			`npcs.json: npc 2 ("rabbit"): duplicate key "rabbit"`},
+		{"id does not fit uint16", gamedata.ItemsFile,
+			`"id": 14,`, `"id": 70000,`,
+			`decode items.json`},
+		{"id zero", gamedata.ItemsFile,
+			`"id": 14,`, `"id": 0,`,
+			`items.json: item 0 ("scrap_metal"): id must be 1 to 65535`},
+		{"unknown field", gamedata.RulesFile,
+			`"starting_gold": 100`, `"starting_gems": 100`,
+			`unknown field "starting_gems"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := gamedata.Load(fixture(t, tt.file, tt.old, tt.new))
+			if err == nil {
+				t.Fatalf("Load succeeded, want error containing %q", tt.wantErr)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsMissingFile(t *testing.T) {
+	fsys := fixture(t, "", "", "")
+	delete(fsys, gamedata.ShopFile)
+	if _, err := gamedata.Load(fsys); err == nil || !strings.Contains(err.Error(), "read shop.json") {
+		t.Errorf("error = %v, want read shop.json", err)
+	}
+}
