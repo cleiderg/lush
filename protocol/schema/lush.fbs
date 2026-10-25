@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 4
+  Current = 5
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -69,7 +69,19 @@ struct InventorySlot {
   quantity: uint32;
 }
 
-// A player or other entity inside a Snapshot. Packed to 8 bytes.
+// EntityInfo.kind values.
+enum EntityKind : ubyte {
+  Player = 0,
+  Npc = 1
+}
+
+// One entity's health bar inside EntityHealth. Packed to 4 bytes.
+struct HealthRatio {
+  id: uint16;    // entity id, as in Entity.id
+  ratio: uint8;  // hp / max_hp scaled to 0..255 (0 = dead, 255 = full)
+}
+
+// A player or NPC inside a Snapshot. Packed to 8 bytes.
 // Ids are session-scoped 16-bit entity ids (also used as player id).
 struct Entity {
   id: uint16;
@@ -184,6 +196,26 @@ table ItemCatalog {
   items: [ItemDef];
 }
 
+// Server -> client: how to draw one entity. Sent when the entity comes into
+// view and again whenever any of these fields changes. Snapshot entities
+// carry only position and animation; the client keeps this per entity id.
+table EntityInfo {
+  id: ushort;              // entity id, as in Entity.id
+  kind: EntityKind;
+  npc_type: ushort;        // NPC type id from the NPC table; 0 for players
+  combat_level: ubyte;
+  weapon: ushort;          // visible equipment item ids; EmptyItem.Id if none
+  head: ushort;
+  body: ushort;
+  shield: ushort;
+}
+
+// Server -> client: health bars for entities in view whose health changed.
+// Entities not listed keep their last ratio (full when never sent).
+table EntityHealth {
+  entries: [HealthRatio];
+}
+
 union Message {
   Hello,
   Welcome,
@@ -198,7 +230,9 @@ union Message {
   EmoteSend,
   PlayerStats,
   InventoryState,
-  ItemCatalog
+  ItemCatalog,
+  EntityInfo,
+  EntityHealth
 }
 
 table Envelope {

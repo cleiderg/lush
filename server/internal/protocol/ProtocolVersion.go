@@ -7,7 +7,7 @@ import "strconv"
 type ProtocolVersion uint16
 
 const (
-	ProtocolVersionCurrent ProtocolVersion = 4
+	ProtocolVersionCurrent ProtocolVersion = 5
 )
 
 var EnumNamesProtocolVersion = map[ProtocolVersion]string{

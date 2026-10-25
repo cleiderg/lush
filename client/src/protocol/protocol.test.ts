@@ -1,8 +1,9 @@
 import * as flatbuffers from 'flatbuffers';
 import { describe, expect, it } from 'vitest';
 import {
-  ActionFlags, Animation, ChatMessage, ChatSend, Emote, EmoteSend, EmptyItem, Entity, Envelope, EquipSlot, Hello, Input,
-  InventorySlot, InventoryState, ItemCatalog, ItemDef, ItemKind, Message, Ping, PlayerStats, Pong,
+  ActionFlags, Animation, ChatMessage, ChatSend, Emote, EmoteSend, EmptyItem, Entity, EntityHealth, EntityInfo,
+  EntityKind, Envelope, EquipSlot, Hello, Input,
+  InventorySlot, InventoryState, HealthRatio, ItemCatalog, ItemDef, ItemKind, Message, Ping, PlayerStats, Pong,
   ProtocolVersion, Reload, RestartCountdown, Snapshot, Vec2, Welcome,
 } from './index.js';
 
@@ -33,11 +34,17 @@ function buildSnapshot(n: number): Uint8Array {
 
 describe('protocol', () => {
   it('exposes the version constant', () => {
-    expect(ProtocolVersion.Current).toBe(4);
+    expect(ProtocolVersion.Current).toBe(5);
   });
 
   it('keeps a 101-entity snapshot under 1200 bytes', () => {
     expect(buildSnapshot(101).length).toBeLessThan(1200);
+  });
+
+  it('keeps a 100-entity snapshot under 1200 bytes with 8-byte entities', () => {
+    expect(buildSnapshot(100).length).toBeLessThan(1200);
+    expect(Entity.sizeOf()).toBe(8);
+    expect(buildSnapshot(51).length - buildSnapshot(50).length).toBe(8);
   });
 
   it('round-trips Hello', () => {
@@ -198,6 +205,38 @@ describe('protocol', () => {
         d.id(), d.name(), d.kind(), d.equipSlot(), d.levelToEquip(), d.accuracy(), d.strength(), d.defence(),
         d.attackSpeed(), d.heal(), d.shopBuysFor(), d.shopSells(), d.shopSellsFor(),
       ]).toEqual(want[i]);
+    }
+  });
+
+  it('round-trips EntityInfo', () => {
+    const want: [number, EntityKind, number, number, number, number, number, number][] = [
+      [42, EntityKind.Player, 0, 30, 1, 7, 8, 5],
+      [300, EntityKind.Npc, 6, 20, EmptyItem.Id, EmptyItem.Id, EmptyItem.Id, EmptyItem.Id],
+      [65535, EntityKind.Npc, 65535, 255, 65535, 65535, 65535, 65535],
+    ];
+    for (const w of want) {
+      const b = new flatbuffers.Builder(64);
+      const buf = finish(b, Message.EntityInfo, EntityInfo.createEntityInfo(b, ...w));
+      const m = open(buf, Message.EntityInfo, new EntityInfo());
+      expect([
+        m.id(), m.kind(), m.npcType(), m.combatLevel(), m.weapon(), m.head(), m.body(), m.shield(),
+      ]).toEqual(w);
+    }
+  });
+
+  it('round-trips EntityHealth', () => {
+    const want: [number, number][] = [[1, 255], [300, 128], [65535, 0]];
+    const b = new flatbuffers.Builder(64);
+    EntityHealth.startEntriesVector(b, want.length);
+    for (let i = want.length - 1; i >= 0; i--) {
+      HealthRatio.createHealthRatio(b, want[i][0], want[i][1]);
+    }
+    const buf = finish(b, Message.EntityHealth, EntityHealth.createEntityHealth(b, b.endVector()));
+    const m = open(buf, Message.EntityHealth, new EntityHealth());
+    expect(m.entriesLength()).toBe(want.length);
+    for (let i = 0; i < want.length; i++) {
+      const h = m.entries(i)!;
+      expect([h.id(), h.ratio()]).toEqual(want[i]);
     }
   });
 });

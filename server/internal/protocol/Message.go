@@ -22,6 +22,8 @@ const (
 	MessagePlayerStats      Message = 12
 	MessageInventoryState   Message = 13
 	MessageItemCatalog      Message = 14
+	MessageEntityInfo       Message = 15
+	MessageEntityHealth     Message = 16
 )
 
 var EnumNamesMessage = map[Message]string{
@@ -40,6 +42,8 @@ var EnumNamesMessage = map[Message]string{
 	MessagePlayerStats:      "PlayerStats",
 	MessageInventoryState:   "InventoryState",
 	MessageItemCatalog:      "ItemCatalog",
+	MessageEntityInfo:       "EntityInfo",
+	MessageEntityHealth:     "EntityHealth",
 }
 
 var EnumValuesMessage = map[string]Message{
@@ -58,6 +62,8 @@ var EnumValuesMessage = map[string]Message{
 	"PlayerStats":      MessagePlayerStats,
 	"InventoryState":   MessageInventoryState,
 	"ItemCatalog":      MessageItemCatalog,
+	"EntityInfo":       MessageEntityInfo,
+	"EntityHealth":     MessageEntityHealth,
 }
 
 func (v Message) String() string {
