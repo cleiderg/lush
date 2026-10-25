@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 5
+  Current = 6
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -79,6 +79,14 @@ enum EntityKind : ubyte {
 struct HealthRatio {
   id: uint16;    // entity id, as in Entity.id
   ratio: uint8;  // hp / max_hp scaled to 0..255 (0 = dead, 255 = full)
+}
+
+// One hit inside CombatHit. Packed to 6 bytes.
+struct Hit {
+  attacker: uint16; // entity id of the attacker, as in Entity.id
+  target: uint16;   // entity id of the target, as in Entity.id
+  damage: uint8;    // HP removed from the target; 0 means a miss
+  died: bool;       // true when this hit killed the target
 }
 
 // A player or NPC inside a Snapshot. Packed to 8 bytes.
@@ -216,6 +224,34 @@ table EntityHealth {
   entries: [HealthRatio];
 }
 
+// Client -> server: start attacking an entity. The server checks range,
+// area and target rules and ignores invalid requests.
+table AttackTarget {
+  target_id: ushort; // entity id, as in Entity.id
+}
+
+// Server -> client: every hit of one combat tick involving entities in view,
+// for hitsplats. A hit with damage 0 is a miss. A hit with died set killed
+// its target; the client plays the death and the server stops sending the
+// entity (or respawns it) afterwards.
+table CombatHit {
+  tick: uint32;  // world tick of the combat tick, as in Snapshot.tick
+  hits: [Hit];
+}
+
+// One NPC type in the NpcCatalog.
+table NpcDef {
+  id: ushort;          // NPC type id, as in EntityInfo.npc_type
+  name: string;
+  combat_level: ubyte;
+}
+
+// Server -> client: every NPC type, so the client doesn't hard-code NPC
+// names and levels.
+table NpcCatalog {
+  npcs: [NpcDef];
+}
+
 union Message {
   Hello,
   Welcome,
@@ -232,7 +268,10 @@ union Message {
   InventoryState,
   ItemCatalog,
   EntityInfo,
-  EntityHealth
+  EntityHealth,
+  AttackTarget,
+  CombatHit,
+  NpcCatalog
 }
 
 table Envelope {
