@@ -43,8 +43,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 5 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 5", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 6 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 6", ProtocolVersionCurrent)
 	}
 }
 
@@ -442,6 +442,162 @@ func TestRoundTripEntityHealth(t *testing.T) {
 	for i, w := range want {
 		if !m.Entries(&h, i) || int(h.Id()) != w[0] || int(h.Ratio()) != w[1] {
 			t.Fatalf("entry %d = (%d, %d), want %v", i, h.Id(), h.Ratio(), w)
+		}
+	}
+}
+
+type itemAction struct {
+	action    ItemActionKind
+	slot      uint8
+	equipSlot EquipSlot
+}
+
+func TestRoundTripItemAction(t *testing.T) {
+	for _, w := range []itemAction{
+		{ItemActionKindEquip, 0, EquipSlotNone},
+		{ItemActionKindEat, 27, EquipSlotNone},
+		{ItemActionKindUnequip, 0, EquipSlotShield},
+		{ItemActionKindUnequip, 255, EquipSlotWeapon},
+	} {
+		b := flatbuffers.NewBuilder(64)
+		ItemActionStart(b)
+		ItemActionAddAction(b, w.action)
+		ItemActionAddSlot(b, w.slot)
+		ItemActionAddEquipSlot(b, w.equipSlot)
+		buf := finish(b, MessageItemAction, ItemActionEnd(b))
+
+		var m ItemAction
+		tbl := open(t, buf, MessageItemAction)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if got := (itemAction{m.Action(), m.Slot(), m.EquipSlot()}); got != w {
+			t.Fatalf("item action = %+v, want %+v", got, w)
+		}
+	}
+}
+
+type groundItem struct {
+	id, itemID uint16
+	quantity   uint32
+	x, z       int16
+}
+
+func TestRoundTripGroundItems(t *testing.T) {
+	want := []groundItem{
+		{1, 11, 1, 0, 0},
+		{300, 13, 4294967295, -32768, 32767},
+		{65535, 65535, 25, 1234, -987},
+	}
+	b := flatbuffers.NewBuilder(64)
+	GroundItemsStartItemsVector(b, len(want))
+	for i := len(want) - 1; i >= 0; i-- {
+		w := want[i]
+		CreateGroundItem(b, w.id, w.itemID, w.quantity, w.x, w.z)
+	}
+	items := b.EndVector(len(want))
+	GroundItemsStart(b)
+	GroundItemsAddItems(b, items)
+	buf := finish(b, MessageGroundItems, GroundItemsEnd(b))
+
+	var m GroundItems
+	tbl := open(t, buf, MessageGroundItems)
+	m.Init(tbl.Bytes, tbl.Pos)
+	if m.ItemsLength() != len(want) {
+		t.Fatalf("items = %d, want %d", m.ItemsLength(), len(want))
+	}
+	var g GroundItem
+	for i, w := range want {
+		if !m.Items(&g, i) {
+			t.Fatalf("item %d missing", i)
+		}
+		if got := (groundItem{g.Id(), g.ItemId(), g.Quantity(), g.X(), g.Z()}); got != w {
+			t.Fatalf("item %d = %+v, want %+v", i, got, w)
+		}
+	}
+}
+
+// Each extra ground item adds exactly 12 bytes.
+func TestGroundItemIsTwelveBytes(t *testing.T) {
+	build := func(n int) int {
+		b := flatbuffers.NewBuilder(64)
+		GroundItemsStartItemsVector(b, n)
+		for i := 0; i < n; i++ {
+			CreateGroundItem(b, uint16(i), 1, 1, 0, 0)
+		}
+		items := b.EndVector(n)
+		GroundItemsStart(b)
+		GroundItemsAddItems(b, items)
+		return len(finish(b, MessageGroundItems, GroundItemsEnd(b)))
+	}
+	if d := build(51) - build(50); d != 12 {
+		t.Fatalf("one more ground item adds %d bytes, want 12", d)
+	}
+}
+
+func TestRoundTripPickUp(t *testing.T) {
+	for _, id := range []uint16{0, 1, 65535} {
+		b := flatbuffers.NewBuilder(32)
+		PickUpStart(b)
+		PickUpAddGroundItemId(b, id)
+		buf := finish(b, MessagePickUp, PickUpEnd(b))
+
+		var m PickUp
+		tbl := open(t, buf, MessagePickUp)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.GroundItemId() != id {
+			t.Fatalf("ground item id = %d, want %d", m.GroundItemId(), id)
+		}
+	}
+}
+
+func TestRoundTripShopBuy(t *testing.T) {
+	for _, w := range [][2]uint32{{1, 1}, {10, 28}, {65535, 4294967295}} {
+		b := flatbuffers.NewBuilder(32)
+		ShopBuyStart(b)
+		ShopBuyAddItemId(b, uint16(w[0]))
+		ShopBuyAddQuantity(b, w[1])
+		buf := finish(b, MessageShopBuy, ShopBuyEnd(b))
+
+		var m ShopBuy
+		tbl := open(t, buf, MessageShopBuy)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if uint32(m.ItemId()) != w[0] || m.Quantity() != w[1] {
+			t.Fatalf("shop buy = (%d, %d), want %v", m.ItemId(), m.Quantity(), w)
+		}
+	}
+}
+
+func TestRoundTripShopSell(t *testing.T) {
+	for _, w := range [][2]uint32{{0, 1}, {27, 500}, {255, 4294967295}} {
+		b := flatbuffers.NewBuilder(32)
+		ShopSellStart(b)
+		ShopSellAddSlot(b, uint8(w[0]))
+		ShopSellAddQuantity(b, w[1])
+		buf := finish(b, MessageShopSell, ShopSellEnd(b))
+
+		var m ShopSell
+		tbl := open(t, buf, MessageShopSell)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if uint32(m.Slot()) != w[0] || m.Quantity() != w[1] {
+			t.Fatalf("shop sell = (%d, %d), want %v", m.Slot(), m.Quantity(), w)
+		}
+	}
+}
+
+func TestRoundTripShopResult(t *testing.T) {
+	for _, code := range []ShopResultCode{
+		ShopResultCodeOk, ShopResultCodeTooFar, ShopResultCodeNotEnoughGold,
+		ShopResultCodeInventoryFull, ShopResultCodeItemNotSold,
+	} {
+		b := flatbuffers.NewBuilder(32)
+		ShopResultStart(b)
+		ShopResultAddCode(b, code)
+		buf := finish(b, MessageShopResult, ShopResultEnd(b))
+
+		var m ShopResult
+		tbl := open(t, buf, MessageShopResult)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.Code() != code {
+			t.Fatalf("shop result = %v, want %v", m.Code(), code)
 		}
 	}
 }
