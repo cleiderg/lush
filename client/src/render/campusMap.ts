@@ -23,7 +23,7 @@ const GREEN_COLOR: Record<number, number> = {
 const PATH_COLOR = 0xdcceA4;
 
 /** Accumulates flat-shaded, vertex-coloured triangles. */
-class MeshBuilder {
+export class MeshBuilder {
   readonly pos: number[] = [];
   readonly col: number[] = [];
   private readonly c = new THREE.Color();
