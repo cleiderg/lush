@@ -11,6 +11,7 @@ import collisionUrl from '../../shared/map/collision.bin?url';
 import { CollisionGrid } from './state/collision';
 import { GameState } from './state/world';
 import { Controls } from './ui/controls';
+import { Hud } from './ui/hud';
 import { RestartBanner } from './ui/restartBanner';
 
 initErrorReporting();
@@ -38,6 +39,7 @@ fetch(collisionUrl)
   .then((buf) => game.setCollision(CollisionGrid.parse(new Uint8Array(buf))))
   .catch((err: unknown) => console.error('collision grid not loaded', err));
 const banner = new RestartBanner(document.body);
+new Hud({ parent: document.body, items: game.items });
 const session = new Session({
   factory: () => new WebSocketTransport(),
   store: localTokenStore(),
