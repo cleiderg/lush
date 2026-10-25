@@ -1,0 +1,16 @@
+[
+  {"id": 1,  "key": "wooden_stick",     "name": "Wooden stick",     "kind": "weapon", "slot": "weapon", "accuracy": 3,  "strength": 2,  "defence": 0,  "attack_speed": 4, "level_to_equip": 1,  "shop_buys_for": 2},
+  {"id": 2,  "key": "bronze_dagger",    "name": "Bronze dagger",    "kind": "weapon", "slot": "weapon", "accuracy": 8,  "strength": 5,  "defence": 0,  "attack_speed": 3, "level_to_equip": 1,  "shop_buys_for": 15},
+  {"id": 3,  "key": "bike_lock",        "name": "Bike lock",        "kind": "weapon", "slot": "weapon", "accuracy": 14, "strength": 16, "defence": 0,  "attack_speed": 5, "level_to_equip": 10, "shop_buys_for": 60},
+  {"id": 4,  "key": "hoodie",           "name": "Hoodie",           "kind": "armor",  "slot": "body",   "accuracy": 0,  "strength": 0,  "defence": 4,  "level_to_equip": 1,  "shop_buys_for": 5},
+  {"id": 5,  "key": "cardboard_shield", "name": "Cardboard shield", "kind": "armor",  "slot": "shield", "accuracy": 0,  "strength": 0,  "defence": 3,  "level_to_equip": 1,  "shop_buys_for": 3},
+  {"id": 6,  "key": "leather_cap",      "name": "Leather cap",      "kind": "armor",  "slot": "head",   "accuracy": 0,  "strength": 0,  "defence": 3,  "level_to_equip": 5,  "shop_buys_for": 10},
+  {"id": 7,  "key": "bike_helmet",      "name": "Bike helmet",      "kind": "armor",  "slot": "head",   "accuracy": 0,  "strength": 0,  "defence": 6,  "level_to_equip": 10, "shop_buys_for": 30},
+  {"id": 8,  "key": "robot_plating",    "name": "Robot plating",    "kind": "armor",  "slot": "body",   "accuracy": -2, "strength": 0,  "defence": 14, "level_to_equip": 12, "shop_buys_for": 150},
+  {"id": 9,  "key": "boba",             "name": "Boba",             "kind": "food",   "heals": 4,  "level_to_equip": 1, "shop_buys_for": 1},
+  {"id": 10, "key": "burrito",          "name": "Burrito",          "kind": "food",   "heals": 10, "level_to_equip": 1, "shop_buys_for": 3},
+  {"id": 11, "key": "acorn",            "name": "Acorn",            "kind": "loot",   "shop_buys_for": 1},
+  {"id": 12, "key": "shiny_trinket",    "name": "Shiny trinket",    "kind": "loot",   "shop_buys_for": 25},
+  {"id": 13, "key": "coyote_pelt",      "name": "Coyote pelt",      "kind": "loot",   "shop_buys_for": 12},
+  {"id": 14, "key": "scrap_metal",      "name": "Scrap metal",      "kind": "loot",   "shop_buys_for": 8}
+]
