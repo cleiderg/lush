@@ -43,8 +43,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 4 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 4", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 5 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 5", ProtocolVersionCurrent)
 	}
 }
 
@@ -54,6 +54,20 @@ func TestSnapshotSize(t *testing.T) {
 		t.Fatalf("snapshot with 101 entities is %d bytes, want < 1200", len(buf))
 	}
 	t.Logf("snapshot with 101 entities: %d bytes", len(buf))
+}
+
+func TestSnapshotSize100(t *testing.T) {
+	buf := buildSnapshot(100)
+	if len(buf) >= 1200 {
+		t.Fatalf("snapshot with 100 entities is %d bytes, want < 1200", len(buf))
+	}
+}
+
+// Each extra Snapshot entity adds exactly 8 bytes, so Entity stays 8 bytes.
+func TestEntityIsEightBytes(t *testing.T) {
+	if d := len(buildSnapshot(51)) - len(buildSnapshot(50)); d != 8 {
+		t.Fatalf("one more entity adds %d bytes, want 8", d)
+	}
 }
 
 func TestRoundTripHello(t *testing.T) {
@@ -366,6 +380,68 @@ func TestRoundTripItemCatalog(t *testing.T) {
 			d.ShopBuysFor(), d.ShopSells(), d.ShopSellsFor()}
 		if got != w {
 			t.Fatalf("item %d = %+v, want %+v", i, got, w)
+		}
+	}
+}
+
+type entityInfo struct {
+	id                         uint16
+	kind                       EntityKind
+	npcType                    uint16
+	level                      uint8
+	weapon, head, body, shield uint16
+}
+
+func TestRoundTripEntityInfo(t *testing.T) {
+	for _, w := range []entityInfo{
+		{42, EntityKindPlayer, 0, 30, 1, 7, 8, 5},
+		{300, EntityKindNpc, 6, 20, uint16(EmptyItemId), uint16(EmptyItemId), uint16(EmptyItemId), uint16(EmptyItemId)},
+		{65535, EntityKindNpc, 65535, 255, 65535, 65535, 65535, 65535},
+	} {
+		b := flatbuffers.NewBuilder(64)
+		EntityInfoStart(b)
+		EntityInfoAddId(b, w.id)
+		EntityInfoAddKind(b, w.kind)
+		EntityInfoAddNpcType(b, w.npcType)
+		EntityInfoAddCombatLevel(b, w.level)
+		EntityInfoAddWeapon(b, w.weapon)
+		EntityInfoAddHead(b, w.head)
+		EntityInfoAddBody(b, w.body)
+		EntityInfoAddShield(b, w.shield)
+		buf := finish(b, MessageEntityInfo, EntityInfoEnd(b))
+
+		var m EntityInfo
+		tbl := open(t, buf, MessageEntityInfo)
+		m.Init(tbl.Bytes, tbl.Pos)
+		got := entityInfo{m.Id(), m.Kind(), m.NpcType(), m.CombatLevel(), m.Weapon(), m.Head(), m.Body(), m.Shield()}
+		if got != w {
+			t.Fatalf("entity info = %+v, want %+v", got, w)
+		}
+	}
+}
+
+func TestRoundTripEntityHealth(t *testing.T) {
+	want := [][2]int{{1, 255}, {300, 128}, {65535, 0}}
+	b := flatbuffers.NewBuilder(64)
+	EntityHealthStartEntriesVector(b, len(want))
+	for i := len(want) - 1; i >= 0; i-- {
+		CreateHealthRatio(b, uint16(want[i][0]), uint8(want[i][1]))
+	}
+	entries := b.EndVector(len(want))
+	EntityHealthStart(b)
+	EntityHealthAddEntries(b, entries)
+	buf := finish(b, MessageEntityHealth, EntityHealthEnd(b))
+
+	var m EntityHealth
+	tbl := open(t, buf, MessageEntityHealth)
+	m.Init(tbl.Bytes, tbl.Pos)
+	if m.EntriesLength() != len(want) {
+		t.Fatalf("entries = %d, want %d", m.EntriesLength(), len(want))
+	}
+	var h HealthRatio
+	for i, w := range want {
+		if !m.Entries(&h, i) || int(h.Id()) != w[0] || int(h.Ratio()) != w[1] {
+			t.Fatalf("entry %d = (%d, %d), want %v", i, h.Id(), h.Ratio(), w)
 		}
 	}
 }

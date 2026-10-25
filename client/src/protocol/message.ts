@@ -5,6 +5,8 @@
 import { ChatMessage } from '../protocol/chat-message';
 import { ChatSend } from '../protocol/chat-send';
 import { EmoteSend } from '../protocol/emote-send';
+import { EntityHealth } from '../protocol/entity-health';
+import { EntityInfo } from '../protocol/entity-info';
 import { Hello } from '../protocol/hello';
 import { Input } from '../protocol/input';
 import { InventoryState } from '../protocol/inventory-state';
@@ -33,13 +35,15 @@ export enum Message {
   EmoteSend = 11,
   PlayerStats = 12,
   InventoryState = 13,
-  ItemCatalog = 14
+  ItemCatalog = 14,
+  EntityInfo = 15,
+  EntityHealth = 16
 }
 
 export function unionToMessage(
   type: Message,
-  accessor: (obj:ChatMessage|ChatSend|EmoteSend|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome) => ChatMessage|ChatSend|EmoteSend|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome|null
-): ChatMessage|ChatSend|EmoteSend|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome|null {
+  accessor: (obj:ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome) => ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome|null
+): ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome|null {
   switch(Message[type]) {
     case 'NONE': return null; 
     case 'Hello': return accessor(new Hello())! as Hello;
@@ -56,15 +60,17 @@ export function unionToMessage(
     case 'PlayerStats': return accessor(new PlayerStats())! as PlayerStats;
     case 'InventoryState': return accessor(new InventoryState())! as InventoryState;
     case 'ItemCatalog': return accessor(new ItemCatalog())! as ItemCatalog;
+    case 'EntityInfo': return accessor(new EntityInfo())! as EntityInfo;
+    case 'EntityHealth': return accessor(new EntityHealth())! as EntityHealth;
     default: return null;
   }
 }
 
 export function unionListToMessage(
   type: Message, 
-  accessor: (index: number, obj:ChatMessage|ChatSend|EmoteSend|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome) => ChatMessage|ChatSend|EmoteSend|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome|null, 
+  accessor: (index: number, obj:ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome) => ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome|null, 
   index: number
-): ChatMessage|ChatSend|EmoteSend|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome|null {
+): ChatMessage|ChatSend|EmoteSend|EntityHealth|EntityInfo|Hello|Input|InventoryState|ItemCatalog|Ping|PlayerStats|Pong|Reload|RestartCountdown|Snapshot|Welcome|null {
   switch(Message[type]) {
     case 'NONE': return null; 
     case 'Hello': return accessor(index, new Hello())! as Hello;
@@ -81,6 +87,8 @@ export function unionListToMessage(
     case 'PlayerStats': return accessor(index, new PlayerStats())! as PlayerStats;
     case 'InventoryState': return accessor(index, new InventoryState())! as InventoryState;
     case 'ItemCatalog': return accessor(index, new ItemCatalog())! as ItemCatalog;
+    case 'EntityInfo': return accessor(index, new EntityInfo())! as EntityInfo;
+    case 'EntityHealth': return accessor(index, new EntityHealth())! as EntityHealth;
     default: return null;
   }
 }
