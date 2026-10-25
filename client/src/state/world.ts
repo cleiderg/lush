@@ -1,4 +1,5 @@
 import type { ServerMessage } from '../net/codec';
+import type { CollisionGrid } from './collision';
 import { Interpolator } from './interpolation';
 import { Prediction } from './prediction';
 
@@ -21,13 +22,21 @@ export class GameState {
   /** Seconds until the server restarts, or null when no restart is announced. */
   restartSeconds: number | null = null;
   prediction = new Prediction();
+  /** Collision grid for prediction; null (not loaded yet) means free movement. */
+  private collision: CollisionGrid | null = null;
   readonly interp = new Interpolator();
+
+  /** Gives prediction the collision grid; it applies now and after every Welcome. */
+  setCollision(grid: CollisionGrid | null): void {
+    this.collision = grid;
+    this.prediction.grid = grid;
+  }
 
   handle(msg: ServerMessage, now: number): void {
     if (msg.type === 'welcome') {
       this.playerId = msg.playerId;
       this.tickRate = msg.tickRate;
-      this.prediction = new Prediction(msg.spawn);
+      this.prediction = new Prediction(msg.spawn, this.collision);
       this.interp.clear();
       this.animation = 0;
       this.restartSeconds = null;

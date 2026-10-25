@@ -1,3 +1,5 @@
+import { type CollisionGrid, slide } from './collision';
+
 /**
  * Walk speed in metres per second, decided in PRD D-044 (walk 4 m/s, run 7 m/s).
  * The server is the source of truth: this must match the server's LUSH_MOVE_SPEED default,
@@ -17,11 +19,14 @@ export interface Pos {
   z: number;
 }
 
-function step(p: Pos, i: PendingInput): void {
+/** Moves p by one input; with a grid it stops and slides at walls like the server. */
+function step(p: Pos, i: PendingInput, grid: CollisionGrid | null): void {
   const len = Math.hypot(i.moveX, i.moveZ);
   const k = len > 1 ? 1 / len : 1;
-  p.x += i.moveX * k * MOVE_SPEED * i.dt;
-  p.z += i.moveZ * k * MOVE_SPEED * i.dt;
+  const to = { x: p.x + i.moveX * k * MOVE_SPEED * i.dt, z: p.z + i.moveZ * k * MOVE_SPEED * i.dt };
+  const next = grid ? slide(grid, p, to) : to;
+  p.x = next.x;
+  p.z = next.z;
 }
 
 /** Client-side prediction: apply inputs now, rewind to the server's state and replay unacknowledged ones. */
@@ -30,7 +35,8 @@ export class Prediction {
   private nextSeq = 1;
   private pending: PendingInput[] = [];
 
-  constructor(spawn: Pos = { x: 0, z: 0 }) {
+  /** Without a grid (null), movement is free. */
+  constructor(spawn: Pos = { x: 0, z: 0 }, public grid: CollisionGrid | null = null) {
     this.pos = { x: spawn.x, z: spawn.z };
   }
 
@@ -42,7 +48,7 @@ export class Prediction {
   applyInput(moveX: number, moveZ: number, dt: number): PendingInput {
     const input = { seq: this.nextSeq++, moveX, moveZ, dt };
     this.pending.push(input);
-    step(this.pos, input);
+    step(this.pos, input, this.grid);
     return input;
   }
 
@@ -51,6 +57,6 @@ export class Prediction {
     this.pending = this.pending.filter((i) => i.seq > lastInputSeq);
     this.pos.x = server.x;
     this.pos.z = server.z;
-    for (const i of this.pending) step(this.pos, i);
+    for (const i of this.pending) step(this.pos, i, this.grid);
   }
 }
