@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 3
+  Current = 4
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -38,6 +38,35 @@ enum Animation : ubyte {
 // Emotes a client can request with EmoteSend.
 enum Emote : ubyte {
   Wave
+}
+
+// Item ids are uint16. EmptyItem.Id (0) marks an empty inventory slot or an
+// empty equipment slot; real items never use id 0.
+enum EmptyItem : ushort {
+  Id = 0
+}
+
+// ItemDef.kind values.
+enum ItemKind : ubyte {
+  Loot = 0,
+  Weapon = 1,
+  Armor = 2,
+  Food = 3
+}
+
+// ItemDef.equip_slot values. None for items that can't be equipped.
+enum EquipSlot : ubyte {
+  None = 0,
+  Weapon = 1,
+  Head = 2,
+  Body = 3,
+  Shield = 4
+}
+
+// One inventory slot. An empty slot is item_id EmptyItem.Id, quantity 0.
+struct InventorySlot {
+  item_id: uint16;
+  quantity: uint32;
 }
 
 // A player or other entity inside a Snapshot. Packed to 8 bytes.
@@ -112,6 +141,49 @@ table EmoteSend {
   emote: Emote;
 }
 
+// Server -> client: the player's own stats.
+table PlayerStats {
+  hp: ushort;
+  max_hp: ushort;
+  combat_level: ubyte;
+  xp: uint32;
+  gold: uint32;
+}
+
+// Server -> client: the player's whole inventory and equipment.
+// The slot count is slots.length (set by the server); empty slots are
+// sent explicitly. Equipment fields are EmptyItem.Id when nothing is worn.
+table InventoryState {
+  slots: [InventorySlot];
+  weapon: ushort;
+  head: ushort;
+  body: ushort;
+  shield: ushort;
+}
+
+// One item definition in the ItemCatalog.
+table ItemDef {
+  id: ushort;
+  name: string;
+  kind: ItemKind;
+  equip_slot: EquipSlot;
+  level_to_equip: ubyte;   // 0 when the item can't be equipped
+  accuracy: short;         // equipment bonuses; may be negative
+  strength: short;
+  defence: short;
+  attack_speed: ubyte;     // combat ticks per attack; 0 for non-weapons
+  heal: ushort;            // HP restored when eaten; 0 for non-food
+  shop_buys_for: uint32;   // gold the shop pays the player for one
+  shop_sells: bool;        // false: the shop doesn't sell this item
+  shop_sells_for: uint32;  // gold the player pays the shop; only if shop_sells
+}
+
+// Server -> client: every item definition, so the client doesn't hard-code
+// the item table.
+table ItemCatalog {
+  items: [ItemDef];
+}
+
 union Message {
   Hello,
   Welcome,
@@ -123,7 +195,10 @@ union Message {
   Pong,
   Reload,
   RestartCountdown,
-  EmoteSend
+  EmoteSend,
+  PlayerStats,
+  InventoryState,
+  ItemCatalog
 }
 
 table Envelope {

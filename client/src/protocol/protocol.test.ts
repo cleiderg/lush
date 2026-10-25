@@ -1,7 +1,8 @@
 import * as flatbuffers from 'flatbuffers';
 import { describe, expect, it } from 'vitest';
 import {
-  ActionFlags, Animation, ChatMessage, ChatSend, Emote, EmoteSend, Entity, Envelope, Hello, Input, Message, Ping, Pong,
+  ActionFlags, Animation, ChatMessage, ChatSend, Emote, EmoteSend, EmptyItem, Entity, Envelope, EquipSlot, Hello, Input,
+  InventorySlot, InventoryState, ItemCatalog, ItemDef, ItemKind, Message, Ping, PlayerStats, Pong,
   ProtocolVersion, Reload, RestartCountdown, Snapshot, Vec2, Welcome,
 } from './index.js';
 
@@ -32,7 +33,7 @@ function buildSnapshot(n: number): Uint8Array {
 
 describe('protocol', () => {
   it('exposes the version constant', () => {
-    expect(ProtocolVersion.Current).toBe(3);
+    expect(ProtocolVersion.Current).toBe(4);
   });
 
   it('keeps a 101-entity snapshot under 1200 bytes', () => {
@@ -144,5 +145,59 @@ describe('protocol', () => {
     Snapshot.addEntities(b, ents);
     const buf = finish(b, Message.Snapshot, Snapshot.endSnapshot(b));
     expect(open(buf, Message.Snapshot, new Snapshot()).entities(0)!.animation()).toBe(Animation.Wave);
+  });
+
+  it('round-trips PlayerStats', () => {
+    const b = new flatbuffers.Builder(64);
+    const buf = finish(b, Message.PlayerStats, PlayerStats.createPlayerStats(b, 7, 39, 30, 13363, 4000000000));
+    const m = open(buf, Message.PlayerStats, new PlayerStats());
+    expect([m.hp(), m.maxHp(), m.combatLevel(), m.xp(), m.gold()]).toEqual([7, 39, 30, 13363, 4000000000]);
+  });
+
+  it('round-trips InventoryState with empty slots', () => {
+    // 28 slots: 3 Boba (id 9) in slot 0, 250 acorns (id 11) in slot 5, rest empty.
+    const want: [number, number][] = Array.from({ length: 28 }, () => [EmptyItem.Id, 0]);
+    want[0] = [9, 3];
+    want[5] = [11, 250];
+    const b = new flatbuffers.Builder(256);
+    InventoryState.startSlotsVector(b, want.length);
+    for (let i = want.length - 1; i >= 0; i--) {
+      InventorySlot.createInventorySlot(b, want[i][0], want[i][1]);
+    }
+    const slots = b.endVector();
+    const buf = finish(b, Message.InventoryState,
+      InventoryState.createInventoryState(b, slots, 1, EmptyItem.Id, 4, EmptyItem.Id));
+    const m = open(buf, Message.InventoryState, new InventoryState());
+    expect(m.slotsLength()).toBe(28);
+    for (let i = 0; i < want.length; i++) {
+      const s = m.slots(i)!;
+      expect([s.itemId(), s.quantity()]).toEqual(want[i]);
+    }
+    expect(m.slots(1)!.itemId()).toBe(EmptyItem.Id);
+    expect([m.weapon(), m.head(), m.body(), m.shield()]).toEqual([1, EmptyItem.Id, 4, EmptyItem.Id]);
+  });
+
+  it('round-trips ItemCatalog', () => {
+    type Def = [number, string, ItemKind, EquipSlot, number, number, number, number, number, number, number, boolean, number];
+    const want: Def[] = [
+      [1, 'Wooden stick', ItemKind.Weapon, EquipSlot.Weapon, 1, 3, 2, 0, 4, 0, 2, true, 5],
+      [8, 'Robot plating', ItemKind.Armor, EquipSlot.Body, 12, -2, 0, 14, 0, 0, 150, false, 0],
+      [9, 'Boba', ItemKind.Food, EquipSlot.None, 1, 0, 0, 0, 0, 4, 1, true, 5],
+      [11, 'Acorn', ItemKind.Loot, EquipSlot.None, 0, 0, 0, 0, 0, 0, 1, false, 0],
+      [7, 'Bike helmet', ItemKind.Armor, EquipSlot.Head, 10, 0, 0, 6, 0, 0, 30, true, 80],
+      [5, 'Cardboard shield', ItemKind.Armor, EquipSlot.Shield, 1, 0, 0, 3, 0, 0, 3, true, 10],
+    ];
+    const b = new flatbuffers.Builder(512);
+    const offs = want.map(([id, name, ...rest]) => ItemDef.createItemDef(b, id, b.createString(name), ...rest));
+    const buf = finish(b, Message.ItemCatalog, ItemCatalog.createItemCatalog(b, ItemCatalog.createItemsVector(b, offs)));
+    const m = open(buf, Message.ItemCatalog, new ItemCatalog());
+    expect(m.itemsLength()).toBe(want.length);
+    for (let i = 0; i < want.length; i++) {
+      const d = m.items(i)!;
+      expect([
+        d.id(), d.name(), d.kind(), d.equipSlot(), d.levelToEquip(), d.accuracy(), d.strength(), d.defence(),
+        d.attackSpeed(), d.heal(), d.shopBuysFor(), d.shopSells(), d.shopSellsFor(),
+      ]).toEqual(want[i]);
+    }
   });
 });
