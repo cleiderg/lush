@@ -1,9 +1,10 @@
-// Converts the committed OSM snapshot into the compact map file and the collision grid.
+// Converts the committed OSM snapshot into the compact map file, the collision grid and the gameplay areas.
 //   node shared/map/build.mjs [outDir]      (default: this directory)
 // Deterministic: same input -> byte-identical output. No Math.random, no timestamps.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { BBOX, ORIGIN, CHUNK_SIZE, CELL_SIZE } from './config.mjs';
+import { ALDRICH_PARK_WAY, SPAWN, SAFE_RADIUS, SHOP, SOUTH_FIELDS, PVP_ZONE } from './areas.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const outDir = process.argv[2] ?? here;
@@ -145,7 +146,34 @@ header.writeUInt16LE(height, 12);
 header.writeInt32LE(minX, 14);
 header.writeInt32LE(minZ, 18);
 
+// Gameplay areas (areas.mjs). Points snap to the centre of their collision cell and must be walkable.
+function cellCentre({ x, z }, name) {
+  const c = Math.floor((x * 10 - minX) / cellDm);
+  const r = Math.floor((z * 10 - minZ) / cellDm);
+  const idx = r * width + c;
+  if (c < 0 || r < 0 || c >= width || r >= height || (bits[idx >> 3] >> (idx & 7)) & 1) {
+    throw new Error(`${name} at (${x}, ${z}) is not on a walkable cell`);
+  }
+  return { x: minX + c * cellDm + cellDm / 2, z: minZ + r * cellDm + cellDm / 2 };
+}
+const park = green.find((g) => g.id === ALDRICH_PARK_WAY);
+if (!park) throw new Error(`green way ${ALDRICH_PARK_WAY} (Aldrich Park) missing`);
+const dm = (pts) => pts.flatMap(([x, z]) => [Math.round(x * 10), Math.round(z * 10)]);
+const areas = {
+  version: 1,
+  units: 'decimetres',
+  spawn: cellCentre(SPAWN, 'spawn'),
+  safeRadius: Math.round(SAFE_RADIUS * 10),
+  shop: cellCentre(SHOP, 'shop'),
+  areas: [
+    { id: 'aldrich_park', kind: 'pve', osm: ALDRICH_PARK_WAY, p: park.p },
+    { id: 'south_fields', kind: 'pve', p: dm(SOUTH_FIELDS) },
+    { id: 'pvp_zone', kind: 'pvp', p: dm(PVP_ZONE) },
+  ],
+};
+
 mkdirSync(outDir, { recursive: true });
 writeFileSync(outDir + '/campus.json', JSON.stringify(campus) + '\n');
 writeFileSync(outDir + '/collision.bin', Buffer.concat([header, Buffer.from(bits)]));
+writeFileSync(outDir + '/areas.json', JSON.stringify(areas) + '\n');
 console.log(`buildings=${buildings.length} paths=${paths.length} green=${green.length} grid=${width}x${height}`);
