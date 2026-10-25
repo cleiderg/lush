@@ -269,3 +269,56 @@ func TestStoreErrorEndsConnection(t *testing.T) {
 		}
 	}
 }
+
+// testGrid is a 64x64 collision grid of 1 m cells from (0,0) with one
+// blocked cell, (40,50).
+func testGrid(t *testing.T) *world.Grid {
+	t.Helper()
+	const n = 64
+	b := make([]byte, 22+n*n/8)
+	copy(b, "LCOL")
+	b[4], b[6], b[8], b[10], b[12] = 1, 10, 64, n, n
+	i := 50*n + 40
+	b[22+i>>3] |= 1 << (uint(i) & 7)
+	g, err := world.ParseGrid(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return g
+}
+
+func TestResumeOnBlockedSavedPositionUsesSpawn(t *testing.T) {
+	tests := []struct {
+		name         string
+		x, z         float32
+		wantX, wantZ float32
+	}{
+		{"walkable kept", 20.5, 30.5, 20.5, 30.5},
+		{"blocked cell", 40.5, 50.5, 7, 9},
+		{"outside grid", 100, 100, 7, 9},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			spy := newSpy()
+			v := uint16(protocol.ProtocolVersionCurrent)
+			c := cfg()
+			c.Collision = testGrid(t)
+			r1 := newRigStore(t, 16, c, spy)
+			c1 := r1.dial(hello(v, ""))
+			_, tok := r1.expectWelcome(c1)
+			sp, err := spy.Players.LoadByTokenHash(context.Background(), sha(tok))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := spy.Players.Save(context.Background(), store.Player{ID: sp.ID, X: tc.x, Z: tc.z, Version: sp.Version}); err != nil {
+				t.Fatal(err)
+			}
+			r2 := newRigStore(t, 16, c, spy)
+			c2 := r2.dial(hello(v, tok))
+			_, x, z := welcomeSpawn(t, r2, c2)
+			if x != tc.wantX || z != tc.wantZ {
+				t.Fatalf("rejoined at %v,%v, want %v,%v", x, z, tc.wantX, tc.wantZ)
+			}
+		})
+	}
+}

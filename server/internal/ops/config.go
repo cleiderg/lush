@@ -11,6 +11,13 @@ import (
 	"time"
 )
 
+// DefaultSpawnX and DefaultSpawnZ are the map spec's safe spawn point
+// (docs/specs/map.md, Gameplay areas), in metres from the map origin.
+const (
+	DefaultSpawnX = -22
+	DefaultSpawnZ = -76
+)
+
 // Config is the server configuration, read from environment variables.
 //
 //	LUSH_LISTEN_ADDR      listen address            (default ":8080")
@@ -22,7 +29,8 @@ import (
 //	LUSH_ENV              "development" or "production" (default "development")
 //	LUSH_SENTRY_DSN       Sentry DSN; empty disables error reporting (a secret: never logged)
 //	LUSH_MOVE_SPEED       walk speed, world units/s (default 4, PRD decision D-044)
-//	LUSH_SPAWN_X, LUSH_SPAWN_Z  guest spawn position (default 0, 0: map origin, centre of central campus)
+//	LUSH_SPAWN_X, LUSH_SPAWN_Z  guest spawn position (default -22, -76: the map spec's safe
+//	                      spawn point in the centre of Aldrich Park, docs/specs/map.md)
 //	LUSH_SHUTDOWN_COUNTDOWN  restart countdown, Go duration (default 60s in production, 5s otherwise)
 //	LUSH_SAVE_INTERVAL    how often connected players' positions are saved, Go duration, > 0
 //	                      (default 5s, owner decision on #40); also saved on logout and shutdown
@@ -77,6 +85,7 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		c.TickRate = n
 	}
 	c.MoveSpeed = 4
+	c.SpawnX, c.SpawnZ = DefaultSpawnX, DefaultSpawnZ
 	for _, f := range []struct {
 		key string
 		dst *float32

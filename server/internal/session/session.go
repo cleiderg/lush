@@ -36,6 +36,7 @@ import (
 type Config struct {
 	TickRate     int
 	Spawn        world.Vec2    // where new guests appear
+	Collision    *world.Grid   // if set, a saved position on a blocked cell rejoins at Spawn
 	MoveSpeed    float32       // world units per second at full stick; must match the movement system
 	HelloTimeout time.Duration // how long a connection may stay silent before Hello
 	// MaxMsgPerSec disconnects clients that send faster than this (0 = 120).
@@ -315,6 +316,11 @@ func (s *Server) guestLocked(sp store.Player, fresh bool) (*guest, error) {
 	pos := s.cfg.Spawn
 	if !fresh && sp.Version > 1 { // version 1 has never been saved
 		pos = world.Vec2{X: sp.X, Y: sp.Z}
+		// Saved inside a building, in water or off the map (e.g. before
+		// collision existed): rejoin at spawn rather than stuck.
+		if s.cfg.Collision != nil && s.cfg.Collision.Blocked(pos) {
+			pos = s.cfg.Spawn
+		}
 	}
 	g := &guest{id: id, storeID: sp.ID, ver: sp.Version, pos: pos}
 	s.guests[sp.ID] = g
