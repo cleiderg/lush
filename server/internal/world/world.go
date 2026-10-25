@@ -34,6 +34,10 @@ type Player struct {
 	// system's Handle and consumed (clamped) in its Tick.
 	Desired    Vec2
 	HasDesired bool
+
+	// Inv is the player's items, equipment and gold. Build it with
+	// NewStartingInventory or NewInventory.
+	Inv Inventory
 }
 
 // Command is a unit of input pushed from another goroutine and applied on the tick.
