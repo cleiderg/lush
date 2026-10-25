@@ -60,3 +60,22 @@ export function isBlocked(g: CollisionGrid, x: number, z: number): boolean {
   const idx = row * g.width + col;
   return ((g.bits[idx >> 3] >> (idx & 7)) & 1) === 1;
 }
+
+export interface MapPoint { x: number; z: number }
+export interface GameArea { id: string; kind: 'pve' | 'pvp'; osm?: number; p: number[] }
+
+/** areas.json: gameplay places from docs/specs/map.md. Integer decimetres like campus.json. */
+export interface AreasData {
+  version: number;
+  units: string;
+  spawn: MapPoint;
+  safeRadius: number;
+  shop: MapPoint;
+  areas: GameArea[];
+}
+
+export function parseAreas(json: string): AreasData {
+  const d = JSON.parse(json) as AreasData;
+  if (d.version !== 1) throw new Error(`unsupported areas.json version ${d.version}`);
+  return d;
+}
