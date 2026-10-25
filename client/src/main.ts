@@ -7,6 +7,8 @@ import { encodeInput } from './net/codec';
 import { localTokenStore, Session } from './net/session';
 import { WebSocketTransport } from './net/transport';
 import { createRenderer } from './render/renderer';
+import collisionUrl from '../../shared/map/collision.bin?url';
+import { CollisionGrid } from './state/collision';
 import { GameState } from './state/world';
 import { Controls } from './ui/controls';
 import { RestartBanner } from './ui/restartBanner';
@@ -27,6 +29,14 @@ const controls = new Controls({
 });
 
 const game = new GameState();
+// Until the grid arrives (or if it fails to load) prediction moves freely and the server corrects.
+fetch(collisionUrl)
+  .then((res) => {
+    if (!res.ok) throw new Error(`collision.bin: HTTP ${res.status}`);
+    return res.arrayBuffer();
+  })
+  .then((buf) => game.setCollision(CollisionGrid.parse(new Uint8Array(buf))))
+  .catch((err: unknown) => console.error('collision grid not loaded', err));
 const banner = new RestartBanner(document.body);
 const session = new Session({
   factory: () => new WebSocketTransport(),
