@@ -1,0 +1,234 @@
+import * as flatbuffers from 'flatbuffers';
+import { describe, expect, it } from 'vitest';
+import { decode } from '../net/codec';
+import {
+  EntityHealth, EntityInfo, EntityKind, Envelope, EquipSlot, HealthRatio, InventorySlot, InventoryState, ItemCatalog,
+  ItemDef, ItemKind, Message, PlayerStats, Snapshot, Entity, Vec2, Welcome,
+} from '../protocol';
+import { ItemState } from './items';
+import { GameState } from './world';
+
+function finish(b: flatbuffers.Builder, type: Message, msg: flatbuffers.Offset): Uint8Array {
+  b.finish(Envelope.createEnvelope(b, type, msg));
+  return b.asUint8Array().slice();
+}
+
+function welcome(playerId: number): Uint8Array {
+  const b = new flatbuffers.Builder(64);
+  const t = b.createString('tok');
+  Welcome.startWelcome(b);
+  Welcome.addPlayerId(b, playerId);
+  Welcome.addGuestToken(b, t);
+  Welcome.addSpawn(b, Vec2.createVec2(b, 0, 0));
+  Welcome.addTickRate(b, 20);
+  return finish(b, Message.Welcome, Welcome.endWelcome(b));
+}
+
+function stats(hp: number, maxHp: number, level: number, xp: number, gold: number): Uint8Array {
+  const b = new flatbuffers.Builder(64);
+  return finish(b, Message.PlayerStats, PlayerStats.createPlayerStats(b, hp, maxHp, level, xp, gold));
+}
+
+function inventory(slots: [number, number][], weapon: number, head: number, body: number, shield: number): Uint8Array {
+  const b = new flatbuffers.Builder(256);
+  InventoryState.startSlotsVector(b, slots.length);
+  for (let i = slots.length - 1; i >= 0; i--) InventorySlot.createInventorySlot(b, slots[i][0], slots[i][1]);
+  const v = b.endVector();
+  return finish(b, Message.InventoryState, InventoryState.createInventoryState(b, v, weapon, head, body, shield));
+}
+
+function catalog(): Uint8Array {
+  const b = new flatbuffers.Builder(256);
+  const sword = ItemDef.createItemDef(b, 5, b.createString('Bronze sword'), ItemKind.Weapon, EquipSlot.Weapon, 1, 4, 3, -1, 4, 0, 10, true, 25);
+  const fish = ItemDef.createItemDef(b, 9, b.createString('Fish'), ItemKind.Food, EquipSlot.None, 0, 0, 0, 0, 0, 3, 2, false, 0);
+  const v = ItemCatalog.createItemsVector(b, [sword, fish]);
+  return finish(b, Message.ItemCatalog, ItemCatalog.createItemCatalog(b, v));
+}
+
+function info(id: number, kind: EntityKind, npcType: number, level: number, weapon = 0, head = 0, body = 0, shield = 0): Uint8Array {
+  const b = new flatbuffers.Builder(64);
+  return finish(b, Message.EntityInfo, EntityInfo.createEntityInfo(b, id, kind, npcType, level, weapon, head, body, shield));
+}
+
+function health(entries: [number, number][]): Uint8Array {
+  const b = new flatbuffers.Builder(64);
+  EntityHealth.startEntriesVector(b, entries.length);
+  for (let i = entries.length - 1; i >= 0; i--) HealthRatio.createHealthRatio(b, entries[i][0], entries[i][1]);
+  const v = b.endVector();
+  return finish(b, Message.EntityHealth, EntityHealth.createEntityHealth(b, v));
+}
+
+function snapshot(ids: number[]): Uint8Array {
+  const b = new flatbuffers.Builder(128);
+  Snapshot.startEntitiesVector(b, ids.length);
+  for (let i = ids.length - 1; i >= 0; i--) Entity.createEntity(b, ids[i], 0, 0, 0, 0);
+  const v = b.endVector();
+  Snapshot.startSnapshot(b);
+  Snapshot.addTick(b, 1);
+  Snapshot.addLastInputSeq(b, 0);
+  Snapshot.addEntities(b, v);
+  return finish(b, Message.Snapshot, Snapshot.endSnapshot(b));
+}
+
+/** Decodes each envelope and feeds it to state, as the session does. */
+function feed(game: GameState, ...envelopes: Uint8Array[]): void {
+  for (const bytes of envelopes) {
+    const msg = decode(bytes);
+    expect(msg).not.toBeNull();
+    game.handle(msg!, 0);
+  }
+}
+
+function setup(): GameState {
+  const game = new GameState();
+  feed(game, welcome(1));
+  return game;
+}
+
+describe('decode + GameState: player stats', () => {
+  it('exposes HP, max HP, combat level, XP and gold', () => {
+    const game = setup();
+    feed(game, stats(7, 10, 3, 1234, 4000000000));
+    expect(game.items.stats).toEqual({ hp: 7, maxHp: 10, combatLevel: 3, xp: 1234, gold: 4000000000 });
+    feed(game, stats(10, 10, 3, 1300, 50));
+    expect(game.items.stats.hp).toBe(10);
+    expect(game.items.stats.gold).toBe(50);
+  });
+});
+
+describe('decode + GameState: inventory', () => {
+  it('exposes slots, including empty ones, and equipment', () => {
+    const game = setup();
+    feed(game, inventory([[5, 1], [0, 0], [9, 3]], 5, 0, 7, 0));
+    expect(game.items.inventory.slots).toEqual([
+      { itemId: 5, quantity: 1 },
+      { itemId: 0, quantity: 0 },
+      { itemId: 9, quantity: 3 },
+    ]);
+    expect(game.items.inventory.equipment).toEqual({ weapon: 5, head: 0, body: 7, shield: 0 });
+    feed(game, inventory([[0, 0], [0, 0], [9, 2]], 0, 0, 7, 0));
+    expect(game.items.inventory.slots[2].quantity).toBe(2);
+    expect(game.items.inventory.equipment.weapon).toBe(0);
+  });
+});
+
+describe('decode + GameState: item catalog', () => {
+  it('looks items up by id', () => {
+    const game = setup();
+    feed(game, catalog());
+    expect(game.items.item(5)).toEqual({
+      id: 5, name: 'Bronze sword', kind: ItemKind.Weapon, equipSlot: EquipSlot.Weapon, levelToEquip: 1,
+      accuracy: 4, strength: 3, defence: -1, attackSpeed: 4, heal: 0, shopBuysFor: 10, shopSells: true, shopSellsFor: 25,
+    });
+    expect(game.items.item(9)?.name).toBe('Fish');
+    expect(game.items.item(9)?.heal).toBe(3);
+    expect(game.items.item(9)?.shopSells).toBe(false);
+    expect(game.items.item(42)).toBeUndefined();
+  });
+});
+
+describe('decode + GameState: entity info and health', () => {
+  it('keeps info per entity on arrival and update', () => {
+    const game = setup();
+    feed(game, snapshot([1, 2, 3]), info(2, EntityKind.Player, 0, 5, 5, 0, 7, 0), info(3, EntityKind.Npc, 4, 12));
+    expect(game.items.entityInfo(2)).toEqual({
+      id: 2, kind: EntityKind.Player, npcType: 0, combatLevel: 5, equipment: { weapon: 5, head: 0, body: 7, shield: 0 },
+    });
+    expect(game.items.entityInfo(3)).toMatchObject({ kind: EntityKind.Npc, npcType: 4, combatLevel: 12 });
+    feed(game, info(2, EntityKind.Player, 0, 6, 0, 8, 7, 0));
+    expect(game.items.entityInfo(2)?.combatLevel).toBe(6);
+    expect(game.items.entityInfo(2)?.equipment).toEqual({ weapon: 0, head: 8, body: 7, shield: 0 });
+  });
+
+  it('defaults health to full and keeps the last ratio', () => {
+    const game = setup();
+    feed(game, snapshot([1, 2, 3]));
+    expect(game.items.healthRatio(2)).toBe(1);
+    feed(game, health([[2, 0], [3, 255]]));
+    expect(game.items.healthRatio(2)).toBe(0);
+    expect(game.items.healthRatio(3)).toBe(1);
+    feed(game, health([[2, 51]]));
+    expect(game.items.healthRatio(2)).toBeCloseTo(0.2);
+    expect(game.items.healthRatio(3)).toBe(1);
+  });
+
+  it('drops info and health when the entity leaves view', () => {
+    const game = setup();
+    feed(game, snapshot([1, 2, 3]), info(2, EntityKind.Player, 0, 5), info(3, EntityKind.Npc, 4, 12), health([[2, 100], [3, 10]]));
+    feed(game, snapshot([1, 3]));
+    expect(game.items.entityInfo(2)).toBeUndefined();
+    expect(game.items.healthRatio(2)).toBe(1);
+    expect(game.items.entityInfo(3)?.npcType).toBe(4);
+    expect(game.items.healthRatio(3)).toBeCloseTo(10 / 255);
+  });
+
+  it('keeps info that arrives before the entity is in a snapshot', () => {
+    const game = setup();
+    feed(game, snapshot([1]), info(4, EntityKind.Npc, 2, 3), snapshot([1]));
+    expect(game.items.entityInfo(4)?.npcType).toBe(2);
+    feed(game, snapshot([1, 4]), snapshot([1]));
+    expect(game.items.entityInfo(4)).toBeUndefined();
+  });
+
+  it('forgets per-entity data on a new Welcome', () => {
+    const game = setup();
+    feed(game, snapshot([1, 2]), info(2, EntityKind.Npc, 1, 1), health([[2, 9]]), welcome(1));
+    expect(game.items.entityInfo(2)).toBeUndefined();
+    expect(game.items.healthRatio(2)).toBe(1);
+  });
+});
+
+describe('ItemState notifications', () => {
+  it('notifies subscribers only on change', () => {
+    const game = setup();
+    let count = 0;
+    const off = game.items.subscribe(() => count++);
+
+    feed(game, stats(7, 10, 3, 0, 0));
+    expect(count).toBe(1);
+    feed(game, stats(7, 10, 3, 0, 0));
+    expect(count).toBe(1);
+    feed(game, stats(6, 10, 3, 0, 0));
+    expect(count).toBe(2);
+
+    feed(game, inventory([[5, 1]], 0, 0, 0, 0));
+    expect(count).toBe(3);
+    feed(game, inventory([[5, 1]], 0, 0, 0, 0));
+    expect(count).toBe(3);
+
+    feed(game, catalog());
+    expect(count).toBe(4);
+
+    feed(game, snapshot([1, 2]));
+    expect(count).toBe(4);
+    feed(game, info(2, EntityKind.Player, 0, 5));
+    expect(count).toBe(5);
+    feed(game, info(2, EntityKind.Player, 0, 5));
+    expect(count).toBe(5);
+
+    feed(game, health([[2, 100]]));
+    expect(count).toBe(6);
+    feed(game, health([[2, 100]]));
+    expect(count).toBe(6);
+
+    feed(game, snapshot([1, 2]));
+    expect(count).toBe(6);
+    feed(game, snapshot([1]));
+    expect(count).toBe(7);
+
+    off();
+    feed(game, stats(1, 10, 3, 0, 0));
+    expect(count).toBe(7);
+  });
+
+  it('works on its own without GameState', () => {
+    const s = new ItemState();
+    let count = 0;
+    s.subscribe(() => count++);
+    s.setVisible([1]);
+    s.setEntityInfo({ id: 1, kind: EntityKind.Npc, npcType: 1, combatLevel: 2, equipment: { weapon: 0, head: 0, body: 0, shield: 0 } });
+    s.resetEntities();
+    expect(count).toBe(2);
+    expect(s.entityInfo(1)).toBeUndefined();
+  });
+});
