@@ -43,8 +43,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 3 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 3", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 4 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 4", ProtocolVersionCurrent)
 	}
 }
 
@@ -235,5 +235,137 @@ func TestRoundTripWaveAnimation(t *testing.T) {
 	var e Entity
 	if !m.Entities(&e, 0) || Animation(e.Animation()) != AnimationWave {
 		t.Fatalf("animation = %d, want Wave", e.Animation())
+	}
+}
+
+func TestRoundTripPlayerStats(t *testing.T) {
+	b := flatbuffers.NewBuilder(64)
+	PlayerStatsStart(b)
+	PlayerStatsAddHp(b, 7)
+	PlayerStatsAddMaxHp(b, 39)
+	PlayerStatsAddCombatLevel(b, 30)
+	PlayerStatsAddXp(b, 13363)
+	PlayerStatsAddGold(b, 4000000000)
+	buf := finish(b, MessagePlayerStats, PlayerStatsEnd(b))
+	var m PlayerStats
+	tbl := open(t, buf, MessagePlayerStats)
+	m.Init(tbl.Bytes, tbl.Pos)
+	if m.Hp() != 7 || m.MaxHp() != 39 || m.CombatLevel() != 30 || m.Xp() != 13363 || m.Gold() != 4000000000 {
+		t.Fatalf("player stats mismatch: %d %d %d %d %d", m.Hp(), m.MaxHp(), m.CombatLevel(), m.Xp(), m.Gold())
+	}
+}
+
+func TestRoundTripInventoryState(t *testing.T) {
+	// 28 slots: slot 0 holds 3 Boba (id 9), slot 5 holds 250 acorns (id 11),
+	// everything else is empty.
+	want := make([][2]uint32, 28)
+	want[0] = [2]uint32{9, 3}
+	want[5] = [2]uint32{11, 250}
+	b := flatbuffers.NewBuilder(256)
+	InventoryStateStartSlotsVector(b, len(want))
+	for i := len(want) - 1; i >= 0; i-- {
+		CreateInventorySlot(b, uint16(want[i][0]), want[i][1])
+	}
+	slots := b.EndVector(len(want))
+	InventoryStateStart(b)
+	InventoryStateAddSlots(b, slots)
+	InventoryStateAddWeapon(b, 1)
+	InventoryStateAddHead(b, uint16(EmptyItemId))
+	InventoryStateAddBody(b, 4)
+	InventoryStateAddShield(b, uint16(EmptyItemId))
+	buf := finish(b, MessageInventoryState, InventoryStateEnd(b))
+
+	var m InventoryState
+	tbl := open(t, buf, MessageInventoryState)
+	m.Init(tbl.Bytes, tbl.Pos)
+	if m.SlotsLength() != 28 {
+		t.Fatalf("slots = %d, want 28", m.SlotsLength())
+	}
+	var s InventorySlot
+	for i, w := range want {
+		if !m.Slots(&s, i) {
+			t.Fatalf("slot %d missing", i)
+		}
+		if uint32(s.ItemId()) != w[0] || s.Quantity() != w[1] {
+			t.Fatalf("slot %d = (%d, %d), want %v", i, s.ItemId(), s.Quantity(), w)
+		}
+	}
+	if !m.Slots(&s, 1) || s.ItemId() != uint16(EmptyItemId) {
+		t.Fatalf("slot 1 should be empty")
+	}
+	if m.Weapon() != 1 || m.Head() != uint16(EmptyItemId) || m.Body() != 4 || m.Shield() != uint16(EmptyItemId) {
+		t.Fatalf("equipment mismatch: %d %d %d %d", m.Weapon(), m.Head(), m.Body(), m.Shield())
+	}
+}
+
+type itemDef struct {
+	id                          uint16
+	name                        string
+	kind                        ItemKind
+	slot                        EquipSlot
+	level                       uint8
+	accuracy, strength, defence int16
+	speed                       uint8
+	heal                        uint16
+	buysFor                     uint32
+	sells                       bool
+	sellsFor                    uint32
+}
+
+func TestRoundTripItemCatalog(t *testing.T) {
+	want := []itemDef{
+		{1, "Wooden stick", ItemKindWeapon, EquipSlotWeapon, 1, 3, 2, 0, 4, 0, 2, true, 5},
+		{8, "Robot plating", ItemKindArmor, EquipSlotBody, 12, -2, 0, 14, 0, 0, 150, false, 0},
+		{9, "Boba", ItemKindFood, EquipSlotNone, 1, 0, 0, 0, 0, 4, 1, true, 5},
+		{11, "Acorn", ItemKindLoot, EquipSlotNone, 0, 0, 0, 0, 0, 0, 1, false, 0},
+		{7, "Bike helmet", ItemKindArmor, EquipSlotHead, 10, 0, 0, 6, 0, 0, 30, true, 80},
+		{5, "Cardboard shield", ItemKindArmor, EquipSlotShield, 1, 0, 0, 3, 0, 0, 3, true, 10},
+	}
+	b := flatbuffers.NewBuilder(512)
+	offs := make([]flatbuffers.UOffsetT, len(want))
+	for i, w := range want {
+		name := b.CreateString(w.name)
+		ItemDefStart(b)
+		ItemDefAddId(b, w.id)
+		ItemDefAddName(b, name)
+		ItemDefAddKind(b, w.kind)
+		ItemDefAddEquipSlot(b, w.slot)
+		ItemDefAddLevelToEquip(b, w.level)
+		ItemDefAddAccuracy(b, w.accuracy)
+		ItemDefAddStrength(b, w.strength)
+		ItemDefAddDefence(b, w.defence)
+		ItemDefAddAttackSpeed(b, w.speed)
+		ItemDefAddHeal(b, w.heal)
+		ItemDefAddShopBuysFor(b, w.buysFor)
+		ItemDefAddShopSells(b, w.sells)
+		ItemDefAddShopSellsFor(b, w.sellsFor)
+		offs[i] = ItemDefEnd(b)
+	}
+	ItemCatalogStartItemsVector(b, len(offs))
+	for i := len(offs) - 1; i >= 0; i-- {
+		b.PrependUOffsetT(offs[i])
+	}
+	items := b.EndVector(len(offs))
+	ItemCatalogStart(b)
+	ItemCatalogAddItems(b, items)
+	buf := finish(b, MessageItemCatalog, ItemCatalogEnd(b))
+
+	var m ItemCatalog
+	tbl := open(t, buf, MessageItemCatalog)
+	m.Init(tbl.Bytes, tbl.Pos)
+	if m.ItemsLength() != len(want) {
+		t.Fatalf("items = %d, want %d", m.ItemsLength(), len(want))
+	}
+	var d ItemDef
+	for i, w := range want {
+		if !m.Items(&d, i) {
+			t.Fatalf("item %d missing", i)
+		}
+		got := itemDef{d.Id(), string(d.Name()), d.Kind(), d.EquipSlot(), d.LevelToEquip(),
+			d.Accuracy(), d.Strength(), d.Defence(), d.AttackSpeed(), d.Heal(),
+			d.ShopBuysFor(), d.ShopSells(), d.ShopSellsFor()}
+		if got != w {
+			t.Fatalf("item %d = %+v, want %+v", i, got, w)
+		}
 	}
 }
