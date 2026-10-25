@@ -38,6 +38,14 @@ type Player struct {
 	// Inv is the player's items, equipment and gold. Build it with
 	// NewStartingInventory or NewInventory.
 	Inv Inventory
+
+	// XP is the player's combat XP total. Change it with AddXP.
+	XP int
+	// HP is the player's current hitpoints, from 0 to MaxHP.
+	HP int
+	// LastCombat is when the player last dealt or took damage; zero if never.
+	// Health regeneration waits for Rules.RegenDelay after it.
+	LastCombat time.Time
 }
 
 // Command is a unit of input pushed from another goroutine and applied on the tick.

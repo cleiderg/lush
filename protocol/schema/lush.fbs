@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 6
+  Current = 7
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -79,6 +79,15 @@ enum EntityKind : ubyte {
 struct HealthRatio {
   id: uint16;    // entity id, as in Entity.id
   ratio: uint8;  // hp / max_hp scaled to 0..255 (0 = dead, 255 = full)
+}
+
+// One item lying on the ground inside GroundItems. Packed to 12 bytes.
+struct GroundItem {
+  id: uint16;        // ground item id, session-scoped; PickUp names it
+  item_id: uint16;   // ItemDef.id
+  quantity: uint32;
+  x: int16;          // decimetres (0.1 m) from the map origin, as in Entity
+  z: int16;          // decimetres (0.1 m) from the map origin, as in Entity
 }
 
 // One hit inside CombatHit. Packed to 6 bytes.
@@ -224,6 +233,59 @@ table EntityHealth {
   entries: [HealthRatio];
 }
 
+// ItemAction.action values.
+enum ItemActionKind : ubyte {
+  Equip = 0,   // equip the item in inventory slot `slot`
+  Unequip = 1, // move the item worn in `equip_slot` back to the inventory
+  Eat = 2      // eat the food in inventory slot `slot`
+}
+
+// Client -> server: equip, unequip or eat an item. Equip and Eat use `slot`
+// (an inventory slot index); Unequip uses `equip_slot`. The server checks
+// everything and replies with InventoryState and PlayerStats.
+table ItemAction {
+  action: ItemActionKind;
+  slot: ubyte;           // inventory slot index, 0-based
+  equip_slot: EquipSlot;
+}
+
+// Server -> client: every ground item in view. Each message replaces the
+// whole list; it is sent when the list changes.
+table GroundItems {
+  items: [GroundItem];
+}
+
+// Client -> server: pick up a ground item.
+table PickUp {
+  ground_item_id: ushort; // GroundItem.id
+}
+
+// Client -> server: buy from the NPC shop.
+table ShopBuy {
+  item_id: ushort;   // ItemDef.id
+  quantity: uint32;
+}
+
+// Client -> server: sell from an inventory slot to the NPC shop.
+table ShopSell {
+  slot: ubyte;       // inventory slot index, 0-based
+  quantity: uint32;
+}
+
+// ShopResult.code values.
+enum ShopResultCode : ubyte {
+  Ok = 0,
+  TooFar = 1,
+  NotEnoughGold = 2,
+  InventoryFull = 3,
+  ItemNotSold = 4
+}
+
+// Server -> client: the outcome of a ShopBuy or ShopSell.
+table ShopResult {
+  code: ShopResultCode;
+}
+
 // Client -> server: start attacking an entity. The server checks range,
 // area and target rules and ignores invalid requests.
 table AttackTarget {
@@ -269,6 +331,12 @@ union Message {
   ItemCatalog,
   EntityInfo,
   EntityHealth,
+  ItemAction,
+  GroundItems,
+  PickUp,
+  ShopBuy,
+  ShopSell,
+  ShopResult,
   AttackTarget,
   CombatHit,
   NpcCatalog

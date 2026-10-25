@@ -24,9 +24,15 @@ const (
 	MessageItemCatalog      Message = 14
 	MessageEntityInfo       Message = 15
 	MessageEntityHealth     Message = 16
-	MessageAttackTarget     Message = 17
-	MessageCombatHit        Message = 18
-	MessageNpcCatalog       Message = 19
+	MessageItemAction       Message = 17
+	MessageGroundItems      Message = 18
+	MessagePickUp           Message = 19
+	MessageShopBuy          Message = 20
+	MessageShopSell         Message = 21
+	MessageShopResult       Message = 22
+	MessageAttackTarget     Message = 23
+	MessageCombatHit        Message = 24
+	MessageNpcCatalog       Message = 25
 )
 
 var EnumNamesMessage = map[Message]string{
@@ -47,6 +53,12 @@ var EnumNamesMessage = map[Message]string{
 	MessageItemCatalog:      "ItemCatalog",
 	MessageEntityInfo:       "EntityInfo",
 	MessageEntityHealth:     "EntityHealth",
+	MessageItemAction:       "ItemAction",
+	MessageGroundItems:      "GroundItems",
+	MessagePickUp:           "PickUp",
+	MessageShopBuy:          "ShopBuy",
+	MessageShopSell:         "ShopSell",
+	MessageShopResult:       "ShopResult",
 	MessageAttackTarget:     "AttackTarget",
 	MessageCombatHit:        "CombatHit",
 	MessageNpcCatalog:       "NpcCatalog",
@@ -70,6 +82,12 @@ var EnumValuesMessage = map[string]Message{
 	"ItemCatalog":      MessageItemCatalog,
 	"EntityInfo":       MessageEntityInfo,
 	"EntityHealth":     MessageEntityHealth,
+	"ItemAction":       MessageItemAction,
+	"GroundItems":      MessageGroundItems,
+	"PickUp":           MessagePickUp,
+	"ShopBuy":          MessageShopBuy,
+	"ShopSell":         MessageShopSell,
+	"ShopResult":       MessageShopResult,
 	"AttackTarget":     MessageAttackTarget,
 	"CombatHit":        MessageCombatHit,
 	"NpcCatalog":       MessageNpcCatalog,

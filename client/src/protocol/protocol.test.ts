@@ -2,7 +2,8 @@ import * as flatbuffers from 'flatbuffers';
 import { describe, expect, it } from 'vitest';
 import {
   ActionFlags, Animation, AttackTarget, CombatHit, Hit, NpcCatalog, NpcDef, ChatMessage, ChatSend, Emote, EmoteSend, EmptyItem, Entity, EntityHealth, EntityInfo,
-  EntityKind, Envelope, EquipSlot, Hello, Input,
+  EntityKind, Envelope, EquipSlot, GroundItem, GroundItems, Hello, Input, ItemAction, ItemActionKind, PickUp,
+  ShopBuy, ShopResult, ShopResultCode, ShopSell,
   InventorySlot, InventoryState, HealthRatio, ItemCatalog, ItemDef, ItemKind, Message, Ping, PlayerStats, Pong,
   ProtocolVersion, Reload, RestartCountdown, Snapshot, Vec2, Welcome,
 } from './index.js';
@@ -34,7 +35,7 @@ function buildSnapshot(n: number): Uint8Array {
 
 describe('protocol', () => {
   it('exposes the version constant', () => {
-    expect(ProtocolVersion.Current).toBe(6);
+    expect(ProtocolVersion.Current).toBe(7);
   });
 
   it('keeps a 101-entity snapshot under 1200 bytes', () => {
@@ -237,6 +238,87 @@ describe('protocol', () => {
     for (let i = 0; i < want.length; i++) {
       const h = m.entries(i)!;
       expect([h.id(), h.ratio()]).toEqual(want[i]);
+    }
+  });
+
+  it('round-trips ItemAction', () => {
+    const want: [ItemActionKind, number, EquipSlot][] = [
+      [ItemActionKind.Equip, 0, EquipSlot.None],
+      [ItemActionKind.Eat, 27, EquipSlot.None],
+      [ItemActionKind.Unequip, 0, EquipSlot.Shield],
+      [ItemActionKind.Unequip, 255, EquipSlot.Weapon],
+    ];
+    for (const w of want) {
+      const b = new flatbuffers.Builder(64);
+      const buf = finish(b, Message.ItemAction, ItemAction.createItemAction(b, ...w));
+      const m = open(buf, Message.ItemAction, new ItemAction());
+      expect([m.action(), m.slot(), m.equipSlot()]).toEqual(w);
+    }
+  });
+
+  function buildGroundItems(want: [number, number, number, number, number][]): Uint8Array {
+    const b = new flatbuffers.Builder(64);
+    GroundItems.startItemsVector(b, want.length);
+    for (let i = want.length - 1; i >= 0; i--) {
+      GroundItem.createGroundItem(b, ...want[i]);
+    }
+    return finish(b, Message.GroundItems, GroundItems.createGroundItems(b, b.endVector()));
+  }
+
+  it('round-trips GroundItems', () => {
+    const want: [number, number, number, number, number][] = [
+      [1, 11, 1, 0, 0],
+      [300, 13, 4294967295, -32768, 32767],
+      [65535, 65535, 25, 1234, -987],
+    ];
+    const m = open(buildGroundItems(want), Message.GroundItems, new GroundItems());
+    expect(m.itemsLength()).toBe(want.length);
+    for (let i = 0; i < want.length; i++) {
+      const g = m.items(i)!;
+      expect([g.id(), g.itemId(), g.quantity(), g.x(), g.z()]).toEqual(want[i]);
+    }
+  });
+
+  it('packs GroundItem to 12 bytes', () => {
+    expect(GroundItem.sizeOf()).toBe(12);
+    const items = (n: number) => Array.from({ length: n }, (_, i): [number, number, number, number, number] => [i, 1, 1, 0, 0]);
+    expect(buildGroundItems(items(51)).length - buildGroundItems(items(50)).length).toBe(12);
+  });
+
+  it('round-trips PickUp', () => {
+    for (const id of [0, 1, 65535]) {
+      const b = new flatbuffers.Builder(32);
+      const buf = finish(b, Message.PickUp, PickUp.createPickUp(b, id));
+      expect(open(buf, Message.PickUp, new PickUp()).groundItemId()).toBe(id);
+    }
+  });
+
+  it('round-trips ShopBuy', () => {
+    for (const w of [[1, 1], [10, 28], [65535, 4294967295]] as [number, number][]) {
+      const b = new flatbuffers.Builder(32);
+      const buf = finish(b, Message.ShopBuy, ShopBuy.createShopBuy(b, ...w));
+      const m = open(buf, Message.ShopBuy, new ShopBuy());
+      expect([m.itemId(), m.quantity()]).toEqual(w);
+    }
+  });
+
+  it('round-trips ShopSell', () => {
+    for (const w of [[0, 1], [27, 500], [255, 4294967295]] as [number, number][]) {
+      const b = new flatbuffers.Builder(32);
+      const buf = finish(b, Message.ShopSell, ShopSell.createShopSell(b, ...w));
+      const m = open(buf, Message.ShopSell, new ShopSell());
+      expect([m.slot(), m.quantity()]).toEqual(w);
+    }
+  });
+
+  it('round-trips ShopResult', () => {
+    for (const code of [
+      ShopResultCode.Ok, ShopResultCode.TooFar, ShopResultCode.NotEnoughGold,
+      ShopResultCode.InventoryFull, ShopResultCode.ItemNotSold,
+    ]) {
+      const b = new flatbuffers.Builder(32);
+      const buf = finish(b, Message.ShopResult, ShopResult.createShopResult(b, code));
+      expect(open(buf, Message.ShopResult, new ShopResult()).code()).toBe(code);
     }
   });
 
