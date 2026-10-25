@@ -20,6 +20,8 @@ import (
 	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
 	"github.com/cleiderg/lush/server/internal/systems/emote"
+	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/regen"
 	"github.com/cleiderg/lush/server/internal/transport"
 	"github.com/cleiderg/lush/server/internal/world"
 )
@@ -86,16 +88,26 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		log.Error("movement setup failed", "err", err)
 		return 1
 	}
+	data, err := gamedata.Default()
+	if err != nil {
+		log.Error("game data", "err", err)
+		return 1
+	}
 	sess := session.New(session.Config{
 		TickRate:     cfg.TickRate,
 		Spawn:        world.Vec2{X: cfg.SpawnX, Y: cfg.SpawnZ},
 		Collision:    grid,
 		MoveSpeed:    cfg.MoveSpeed,
 		SaveInterval: cfg.SaveInterval,
+		Data:         data,
 		OnPanic:      reporter.Recovered,
 	}, w, clock, players, log)
-	// Order matters: movement applies inputs, emote overrides animation, chat delivers, session snapshots last.
-	for _, s := range []world.System{mover, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess), sess} {
+	systems, err := gameSystems(mover, data.Rules, clock, sess)
+	if err != nil {
+		log.Error("system setup failed", "err", err)
+		return 1
+	}
+	for _, s := range systems {
 		if err := w.Register(s); err != nil {
 			log.Error("register system", "err", err)
 			return 2
@@ -171,6 +183,17 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 	}
 	log.Info("bye")
 	return 0
+}
+
+// gameSystems lists the world systems in registration order. Order matters:
+// movement applies inputs, emote overrides animation, chat delivers, regen
+// heals (SW1), and the session sends snapshots, stats and inventory last.
+func gameSystems(mover world.System, rules gamedata.Rules, clock world.Clock, sess *session.Server) ([]world.System, error) {
+	heal, err := regen.New(rules, clock)
+	if err != nil {
+		return nil, err
+	}
+	return []world.System{mover, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess), heal, sess}, nil
 }
 
 // openDatabase connects a pool and applies pending migrations. The returned

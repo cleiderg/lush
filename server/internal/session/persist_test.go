@@ -35,10 +35,10 @@ func newSpy() *spyStore {
 	return &spyStore{Players: store.NewMemory(), hashes: make(chan string, 64)}
 }
 
-func (s *spyStore) CreateGuest(ctx context.Context, h string) (store.Player, error) {
+func (s *spyStore) CreateGuest(ctx context.Context, h string, kit store.Holdings, entries []store.Entry) (store.Player, error) {
 	s.creates.Add(1)
 	s.hashes <- h
-	return s.Players.CreateGuest(ctx, h)
+	return s.Players.CreateGuest(ctx, h, kit, entries)
 }
 
 func (s *spyStore) LoadByTokenHash(ctx context.Context, h string) (store.Player, error) {

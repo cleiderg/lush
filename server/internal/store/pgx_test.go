@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/cleiderg/lush/server/internal/store"
@@ -54,8 +55,8 @@ func TestPGApplyEconomyAtomic(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := store.NewPGPlayers(pool)
-	a, _ := s.CreateGuest(ctx, "a")
-	b, _ := s.CreateGuest(ctx, "b")
+	a, _ := s.CreateGuest(ctx, "a", store.Holdings{}, nil)
+	b, _ := s.CreateGuest(ctx, "b", store.Holdings{}, nil)
 
 	// snapshot renders every row the economy write can touch.
 	snapshot := func() string {
@@ -123,5 +124,71 @@ func TestPGApplyEconomyAtomic(t *testing.T) {
 				t.Fatalf("rows changed:\nbefore %s\nafter  %s", before, after)
 			}
 		})
+	}
+}
+
+// TestPGCreateGuestAudit checks that CreateGuest logs its entries against the
+// new player and that a failure partway through leaves no rows behind.
+func TestPGCreateGuestAudit(t *testing.T) {
+	url := os.Getenv("LUSH_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("LUSH_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "TRUNCATE players RESTART IDENTITY CASCADE"); err != nil {
+		t.Fatal(err)
+	}
+	s := store.NewPGPlayers(pool)
+	counts := func() (players, items, audit int) {
+		err := pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM players),
+			(SELECT count(*) FROM player_inventory) + (SELECT count(*) FROM player_equipment),
+			(SELECT count(*) FROM economy_audit)`).Scan(&players, &items, &audit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+
+	// The player row and its gold are written before the bad slot fails.
+	bad := storetest.SampleHoldings()
+	bad.Inventory[27] = store.Stack{Item: 2, Qty: -1}
+	if _, err := s.CreateGuest(ctx, "h1", bad, []store.Entry{{Kind: "item_create"}}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("err = %v, want ErrInvalid", err)
+	}
+	if p, i, a := counts(); p != 0 || i != 0 || a != 0 {
+		t.Fatalf("after failed create: %d players, %d items, %d audit rows; want none", p, i, a)
+	}
+
+	p, err := s.CreateGuest(ctx, "h1", storetest.SampleHoldings(), []store.Entry{
+		{Kind: "item_create", Payload: map[string]any{"item": 1}}, {Kind: "gold", Payload: map[string]any{"gold": 100}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := pool.Query(ctx, "SELECT kind, actor_player_id FROM economy_audit ORDER BY id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kinds []string
+	var kind string
+	var actor int64
+	if _, err := pgx.ForEachRow(rows, []any{&kind, &actor}, func() error {
+		if actor != p.ID {
+			t.Errorf("audit %s actor = %d, want %d", kind, actor, p.ID)
+		}
+		kinds = append(kinds, kind)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(kinds) != 2 || kinds[0] != "item_create" || kinds[1] != "gold" {
+		t.Fatalf("audit kinds = %v, want [item_create gold]", kinds)
 	}
 }

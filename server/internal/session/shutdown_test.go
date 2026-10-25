@@ -80,14 +80,17 @@ func (f *fakeConn) seen(t *testing.T) []int {
 	return out
 }
 
+// joinFrames is how many frames a client gets on joining.
+const joinFrames = 4
+
 func connect(t *testing.T, w *world.World, sess *session.Server, queue int) *fakeConn {
 	t.Helper()
 	c := newFakeConn(queue)
 	go sess.ServeConn(c)
 	c.in <- hello(uint16(protocol.ProtocolVersionCurrent), "")
-	waitCount(t, w, c, 1) // Welcome
+	waitCount(t, w, c, joinFrames) // Welcome, ItemCatalog, PlayerStats, InventoryState
 	c.in <- ping(1)
-	waitCount(t, w, c, 2) // Pong: the read loop is running and registered
+	waitCount(t, w, c, joinFrames+1) // Pong: the read loop is running and registered
 	return c
 }
 
@@ -165,7 +168,7 @@ func TestRestartCountdownBroadcastBeforeReload(t *testing.T) {
 
 func TestRestartCountdownFullQueueDoesNotBlockOthers(t *testing.T) {
 	w, sess := newShutdownRig()
-	stuck := connect(t, w, sess, 2) // full after Welcome and Pong
+	stuck := connect(t, w, sess, joinFrames+1) // full after the join frames and Pong
 	ok := connect(t, w, sess, 64)
 	runShutdown(t, sess)
 	if got := ok.seen(t); len(got) != 4 || got[0] != 3 || got[1] != 2 || got[2] != 1 || got[3] != -1 {

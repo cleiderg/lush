@@ -28,6 +28,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
 	"github.com/cleiderg/lush/server/internal/systems/emote"
+	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/transport"
 	"github.com/cleiderg/lush/server/internal/world"
 )
@@ -48,6 +49,9 @@ type Config struct {
 	// SaveInterval is how often live players' positions are saved
 	// (0 = DefaultSaveInterval).
 	SaveInterval time.Duration
+	// Data is the item table and rules: the starting kit, max HP and the
+	// ItemCatalog sent to clients (nil = gamedata.Default()).
+	Data *gamedata.Data
 	// OnPanic, if set, is told about a panic recovered in a connection
 	// goroutine (for error reporting). The connection ends; others go on.
 	OnPanic func(recovered any)
@@ -71,12 +75,17 @@ type guest struct {
 	storeID int64
 	ver     int64         // store version at load; immutable
 	pos     world.Vec2    // last position, restored on resume
+	xp      int           // combat XP, restored on resume
+	inv     world.Inventory
 	conns   int           // connections that completed the handshake and have not ended
 	idle    *list.Element // in Server.idle while conns == 0
 
 	// Tick-goroutine only.
 	conn    transport.Conn
 	lastSeq uint32
+	// What the client last got in PlayerStats and InventoryState.
+	sentStats stats
+	sentInv   world.Inventory
 }
 
 type op struct {
@@ -94,6 +103,10 @@ type Server struct {
 	log   *slog.Logger
 	clock world.Clock
 	store store.Players
+	data  *gamedata.Data
+
+	catalog  []byte                   // encoded ItemCatalog, shared by every connection
+	newToken func() (string, error) // replaced by tests
 
 	mu     sync.Mutex
 	guests map[int64]*guest // by store id; session ids for known players
@@ -134,7 +147,19 @@ func New(cfg Config, w *world.World, clock world.Clock, players store.Players, l
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	data := cfg.Data
+	if data == nil {
+		d, err := gamedata.Default()
+		if err != nil {
+			// The embedded tables are validated by gamedata's tests; without
+			// them every new guest fails to get its kit and is refused.
+			log.Error("load game data", "err", err)
+			d = &gamedata.Data{}
+		}
+		data = d
+	}
 	return &Server{saver: newSaver(players, log), cfg: cfg, w: w, log: log, clock: clock, store: players,
+		data: data, catalog: encodeItemCatalog(data), newToken: newToken,
 		guests: map[int64]*guest{}, idle: list.New(), conns: map[transport.Conn]struct{}{},
 		live: map[world.PlayerID]*guest{}, grid: interest.NewGrid(), bld: flatbuffers.NewBuilder(1024)}
 }
@@ -270,7 +295,9 @@ func hashToken(tok string) string {
 
 // resolve finds the stored player for a Hello token, or creates one with a
 // fresh token when the token is empty or unknown. fresh reports a created
-// player. Only the token's SHA-256 reaches the store.
+// player. Only the token's SHA-256 reaches the store. A created player gets
+// the starting kit and gold in the same store transaction that creates it,
+// with an audit entry for each, so a failure leaves no player without its kit.
 func (s *Server) resolve(ctx context.Context, tok string) (sp store.Player, token string, fresh bool, err error) {
 	if tok != "" {
 		sp, err = s.store.LoadByTokenHash(ctx, hashToken(tok))
@@ -281,11 +308,19 @@ func (s *Server) resolve(ctx context.Context, tok string) (sp store.Player, toke
 			return sp, "", false, fmt.Errorf("load guest: %w", err)
 		}
 	}
-	tok, err = newToken()
+	inv, changes, err := world.NewStartingInventory(s.data)
 	if err != nil {
 		return sp, "", false, err
 	}
-	sp, err = s.store.CreateGuest(ctx, hashToken(tok))
+	kit, err := toHoldings(inv)
+	if err != nil {
+		return sp, "", false, fmt.Errorf("starting kit: %w", err)
+	}
+	tok, err = s.newToken()
+	if err != nil {
+		return sp, "", false, err
+	}
+	sp, err = s.store.CreateGuest(ctx, hashToken(tok), kit, auditEntries(changes, "starting_kit"))
 	if err != nil {
 		return sp, "", false, fmt.Errorf("create guest: %w", err)
 	}
@@ -300,6 +335,10 @@ func (s *Server) resolve(ctx context.Context, tok string) (sp store.Player, toke
 func (s *Server) guestLocked(sp store.Player, fresh bool) (*guest, error) {
 	if g := s.guests[sp.ID]; g != nil {
 		return g, nil
+	}
+	inv, err := fromHoldings(s.data, sp.Holdings)
+	if err != nil {
+		return nil, fmt.Errorf("load player %d: %w", sp.ID, err)
 	}
 	var id world.PlayerID
 	if int(s.nextID) < s.cfg.MaxGuests {
@@ -322,7 +361,7 @@ func (s *Server) guestLocked(sp store.Player, fresh bool) (*guest, error) {
 			pos = s.cfg.Spawn
 		}
 	}
-	g := &guest{id: id, storeID: sp.ID, ver: sp.Version, pos: pos}
+	g := &guest{id: id, storeID: sp.ID, ver: sp.Version, pos: pos, xp: int(sp.XP), inv: inv}
 	s.guests[sp.ID] = g
 	return g, nil
 }
@@ -426,6 +465,7 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		if p == nil {
 			continue
 		}
+		s.sendChanged(g, p)
 		s.hits = s.grid.Query(p.Pos, interest.ViewRadius, interest.MaxVisible, id, s.hits[:0])
 		s.ents = append(s.ents[:0], p)
 		for _, h := range s.hits {
@@ -446,20 +486,47 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 	if p := s.w.Player(g.id); p != nil && s.live[g.id] == g {
 		// Still in the world from the previous connection.
 		c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate))
+		s.sendInitial(g, p)
 		return
 	}
 	s.mu.Lock()
-	pos := g.pos
+	p := &world.Player{ID: g.id, Pos: g.pos, XP: g.xp, Inv: cloneInventory(g.inv)}
 	s.mu.Unlock()
-	if err := s.w.AddPlayer(&world.Player{ID: g.id, Pos: pos}); err != nil {
+	p.HP = p.MaxHP(s.data.Rules)
+	if err := s.w.AddPlayer(p); err != nil {
 		s.log.Error("add player", "player", g.id, "err", err)
 		g.conn = nil
 		go c.Close()
 		return
 	}
 	s.live[g.id] = g
-	c.Send(encodeWelcome(g.id, token, pos, s.cfg.TickRate))
+	c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate))
+	s.sendInitial(g, p)
 	s.log.Info("player joined", "player", g.id, "transport", "websocket")
+}
+
+// sendInitial sends a newly connected client the item catalog, then the
+// player's stats and inventory.
+func (s *Server) sendInitial(g *guest, p *world.Player) {
+	g.conn.Send(s.catalog)
+	g.sentStats = statsOf(s.data.Rules, p)
+	g.conn.Send(encodePlayerStats(s.bld, g.sentStats))
+	g.sentInv = cloneInventory(p.Inv)
+	g.conn.Send(encodeInventoryState(s.bld, &p.Inv))
+}
+
+// sendChanged sends PlayerStats and InventoryState if they differ from what
+// the client last got.
+func (s *Server) sendChanged(g *guest, p *world.Player) {
+	if st := statsOf(s.data.Rules, p); st != g.sentStats {
+		g.sentStats = st
+		g.conn.Send(encodePlayerStats(s.bld, st))
+	}
+	if !sameInventory(&g.sentInv, &p.Inv) {
+		g.sentInv.Slots = append(g.sentInv.Slots[:0], p.Inv.Slots...)
+		g.sentInv.Equipment, g.sentInv.Gold = p.Inv.Equipment, p.Inv.Gold
+		g.conn.Send(encodeInventoryState(s.bld, &p.Inv))
+	}
 }
 
 func (s *Server) leave(g *guest, c transport.Conn) {
@@ -467,15 +534,13 @@ func (s *Server) leave(g *guest, c transport.Conn) {
 		return // a newer connection already took over
 	}
 	g.conn = nil
-	if p := s.w.Player(g.id); p != nil {
-		s.mu.Lock()
-		g.pos = p.Pos
-		s.mu.Unlock()
-	}
 	s.mu.Lock()
-	pos := g.pos
+	if p := s.w.Player(g.id); p != nil {
+		g.pos, g.xp, g.inv = p.Pos, p.XP, cloneInventory(p.Inv)
+	}
+	req := saveReq{storeID: g.storeID, x: g.pos.X, z: g.pos.Y, xp: int64(g.xp), ver: g.ver}
 	s.mu.Unlock()
-	s.saver.submit([]saveReq{{storeID: g.storeID, x: pos.X, z: pos.Y, ver: g.ver}})
+	s.saver.submit([]saveReq{req})
 	s.w.RemovePlayer(g.id)
 	s.grid.Remove(g.id)
 	delete(s.live, g.id)
@@ -489,13 +554,13 @@ func (s *Server) Deliver(to world.PlayerID, m chat.Message) {
 	}
 }
 
-// collectSaves copies (store id, position, version) of every live player into
+// collectSaves copies (store id, position, XP, version) of every live player into
 // a reused buffer. Tick goroutine only; the saver copies what it keeps.
 func (s *Server) collectSaves() []saveReq {
 	s.saves = s.saves[:0]
 	for id, g := range s.live {
 		if p := s.w.Player(id); p != nil {
-			s.saves = append(s.saves, saveReq{storeID: g.storeID, x: p.Pos.X, z: p.Pos.Y, ver: g.ver})
+			s.saves = append(s.saves, saveReq{storeID: g.storeID, x: p.Pos.X, z: p.Pos.Y, xp: int64(p.XP), ver: g.ver})
 		}
 	}
 	return s.saves

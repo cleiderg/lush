@@ -22,8 +22,13 @@ func NewMemory() *Memory {
 	return &Memory{nextID: 1, byID: map[int64]Player{}, byHash: map[string]int64{}}
 }
 
-func (m *Memory) CreateGuest(ctx context.Context, tokenHash string) (Player, error) {
+// CreateGuest validates the holdings and every entry before creating
+// anything, so a failure leaves the store as it was.
+func (m *Memory) CreateGuest(ctx context.Context, tokenHash string, start Holdings, entries []Entry) (Player, error) {
 	if err := ctx.Err(); err != nil {
+		return Player{}, fmt.Errorf("create guest: %w", err)
+	}
+	if err := start.validate(); err != nil {
 		return Player{}, fmt.Errorf("create guest: %w", err)
 	}
 	m.mu.Lock()
@@ -31,10 +36,22 @@ func (m *Memory) CreateGuest(ctx context.Context, tokenHash string) (Player, err
 	if _, ok := m.byHash[tokenHash]; ok {
 		return Player{}, fmt.Errorf("create guest: %w", ErrAlreadyExists)
 	}
-	p := Player{ID: m.nextID, TokenHash: tokenHash, Version: 1}
+	logged := make([]Entry, len(entries))
+	for i, e := range entries {
+		if _, ok := m.byID[e.Counterparty]; e.Counterparty != 0 && !ok {
+			return Player{}, fmt.Errorf("create guest: audit counterparty %d: %w", e.Counterparty, ErrNotFound)
+		}
+		if err := checkPayload(e); err != nil {
+			return Player{}, fmt.Errorf("create guest: %w", err)
+		}
+		e.Actor = m.nextID
+		logged[i] = e
+	}
+	p := Player{ID: m.nextID, TokenHash: tokenHash, Holdings: start, Version: 1}
 	m.nextID++
 	m.byID[p.ID] = p
 	m.byHash[tokenHash] = p.ID
+	m.audit = append(m.audit, logged...)
 	return p, nil
 }
 
@@ -98,6 +115,9 @@ func (m *Memory) ApplyEconomy(ctx context.Context, changes []EconomyChange, entr
 		}
 		if _, ok := m.byID[e.Counterparty]; e.Counterparty != 0 && !ok {
 			return fmt.Errorf("apply economy: audit counterparty %d: %w", e.Counterparty, ErrNotFound)
+		}
+		if err := checkPayload(e); err != nil {
+			return fmt.Errorf("apply economy: %w", err)
 		}
 	}
 	for _, c := range changes {
