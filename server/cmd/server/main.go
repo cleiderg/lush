@@ -20,7 +20,6 @@ import (
 	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
 	"github.com/cleiderg/lush/server/internal/systems/emote"
-	"github.com/cleiderg/lush/server/internal/systems/movement"
 	"github.com/cleiderg/lush/server/internal/transport"
 	"github.com/cleiderg/lush/server/internal/world"
 )
@@ -82,14 +81,15 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 	metrics := ops.NewMetrics(version)
 	w := world.New(world.Config{TickRate: cfg.TickRate})
 
-	mover, err := movement.New(movement.Config{MaxSpeed: cfg.MoveSpeed})
+	mover, grid, err := newMover(cfg.MoveSpeed)
 	if err != nil {
-		log.Error("bad config", "err", err)
-		return 2
+		log.Error("movement setup failed", "err", err)
+		return 1
 	}
 	sess := session.New(session.Config{
 		TickRate:     cfg.TickRate,
 		Spawn:        world.Vec2{X: cfg.SpawnX, Y: cfg.SpawnZ},
+		Collision:    grid,
 		MoveSpeed:    cfg.MoveSpeed,
 		SaveInterval: cfg.SaveInterval,
 		OnPanic:      reporter.Recovered,
