@@ -23,6 +23,8 @@
   "pvp_items_kept": 3,
   "drop_reservation_s": 60,
   "drop_despawn_s": 180,
+  "pickup_range_tiles": 1,
+  "pickup_range_diagonal": true,
   "logout_combat_lock_s": 10,
   "eat_attack_delay_combat_ticks": 1
 }
