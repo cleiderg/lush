@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 7
+  Current = 8
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -96,6 +96,12 @@ struct Hit {
   target: uint16;   // entity id of the target, as in Entity.id
   damage: uint8;    // HP removed from the target; 0 means a miss
   died: bool;       // true when this hit killed the target
+}
+
+// One offered item inside TradeState. Packed to 8 bytes.
+struct TradeItem {
+  item_id: uint16;   // ItemDef.id
+  quantity: uint32;
 }
 
 // A player or NPC inside a Snapshot. Packed to 8 bytes.
@@ -314,6 +320,77 @@ table NpcCatalog {
   npcs: [NpcDef];
 }
 
+// Client -> server: ask a nearby player to trade, or accept a pending
+// request by naming the player who sent it. The server checks distance
+// (3 tiles) and the PvP zone and replies with TradeState or TradeResult.
+table TradeRequest {
+  target_id: ushort; // entity id, as in Entity.id
+}
+
+// Client -> server: add items from one inventory slot to your offer.
+table TradeOffer {
+  slot: ubyte;       // inventory slot index, 0-based
+  quantity: uint32;
+}
+
+// Client -> server: take one item back off your offer.
+table TradeRemove {
+  index: ubyte;      // index into your offer, as in TradeState.my_items
+}
+
+// Client -> server: set the gold on your offer (replaces the old amount).
+table TradeSetGold {
+  gold: uint32;
+}
+
+// Client -> server: accept the screen you are looking at. The server
+// ignores it if screen isn't the current TradeState.screen, so an accept
+// sent just before the offer changed doesn't count.
+table TradeAccept {
+  screen: ubyte;     // 1 or 2
+}
+
+// Client -> server: close the trade window and cancel the trade.
+table TradeCancel {
+}
+
+// Server -> client: another player wants to trade with you. Reply with
+// TradeRequest naming them to accept.
+table TradeRequestNotice {
+  from_id: ushort;   // entity id of the requesting player
+}
+
+// Server -> client: the whole trade window, sent when the trade opens and
+// whenever anything in it changes. Any change to an offer returns both
+// players to screen 1 and clears both accept flags. "my" is the receiving
+// player's side; "partner" is the other player's.
+table TradeState {
+  partner_id: ushort;      // entity id of the other player
+  screen: ubyte;           // 1 (offer) or 2 (final confirmation)
+  my_items: [TradeItem];
+  my_gold: uint32;
+  partner_items: [TradeItem];
+  partner_gold: uint32;
+  my_accepted: bool;       // you accepted the current screen
+  partner_accepted: bool;  // the partner accepted the current screen
+}
+
+// TradeResult.code values.
+enum TradeResultCode : ubyte {
+  Completed = 0,      // both accepted screen 2; the swap was saved
+  Cancelled = 1,      // either player cancelled or left
+  TooFar = 2,         // the players are more than 3 tiles apart
+  InPvpZone = 3,      // one of the players is in the PvP zone
+  PartnerBusy = 4,    // the other player is already trading
+  OfferNotHeld = 5,   // a side no longer has what it offered at commit
+  InventoryFull = 6   // a side has no room for what it would receive
+}
+
+// Server -> client: the trade window closed (or a request failed), and why.
+table TradeResult {
+  code: TradeResultCode;
+}
+
 union Message {
   Hello,
   Welcome,
@@ -339,7 +416,16 @@ union Message {
   ShopResult,
   AttackTarget,
   CombatHit,
-  NpcCatalog
+  NpcCatalog,
+  TradeRequest,
+  TradeOffer,
+  TradeRemove,
+  TradeSetGold,
+  TradeAccept,
+  TradeCancel,
+  TradeRequestNotice,
+  TradeState,
+  TradeResult
 }
 
 table Envelope {

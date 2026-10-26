@@ -43,8 +43,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 7 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 7", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 8 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 8", ProtocolVersionCurrent)
 	}
 }
 
@@ -722,6 +722,231 @@ func TestRoundTripNpcCatalog(t *testing.T) {
 		got := npc{d.Id(), string(d.Name()), d.CombatLevel()}
 		if got != w {
 			t.Fatalf("npc %d = %+v, want %+v", i, got, w)
+		}
+	}
+}
+
+func TestRoundTripTradeRequest(t *testing.T) {
+	for _, id := range []uint16{0, 300, 65535} {
+		b := flatbuffers.NewBuilder(32)
+		TradeRequestStart(b)
+		TradeRequestAddTargetId(b, id)
+		buf := finish(b, MessageTradeRequest, TradeRequestEnd(b))
+
+		var m TradeRequest
+		tbl := open(t, buf, MessageTradeRequest)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.TargetId() != id {
+			t.Fatalf("target id = %d, want %d", m.TargetId(), id)
+		}
+	}
+}
+
+func TestRoundTripTradeOffer(t *testing.T) {
+	for _, w := range []struct {
+		slot uint8
+		qty  uint32
+	}{{0, 1}, {27, 5000}, {255, 4294967295}} {
+		b := flatbuffers.NewBuilder(32)
+		TradeOfferStart(b)
+		TradeOfferAddSlot(b, w.slot)
+		TradeOfferAddQuantity(b, w.qty)
+		buf := finish(b, MessageTradeOffer, TradeOfferEnd(b))
+
+		var m TradeOffer
+		tbl := open(t, buf, MessageTradeOffer)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.Slot() != w.slot || m.Quantity() != w.qty {
+			t.Fatalf("offer = %d x%d, want %d x%d", m.Slot(), m.Quantity(), w.slot, w.qty)
+		}
+	}
+}
+
+func TestRoundTripTradeRemove(t *testing.T) {
+	for _, idx := range []uint8{0, 7, 255} {
+		b := flatbuffers.NewBuilder(32)
+		TradeRemoveStart(b)
+		TradeRemoveAddIndex(b, idx)
+		buf := finish(b, MessageTradeRemove, TradeRemoveEnd(b))
+
+		var m TradeRemove
+		tbl := open(t, buf, MessageTradeRemove)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.Index() != idx {
+			t.Fatalf("index = %d, want %d", m.Index(), idx)
+		}
+	}
+}
+
+func TestRoundTripTradeSetGold(t *testing.T) {
+	for _, g := range []uint32{0, 100, 4294967295} {
+		b := flatbuffers.NewBuilder(32)
+		TradeSetGoldStart(b)
+		TradeSetGoldAddGold(b, g)
+		buf := finish(b, MessageTradeSetGold, TradeSetGoldEnd(b))
+
+		var m TradeSetGold
+		tbl := open(t, buf, MessageTradeSetGold)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.Gold() != g {
+			t.Fatalf("gold = %d, want %d", m.Gold(), g)
+		}
+	}
+}
+
+func TestRoundTripTradeAccept(t *testing.T) {
+	for _, s := range []uint8{1, 2} {
+		b := flatbuffers.NewBuilder(32)
+		TradeAcceptStart(b)
+		TradeAcceptAddScreen(b, s)
+		buf := finish(b, MessageTradeAccept, TradeAcceptEnd(b))
+
+		var m TradeAccept
+		tbl := open(t, buf, MessageTradeAccept)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.Screen() != s {
+			t.Fatalf("screen = %d, want %d", m.Screen(), s)
+		}
+	}
+}
+
+func TestRoundTripTradeCancel(t *testing.T) {
+	b := flatbuffers.NewBuilder(32)
+	TradeCancelStart(b)
+	buf := finish(b, MessageTradeCancel, TradeCancelEnd(b))
+
+	var m TradeCancel
+	tbl := open(t, buf, MessageTradeCancel)
+	m.Init(tbl.Bytes, tbl.Pos)
+}
+
+func TestRoundTripTradeRequestNotice(t *testing.T) {
+	for _, id := range []uint16{0, 300, 65535} {
+		b := flatbuffers.NewBuilder(32)
+		TradeRequestNoticeStart(b)
+		TradeRequestNoticeAddFromId(b, id)
+		buf := finish(b, MessageTradeRequestNotice, TradeRequestNoticeEnd(b))
+
+		var m TradeRequestNotice
+		tbl := open(t, buf, MessageTradeRequestNotice)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.FromId() != id {
+			t.Fatalf("from id = %d, want %d", m.FromId(), id)
+		}
+	}
+}
+
+type tradeItem struct {
+	itemID uint16
+	qty    uint32
+}
+
+type tradeState struct {
+	partner                   uint16
+	screen                    uint8
+	mine                      []tradeItem
+	myGold                    uint32
+	theirs                    []tradeItem
+	partnerGold               uint32
+	myAccepted, theirAccepted bool
+}
+
+func buildTradeItems(b *flatbuffers.Builder, items []tradeItem) flatbuffers.UOffsetT {
+	b.StartVector(8, len(items), 4)
+	for i := len(items) - 1; i >= 0; i-- {
+		CreateTradeItem(b, items[i].itemID, items[i].qty)
+	}
+	return b.EndVector(len(items))
+}
+
+func buildTradeState(s tradeState) []byte {
+	b := flatbuffers.NewBuilder(256)
+	mine := buildTradeItems(b, s.mine)
+	theirs := buildTradeItems(b, s.theirs)
+	TradeStateStart(b)
+	TradeStateAddPartnerId(b, s.partner)
+	TradeStateAddScreen(b, s.screen)
+	TradeStateAddMyItems(b, mine)
+	TradeStateAddMyGold(b, s.myGold)
+	TradeStateAddPartnerItems(b, theirs)
+	TradeStateAddPartnerGold(b, s.partnerGold)
+	TradeStateAddMyAccepted(b, s.myAccepted)
+	TradeStateAddPartnerAccepted(b, s.theirAccepted)
+	return finish(b, MessageTradeState, TradeStateEnd(b))
+}
+
+func TestRoundTripTradeState(t *testing.T) {
+	cases := []tradeState{
+		{300, 1, []tradeItem{{1, 1}, {12, 250}, {65535, 4294967295}}, 100, []tradeItem{{7, 3}}, 0, true, false},
+		{65535, 2, nil, 4294967295, []tradeItem{{2, 1}, {3, 2}}, 55, false, true},
+		{1, 2, []tradeItem{{9, 9}}, 0, nil, 4294967295, true, true},
+	}
+	for ci, w := range cases {
+		buf := buildTradeState(w)
+		var m TradeState
+		tbl := open(t, buf, MessageTradeState)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.PartnerId() != w.partner || m.Screen() != w.screen || m.MyGold() != w.myGold ||
+			m.PartnerGold() != w.partnerGold || m.MyAccepted() != w.myAccepted ||
+			m.PartnerAccepted() != w.theirAccepted {
+			t.Fatalf("case %d: got partner=%d screen=%d gold=%d/%d accepted=%v/%v, want %+v", ci,
+				m.PartnerId(), m.Screen(), m.MyGold(), m.PartnerGold(), m.MyAccepted(), m.PartnerAccepted(), w)
+		}
+		check := func(side string, n int, get func(*TradeItem, int) bool, want []tradeItem) {
+			if n != len(want) {
+				t.Fatalf("case %d: %s items = %d, want %d", ci, side, n, len(want))
+			}
+			var it TradeItem
+			for i, wi := range want {
+				if !get(&it, i) {
+					t.Fatalf("case %d: %s item %d missing", ci, side, i)
+				}
+				if got := (tradeItem{it.ItemId(), it.Quantity()}); got != wi {
+					t.Fatalf("case %d: %s item %d = %+v, want %+v", ci, side, i, got, wi)
+				}
+			}
+		}
+		check("my", m.MyItemsLength(), m.MyItems, w.mine)
+		check("partner", m.PartnerItemsLength(), m.PartnerItems, w.theirs)
+	}
+}
+
+// A full trade window (28 items each side) stays under the datagram budget,
+// and each offered item is a fixed 8-byte struct.
+func TestTradeStateSize(t *testing.T) {
+	items := make([]tradeItem, 28)
+	for i := range items {
+		items[i] = tradeItem{uint16(i + 1), uint32(i * 1000)}
+	}
+	buf := buildTradeState(tradeState{300, 2, items, 4294967295, items, 4294967295, true, true})
+	if len(buf) >= 1200 {
+		t.Fatalf("TradeState with 2x28 items is %d bytes, want < 1200", len(buf))
+	}
+	t.Logf("TradeState with 2x28 items: %d bytes", len(buf))
+	small := buildTradeState(tradeState{mine: items[:10]})
+	big := buildTradeState(tradeState{mine: items[:12]})
+	if d := len(big) - len(small); d != 16 {
+		t.Fatalf("two more items add %d bytes, want 16", d)
+	}
+}
+
+func TestRoundTripTradeResult(t *testing.T) {
+	codes := []TradeResultCode{
+		TradeResultCodeCompleted, TradeResultCodeCancelled, TradeResultCodeTooFar,
+		TradeResultCodeInPvpZone, TradeResultCodePartnerBusy, TradeResultCodeOfferNotHeld,
+		TradeResultCodeInventoryFull,
+	}
+	for _, code := range codes {
+		b := flatbuffers.NewBuilder(32)
+		TradeResultStart(b)
+		TradeResultAddCode(b, code)
+		buf := finish(b, MessageTradeResult, TradeResultEnd(b))
+
+		var m TradeResult
+		tbl := open(t, buf, MessageTradeResult)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.Code() != code {
+			t.Fatalf("code = %v, want %v", m.Code(), code)
 		}
 	}
 }
