@@ -67,7 +67,7 @@ An internal test build, deployed and playable by invited testers:
 Agents must not build these in Phase 1:
 
 - Factions, territory control, and elections.
-- Player housing.
+- Player housing. It is planned for Phase 2 and specified in [[housing]] (D-049).
 - Texas Hold'em (only the first card game, and only if card tables happen).
 - Native app-store apps. Phase 1 is the browser and the home-screen web app only.
 - UCI email login (guest accounts only).
@@ -250,6 +250,7 @@ Cloudflare Pages for the client, a Vultr VM in Los Angeles for the server (stagi
 | D-046 | Gameplay areas: spawn and shop at the centre of Aldrich Park, beginner NPCs in the rest of the park, tougher NPCs in the south fields, and the PvP zone north-east of the park outside Ring Road (positions in the map spec) | A safe start, danger a short walk away, and PvP far from new players (#100) |
 | D-047 | Phase 1 gameplay numbers are OSRS-style placeholders kept in server data files (gameplay spec): one combat level 1 to 30, melee only, 28 inventory slots, 100 starting gold, six NPC types, a shop that also sells food and starter gear, PvP only within 5 levels, gold never dropped, a 2 s wave | A complete, playable loop now, tuned after playtests; selling at the shop gives gold a use (#96, #98, #99) |
 | D-048 | Coders and the planner also run on Opus (amends D-039). While the bot is at its Opus limit they run on Sonnet, and reviews wait for Opus. Estimated-cost caps raised to $40 per run and $150 per issue. | The bot plan had usage to spare; stronger coders mean fewer review rounds and CI fixes, and nothing merges on a weaker review |
+| D-049 | Player housing and decoration (Animal Crossing-style homes in replicas of UCI housing areas, kept by monthly gold rent) is planned for Phase 2 and specified in [[housing]]. It stays out of Phase 1. | Keeps Phase 1 on track for mid-December; housing needs the map to grow beyond central campus, and crafting and friends that Phase 1 doesn't have |
 
 ---
 
@@ -270,6 +271,14 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 
 **Client and art** ([[architecture]])
 - glTF model budgets per model type (placeholders from #82, enforced by the CI check in #86): `characters/` 1,500 triangles / 150 KB, `props/` 1,000 / 100 KB, `buildings/` 8,000 / 500 KB, anything else 3,000 / 200 KB. Tune after profiling on an iPhone 13.
+
+**Housing** ([[housing]], Phase 2)
+- Auction starting bid, and what happens if nobody bids.
+- Home expansions later, and their cost.
+- A home rating or leaderboard.
+- The monthly gold fee, and whether it differs by area.
+- Whether a player can sell or give their house to someone else.
+- Which other housing areas are included, and how many houses each has.
 
 **Later phases**
 - Launch plan to avoid an empty world (clubs, residence halls, scheduled events).
