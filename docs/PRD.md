@@ -261,7 +261,7 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 - One-sentence pitch.
 
 **Gameplay** ([[gameplay]])
-- Every gameplay number is a placeholder to tune after playtests (D-047): the combat formulas and level curve, the NPC and item tables, shop prices, wave timing, trade distance and the PvP death rules.
+- Every gameplay number is a placeholder to tune after playtests (D-047): the combat formulas and level curve, the NPC and item tables, shop prices, wave timing, trade distance, the PvP zone warning distance and the PvP death rules.
 - Whether Phase 1 needs a bank. Without one, players carry everything they own, so a PvP death is costly (gold is never dropped for this reason).
 - More attack styles (ranged, magic) and skills beyond combat. Not in Phase 1 unless decided here.
 

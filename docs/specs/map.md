@@ -23,6 +23,6 @@ Decided in #100. Coordinates are approximate, in metres from the world origin in
 | **NPC shop** | A market stall about 20 m north of the spawn, around (-22, -96) | Inside the safe circle, so new players find it straight away. |
 | **PvE: Aldrich Park** | The rest of Aldrich Park, outside the safe circle | Beginner NPCs, levels 1 to 5, all passive (they only fight back). |
 | **PvE: South fields** | Open ground south-west of the park, around x -360 to -200, z 240 to 320 | Tougher NPCs, levels 8 to 20; some are aggressive. Roughly 2 minutes' walk from spawn. |
-| **PvP zone** | Open ground north-east of the park, outside Ring Road, around x 200 to 400, z -400 to -280 | The only place players can attack each other. Its border is drawn on the ground in red, and the client shows a warning before a player steps in. No trading inside it. At least 300 m from spawn. |
+| **PvP zone** | Open ground north-east of the park, outside Ring Road, around x 200 to 400, z -400 to -280 | The only place players can attack each other. Its border is drawn on the ground in red, and the client shows a warning banner while a player is within 10 m outside the border, and a "PvP zone" indicator while they are inside. No trading inside it. At least 300 m from spawn. |
 
 The areas are polygons in shared map data (one file the client and server both read), so the server decides who is where. All five are placeholders to adjust after playtests.
