@@ -24,9 +24,11 @@ describe('hudLayout', () => {
         expect(intersects(l.toggle, r)).toBe(false);
       }
       expect(inside(l.tradePrompt, l.trade)).toBe(true);
-      // The PvP warning / indicator stays clear of the HUD and the inventory toggle.
-      expect(intersects(l.pvp, l.hud)).toBe(false);
-      expect(intersects(l.pvp, l.toggle)).toBe(false);
+      // The PvP warning / indicator stays clear of the HUD, the inventory toggle and every panel.
+      for (const [name, r] of [['hud', l.hud], ['toggle', l.toggle], ['panel', l.panel], ['shop', l.shop], ['trade', l.trade],
+        ['tradePrompt', l.tradePrompt]] as const) {
+        expect(intersects(l.pvp, r), name).toBe(false);
+      }
     });
   }
 

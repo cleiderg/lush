@@ -28,6 +28,13 @@ export class PvpWarning {
 
   constructor(private readonly opts: PvpWarningOptions) {
     this.zones = opts.zones ?? PVP_ZONES;
+    window.addEventListener('resize', () => this.layout());
+  }
+
+  layout(): void {
+    if (!this.el) return;
+    const vp = this.opts.viewport?.() ?? { width: window.innerWidth, height: window.innerHeight };
+    place(this.el, hudLayout(vp.width, vp.height).pvp);
   }
 
   /** Call once per tick. */
@@ -51,9 +58,8 @@ export class PvpWarning {
       el.textContent = 'PvP zone';
       el.style.cssText = BASE + 'background:rgba(20,0,0,0.75);color:#ff5040;border:2px solid #d01818;';
     }
-    const vp = this.opts.viewport?.() ?? { width: window.innerWidth, height: window.innerHeight };
-    place(el, hudLayout(vp.width, vp.height).pvp);
     this.opts.parent.append(el);
     this.el = el;
+    this.layout();
   }
 }

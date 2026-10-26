@@ -43,7 +43,8 @@ describe('PvpWarning', () => {
 
   it('shows the in-zone indicator while the player stands inside the zone', () => {
     const pos = { x: 300, z: -275 };
-    const ui = new PvpWarning({ parent: document.body, position: () => pos, viewport: () => ({ width: 390, height: 844 }) });
+    let vp = { width: 390, height: 844 };
+    const ui = new PvpWarning({ parent: document.body, position: () => pos, viewport: () => vp });
     ui.update();
     expect(warning()).not.toBeNull();
 
@@ -55,6 +56,10 @@ describe('PvpWarning', () => {
     pos.z = -350;
     ui.update();
     expect(document.querySelectorAll('#pvp-indicator')).toHaveLength(1);
+    // Rotating the phone moves the indicator to the new strip.
+    vp = { width: 844, height: 390 };
+    window.dispatchEvent(new Event('resize'));
+    expect(indicator()!.style.top).toBe(`${hudLayout(844, 390).pvp.y}px`);
 
     pos.z = -275;
     ui.update();
