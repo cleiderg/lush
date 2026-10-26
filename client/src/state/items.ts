@@ -1,8 +1,15 @@
 import type {
-  EntityInfoState, Equipment, HealthEntry, InventoryView, ItemInfo, PlayerStatsState, SlotState,
+  EntityInfoState, Equipment, GroundItemState, HealthEntry, InventoryView, ItemInfo, NpcInfo, PlayerStatsState, SlotState,
 } from '../net/codec';
+import type { ShopResultCode } from '../protocol';
 
-export type { EntityInfoState, Equipment, InventoryView, ItemInfo, PlayerStatsState, SlotState };
+export type { EntityInfoState, Equipment, GroundItemState, InventoryView, ItemInfo, NpcInfo, PlayerStatsState, SlotState };
+
+/** The last ShopResult; seq goes up by one per result so a repeated code is still a new result. */
+export interface ShopResultState {
+  code: ShopResultCode;
+  seq: number;
+}
 
 const EMPTY_EQUIPMENT: Equipment = { weapon: 0, head: 0, body: 0, shield: 0 };
 
@@ -11,13 +18,19 @@ function sameEquipment(a: Equipment, b: Equipment): boolean {
 }
 
 /**
- * Player stats, inventory, item catalog and per-entity info and health.
+ * Player stats, inventory, item and NPC catalogs, ground items, the last shop
+ * result, and per-entity info and health.
  * Subscribers are told after any change so UI can redraw only then.
  */
 export class ItemState {
   stats: PlayerStatsState = { hp: 0, maxHp: 0, combatLevel: 0, xp: 0, gold: 0 };
   inventory: InventoryView = { slots: [], equipment: { ...EMPTY_EQUIPMENT } };
+  /** Every ground item in view; each GroundItems message replaces the list. */
+  groundItems: GroundItemState[] = [];
+  /** The last ShopResult, or null before any. */
+  shopResult: ShopResultState | null = null;
   private catalog = new Map<number, ItemInfo>();
+  private npcs = new Map<number, NpcInfo>();
   private infos = new Map<number, EntityInfoState>();
   private health = new Map<number, number>();
   /** Entity ids in the previous snapshot; an id that drops out has left view. */
@@ -36,6 +49,11 @@ export class ItemState {
 
   item(id: number): ItemInfo | undefined {
     return this.catalog.get(id);
+  }
+
+  /** NPC type by id (EntityInfo.npcType). */
+  npc(typeId: number): NpcInfo | undefined {
+    return this.npcs.get(typeId);
   }
 
   entityInfo(id: number): EntityInfoState | undefined {
@@ -66,6 +84,27 @@ export class ItemState {
 
   setCatalog(items: ItemInfo[]): void {
     this.catalog = new Map(items.map((d) => [d.id, d]));
+    this.notify();
+  }
+
+  setNpcCatalog(npcs: NpcInfo[]): void {
+    this.npcs = new Map(npcs.map((d) => [d.id, { ...d }]));
+    this.notify();
+  }
+
+  setGroundItems(items: GroundItemState[]): void {
+    const c = this.groundItems;
+    const same = c.length === items.length && c.every((g, i) => {
+      const n = items[i];
+      return g.id === n.id && g.itemId === n.itemId && g.quantity === n.quantity && g.x === n.x && g.z === n.z;
+    });
+    if (same) return;
+    this.groundItems = items.map((g) => ({ ...g }));
+    this.notify();
+  }
+
+  setShopResult(code: ShopResultCode): void {
+    this.shopResult = { code, seq: (this.shopResult?.seq ?? 0) + 1 };
     this.notify();
   }
 
@@ -101,11 +140,12 @@ export class ItemState {
     if (changed) this.notify();
   }
 
-  /** New session (Welcome): entity ids are session-scoped, so forget per-entity data. */
+  /** New session (Welcome): entity and ground item ids are session-scoped, so forget them. */
   resetEntities(): void {
-    const changed = this.infos.size > 0 || this.health.size > 0;
+    const changed = this.infos.size > 0 || this.health.size > 0 || this.groundItems.length > 0;
     this.infos.clear();
     this.health.clear();
+    this.groundItems = [];
     this.inView.clear();
     if (changed) this.notify();
   }
