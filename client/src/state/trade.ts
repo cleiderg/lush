@@ -1,5 +1,5 @@
 import type { TradeItemState, TradeView } from '../net/codec';
-import type { TradeResultCode } from '../protocol';
+import { TradeResultCode } from '../protocol';
 
 export type { TradeItemState, TradeView };
 
@@ -75,4 +75,19 @@ export class TradeStore {
     this.result = null;
     this.notify();
   }
+}
+
+const RESULT_TEXT: Record<TradeResultCode, string> = {
+  [TradeResultCode.Completed]: 'Trade completed',
+  [TradeResultCode.Cancelled]: 'Trade cancelled',
+  [TradeResultCode.TooFar]: 'Too far away to trade',
+  [TradeResultCode.InPvpZone]: 'You cannot trade in the PvP zone',
+  [TradeResultCode.PartnerBusy]: 'That player is busy',
+  [TradeResultCode.OfferNotHeld]: 'An offered item is no longer held',
+  [TradeResultCode.InventoryFull]: 'Not enough inventory space',
+};
+
+/** Short message the trade window shows for a TradeResult code. */
+export function tradeResultText(code: TradeResultCode): string {
+  return RESULT_TEXT[code] ?? 'Trade failed';
 }
