@@ -5,3 +5,4 @@ export * from './items';
 export * from './prediction';
 export * from './world';
 export * from './shop';
+export * from './trade';

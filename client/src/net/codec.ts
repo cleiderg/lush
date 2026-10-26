@@ -3,7 +3,9 @@ import {
   AttackTarget, ChatMessage, ChatSend, CombatHit, Emote, EmoteSend, Entity, EntityHealth, EntityInfo, EntityKind, Envelope,
   EquipSlot, GroundItem, GroundItems, Hello, HealthRatio, Hit, Input, InventorySlot, InventoryState, ItemAction,
   ItemActionKind, ItemCatalog, ItemDef, ItemKind, Message, NpcCatalog, NpcDef, PickUp, Ping, PlayerStats, Pong,
-  ProtocolVersion, Reload, RestartCountdown, ShopBuy, ShopResult, ShopResultCode, ShopSell, Snapshot, Vec2, Welcome,
+  ProtocolVersion, Reload, RestartCountdown, ShopBuy, ShopResult, ShopResultCode, ShopSell, Snapshot, TradeAccept,
+  TradeCancel, TradeItem, TradeOffer, TradeRemove, TradeRequest, TradeRequestNotice, TradeResult, TradeResultCode,
+  TradeSetGold, TradeState, Vec2, Welcome,
 } from '../protocol';
 
 export interface EntityState {
@@ -96,6 +98,25 @@ export interface NpcInfo {
   combatLevel: number;
 }
 
+/** One offered item in a trade. */
+export interface TradeItemState {
+  itemId: number;
+  quantity: number;
+}
+
+/** The whole trade window; "my" is this player's side, "partner" the other's. */
+export interface TradeView {
+  partnerId: number;
+  /** 1 (offer) or 2 (final confirmation). */
+  screen: number;
+  myItems: TradeItemState[];
+  myGold: number;
+  partnerItems: TradeItemState[];
+  partnerGold: number;
+  myAccepted: boolean;
+  partnerAccepted: boolean;
+}
+
 export type ServerMessage =
   | { type: 'welcome'; playerId: number; guestToken: string; spawn: { x: number; z: number }; tickRate: number }
   | { type: 'snapshot'; tick: number; lastInputSeq: number; entities: EntityState[] }
@@ -111,7 +132,10 @@ export type ServerMessage =
   | { type: 'groundItems'; items: GroundItemState[] }
   | { type: 'shopResult'; code: ShopResultCode }
   | { type: 'combatHit'; tick: number; hits: HitEvent[] }
-  | { type: 'npcCatalog'; npcs: NpcInfo[] };
+  | { type: 'npcCatalog'; npcs: NpcInfo[] }
+  | { type: 'tradeRequestNotice'; fromId: number }
+  | ({ type: 'tradeState' } & TradeView)
+  | { type: 'tradeResult'; code: TradeResultCode };
 
 function wrap(b: flatbuffers.Builder, type: Message, msg: flatbuffers.Offset): Uint8Array {
   b.finish(Envelope.createEnvelope(b, type, msg));
@@ -173,6 +197,50 @@ export function encodePickUp(groundItemId: number): Uint8Array {
 export function encodeAttackTarget(targetId: number): Uint8Array {
   const b = new flatbuffers.Builder(16);
   return wrap(b, Message.AttackTarget, AttackTarget.createAttackTarget(b, targetId));
+}
+
+/** Ask targetId to trade, or accept their pending request. */
+export function encodeTradeRequest(targetId: number): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.TradeRequest, TradeRequest.createTradeRequest(b, targetId));
+}
+
+/** Add quantity of the item in inventory slot `slot` to your offer. */
+export function encodeTradeOffer(slot: number, quantity: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.TradeOffer, TradeOffer.createTradeOffer(b, slot, quantity));
+}
+
+/** Take the item at `index` of your offer back. */
+export function encodeTradeRemove(index: number): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.TradeRemove, TradeRemove.createTradeRemove(b, index));
+}
+
+export function encodeTradeSetGold(gold: number): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.TradeSetGold, TradeSetGold.createTradeSetGold(b, gold));
+}
+
+/** Accept the screen (1 or 2) you are looking at. */
+export function encodeTradeAccept(screen: number): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.TradeAccept, TradeAccept.createTradeAccept(b, screen));
+}
+
+export function encodeTradeCancel(): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.TradeCancel, TradeCancel.createTradeCancel(b));
+}
+
+function tradeItems(len: number, at: (i: number, obj: TradeItem) => TradeItem | null): TradeItemState[] {
+  const out: TradeItemState[] = [];
+  const t = new TradeItem();
+  for (let i = 0; i < len; i++) {
+    at(i, t);
+    out.push({ itemId: t.itemId(), quantity: t.quantity() });
+  }
+  return out;
 }
 
 export function decode(bytes: Uint8Array): ServerMessage | null {
@@ -315,6 +383,24 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
       }
       return { type: 'npcCatalog', npcs };
     }
+    case Message.TradeRequestNotice:
+      return { type: 'tradeRequestNotice', fromId: (env.msg(new TradeRequestNotice()) as TradeRequestNotice).fromId() };
+    case Message.TradeState: {
+      const m = env.msg(new TradeState()) as TradeState;
+      return {
+        type: 'tradeState',
+        partnerId: m.partnerId(),
+        screen: m.screen(),
+        myItems: tradeItems(m.myItemsLength(), (i, o) => m.myItems(i, o)),
+        myGold: m.myGold(),
+        partnerItems: tradeItems(m.partnerItemsLength(), (i, o) => m.partnerItems(i, o)),
+        partnerGold: m.partnerGold(),
+        myAccepted: m.myAccepted(),
+        partnerAccepted: m.partnerAccepted(),
+      };
+    }
+    case Message.TradeResult:
+      return { type: 'tradeResult', code: (env.msg(new TradeResult()) as TradeResult).code() };
     default:
       return null;
   }
