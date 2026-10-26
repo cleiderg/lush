@@ -274,6 +274,29 @@ func TestCombatTargets(t *testing.T) {
 	}
 }
 
+// TestCombatAttackerLeft checks that an attacker who leaves the world loses
+// their target, so they don't resume attacking when their id rejoins.
+func TestCombatAttackerLeft(t *testing.T) {
+	d := loadData(t)
+	f := newCombat(t, d, nil, fixedRand{f: 0.999})
+	a := f.player(t, 1, 10, zoneA, 0, 0)
+	f.player(t, 2, 10, zoneRight, 0, 0)
+	f.w.Enqueue(pvp.AttackCommand{Player: 1, Victim: 2})
+	f.combatTicks(1)
+	f.w.RemovePlayer(1)
+	f.combatTicks(1)
+	if err := f.w.AddPlayer(a); err != nil {
+		t.Fatal(err)
+	}
+	f.combatTicks(2 * d.Rules.UnarmedAttackSpeed)
+	if len(f.rec.hits) != 1 {
+		t.Errorf("hits %+v, want only the one before leaving", f.rec.hits)
+	}
+	if _, ok := f.sys.TargetOf(1); ok {
+		t.Error("rejoined attacker still has a target")
+	}
+}
+
 // TestCombatCooldownSurvivesRetarget checks that switching or clearing the
 // target doesn't reset the attack timer.
 func TestCombatCooldownSurvivesRetarget(t *testing.T) {

@@ -136,6 +136,11 @@ func (s *Combat) Tick(w *world.World, _ time.Duration) {
 			delete(s.next, id)
 		}
 	}
+	for id := range s.targets { // an attacker who left must not resume on rejoin (ids are reused)
+		if w.Player(id) == nil {
+			delete(s.targets, id)
+		}
+	}
 	if len(s.targets) == 0 {
 		return
 	}
