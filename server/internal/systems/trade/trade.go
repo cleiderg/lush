@@ -134,9 +134,9 @@ type Sink interface {
 
 // Committer receives a trade both players accepted on screen 2, on the Tick
 // after both accepted, once both players are still in the world, in reach and
-// outside the PvP zone. The window is already closed when it is called; the Committer saves the swap and
-// reports the outcome (Completed or a failure) to both players. It is called
-// on the tick goroutine and must not block.
+// outside the PvP zone. The window is already closed when it is called; the
+// Committer saves the swap and reports the outcome (Completed or a failure)
+// to both players. It is called on the tick goroutine and must not block.
 type Committer interface {
 	CommitTrade(a, b world.PlayerID, offerA, offerB Offer)
 }
