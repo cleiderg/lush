@@ -5,6 +5,7 @@ import { RemotePlayers } from './remotePlayers';
 import { Hitsplats } from './hitsplats';
 import { CampusMap, loadCampus } from './campusMap';
 import { GroundItems } from './groundItems';
+import { Npcs } from './npcs';
 import { AreaMarkers, loadAreas } from './gameAreas';
 import type { CampusData } from './mapData';
 import type { WorldView } from './worldView';
@@ -37,6 +38,8 @@ export class WorldScene {
   readonly hitsplats = new Hitsplats();
   /** Created on the first view that carries groundItems, so views without it leave the scene as before. */
   private groundItems: GroundItems | null = null;
+  /** Created on the first view that carries npcs, like groundItems. */
+  private npcs: Npcs | null = null;
   private lastX: number | null = null;
   private lastZ = 0;
 
@@ -65,6 +68,15 @@ export class WorldScene {
       this.groundItems.update(view.groundItems);
     } else if (this.groundItems) {
       this.groundItems.update([]);
+    }
+    if (view.npcs) {
+      if (!this.npcs) {
+        this.npcs = new Npcs();
+        this.scene.add(this.npcs.group);
+      }
+      this.npcs.update(view.npcs);
+    } else if (this.npcs) {
+      this.npcs.update([]);
     }
     this.rig.follow(local.x, local.z);
     // Hitsplats join the scene with the first hit, so a view without hits leaves the graph as it was.

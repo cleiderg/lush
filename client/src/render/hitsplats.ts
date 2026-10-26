@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CHARACTER_HEIGHT } from './character';
-import type { HitView, PlayerView } from './worldView';
+import type { HitView, NpcView, PlayerView } from './worldView';
 
 /** How long a hitsplat stays up. */
 export const HITSPLAT_MS = 1200;
@@ -99,10 +99,15 @@ export class Hitsplats {
   }
 
   /** Adds new hits on entities in the view, drops expired ones, and places the rest facing `facing`. */
-  update(view: { local: PlayerView; remotes: readonly PlayerView[]; hits?: readonly HitView[] }, nowMs: number, facing: THREE.Quaternion): void {
-    const where = new Map<number, PlayerView>();
+  update(
+    view: { local: PlayerView; remotes: readonly PlayerView[]; npcs?: readonly NpcView[]; hits?: readonly HitView[] },
+    nowMs: number,
+    facing: THREE.Quaternion,
+  ): void {
+    const where = new Map<number, { x: number; z: number }>();
     where.set(view.local.id, view.local);
     for (const p of view.remotes) where.set(p.id, p);
+    for (const n of view.npcs ?? []) where.set(n.id, n);
 
     for (const h of view.hits ?? []) {
       if (!where.has(h.target)) continue;

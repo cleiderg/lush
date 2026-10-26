@@ -25,6 +25,16 @@ export interface GroundItemView {
   readonly z: number;
 }
 
+/** An NPC in view. `npcType` is the NPC type id (protocol EntityInfo.npc_type). */
+export interface NpcView {
+  readonly id: number;
+  readonly npcType: number;
+  readonly x: number;
+  readonly z: number;
+  /** Facing in radians around +Y; 0 faces +Z. */
+  readonly heading: number;
+}
+
 export interface WorldView {
   readonly local: PlayerView;
   readonly remotes: readonly PlayerView[];
@@ -32,4 +42,6 @@ export interface WorldView {
   readonly hits?: readonly HitView[];
   /** Items on the ground in view; missing means none are drawn and no marker mesh is added. */
   readonly groundItems?: readonly GroundItemView[];
+  /** NPCs in view; missing means none are drawn and no NPC mesh is added. */
+  readonly npcs?: readonly NpcView[];
 }
