@@ -92,6 +92,10 @@ Sources in Phase 1:
 
 - **Wave:** shows for 2 s (40 world ticks at 20 Hz). A new wave is ignored while one is showing, and starting to walk ends it. Nearby players see it.
 
+## Interact button
+
+- Interact picks, in order: the shop stall within shop distance; the nearest NPC within attack range (attack); the nearest player within trade distance (a trade request outside the PvP zone, an attack inside it). With no target it does nothing.
+
 ## Player trading
 
 - Two players near each other open a trade window, each offers items and gold, and both confirm.
