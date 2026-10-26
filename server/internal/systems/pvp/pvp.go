@@ -3,10 +3,10 @@
 // and how a player who dies in the PvP zone splits their holdings into kept
 // and dropped items.
 //
-// Both rules take plain values and read their numbers from gamedata. They
-// never see or change a World or Player; the combat system (#144) and the
-// drop spawner (#162) apply the results. ApplyDeath applies a death split to
-// one inventory.
+// Both rules take plain values and read their numbers from gamedata and
+// never see a World or Player. ApplyDeath applies a death split to one
+// inventory. Combat (combat.go) is the system that applies them on the
+// combat tick: player attacks, hits, XP, and death with respawn.
 package pvp
 
 import (
