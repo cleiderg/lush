@@ -71,11 +71,11 @@ type saver struct {
 
 	mu       sync.Mutex
 	idle     *sync.Cond
-	pending  map[int64]saveReq   // latest request per player, not yet written
-	failed   map[int64]saveReq   // last write failed; retried at the next submit
-	vers     map[int64]int64     // version from the last successful save
-	econ     []econReq      // economy writes, oldest first, not yet written
-	econFail map[int64]bool // a write naming this player failed; retried at the next submit
+	pending  map[int64]saveReq // latest request per player, not yet written
+	failed   map[int64]saveReq // last write failed; retried at the next submit
+	vers     map[int64]int64   // version from the last successful save
+	econ     []econReq         // economy writes, oldest first, not yet written
+	econFail map[int64]bool    // a write naming this player failed; retried at the next submit
 	inflight bool
 	closed   bool
 
@@ -90,7 +90,7 @@ func newSaver(players store.Players, log *slog.Logger) *saver {
 	s := &saver{store: players, log: log,
 		pending: map[int64]saveReq{}, failed: map[int64]saveReq{}, vers: map[int64]int64{},
 		econFail: map[int64]bool{},
-		wake: make(chan struct{}, 1), ctx: ctx, stop: cancel, done: make(chan struct{})}
+		wake:     make(chan struct{}, 1), ctx: ctx, stop: cancel, done: make(chan struct{})}
 	s.idle = sync.NewCond(&s.mu)
 	go s.run()
 	return s

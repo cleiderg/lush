@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -24,6 +25,7 @@ type econStore struct {
 
 	mu       sync.Mutex
 	fail     bool
+	failFor  int64 // if set, calls naming this store id fail
 	failures int
 	applied  []store.EconomyChange // one per committed call, in commit order
 }
@@ -38,7 +40,7 @@ func (e *econStore) ApplyEconomy(ctx context.Context, changes []store.EconomyCha
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.fail {
+	if e.fail || slices.ContainsFunc(changes, func(c store.EconomyChange) bool { return e.failFor != 0 && c.PlayerID == e.failFor }) {
 		e.failures++
 		return errors.New("db down")
 	}
@@ -52,6 +54,12 @@ func (e *econStore) ApplyEconomy(ctx context.Context, changes []store.EconomyCha
 func (e *econStore) setFail(v bool) {
 	e.mu.Lock()
 	e.fail = v
+	e.mu.Unlock()
+}
+
+func (e *econStore) setFailFor(id int64) {
+	e.mu.Lock()
+	e.failFor = id
 	e.mu.Unlock()
 }
 
