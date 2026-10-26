@@ -21,9 +21,12 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/chat"
 	"github.com/cleiderg/lush/server/internal/systems/emote"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/items"
 	"github.com/cleiderg/lush/server/internal/systems/regen"
+	"github.com/cleiderg/lush/server/internal/systems/shop"
 	"github.com/cleiderg/lush/server/internal/transport"
 	"github.com/cleiderg/lush/server/internal/world"
+	"github.com/cleiderg/lush/server/internal/world/areas"
 )
 
 // version is set at build time: -ldflags "-X main.version=1.2.3".
@@ -102,7 +105,12 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		Data:         data,
 		OnPanic:      reporter.Recovered,
 	}, w, clock, players, log)
-	systems, err := gameSystems(mover, data.Rules, clock, sess)
+	lookup, err := areas.Load()
+	if err != nil {
+		log.Error("areas", "err", err)
+		return 1
+	}
+	systems, err := gameSystems(mover, data, lookup, grid.CellSize(), clock, sess)
 	if err != nil {
 		log.Error("system setup failed", "err", err)
 		return 1
@@ -186,14 +194,18 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 }
 
 // gameSystems lists the world systems in registration order. Order matters:
-// movement applies inputs, emote overrides animation, chat delivers, regen
-// heals (SW1), and the session sends snapshots, stats and inventory last.
-func gameSystems(mover world.System, rules gamedata.Rules, clock world.Clock, sess *session.Server) ([]world.System, error) {
-	heal, err := regen.New(rules, clock)
+// movement applies inputs, emote overrides animation, chat delivers, items
+// and shop apply item actions and trades with the stall (whose results the
+// session sends at once), regen heals (SW1), and the session sends
+// snapshots, stats and inventory last. tileSize is the collision grid's cell
+// size in metres, the unit of the shop distance.
+func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, tileSize float64, clock world.Clock, sess *session.Server) ([]world.System, error) {
+	heal, err := regen.New(data.Rules, clock)
 	if err != nil {
 		return nil, err
 	}
-	return []world.System{mover, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess), heal, sess}, nil
+	return []world.System{mover, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess),
+		items.New(data), shop.New(data, lookup, tileSize, sess), heal, sess}, nil
 }
 
 // openDatabase connects a pool and applies pending migrations. The returned

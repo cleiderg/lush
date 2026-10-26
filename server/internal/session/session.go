@@ -29,6 +29,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/chat"
 	"github.com/cleiderg/lush/server/internal/systems/emote"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/shop"
 	"github.com/cleiderg/lush/server/internal/transport"
 	"github.com/cleiderg/lush/server/internal/world"
 )
@@ -96,8 +97,8 @@ type op struct {
 	token string // raw token, only carried to Welcome
 }
 
-// Server is the session layer. It implements world.System, chat.Sink and
-// transport.Handler (via ServeConn).
+// Server is the session layer. It implements world.System, chat.Sink,
+// shop.Sink and transport.Handler (via ServeConn).
 type Server struct {
 	cfg   Config
 	w     *world.World
@@ -236,6 +237,10 @@ func (s *Server) ServeConn(c transport.Conn) {
 			}
 		case protocol.MessagePing:
 			c.Send(encodePong(m.pingToken))
+		case protocol.MessageItemAction, protocol.MessageShopBuy, protocol.MessageShopSell:
+			if cmd := m.command(g.id); cmd != nil {
+				s.w.Enqueue(cmd)
+			}
 		}
 	}
 }
@@ -603,6 +608,15 @@ func (s *Server) idleIfGone(g *guest) {
 func (s *Server) Deliver(to world.PlayerID, m chat.Message) {
 	if g := s.live[to]; g != nil && g.conn != nil {
 		g.conn.Send(encodeChat(m.From, m.Text))
+	}
+}
+
+// ShopResult implements shop.Sink: it sends the result to the client that
+// asked. Called on the tick goroutine, before this Tick sends the changed
+// PlayerStats and InventoryState.
+func (s *Server) ShopResult(to world.PlayerID, r shop.Result) {
+	if g := s.live[to]; g != nil && g.conn != nil {
+		g.conn.Send(encodeShopResult(r))
 	}
 }
 

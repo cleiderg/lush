@@ -53,6 +53,14 @@ func newRigStore(t *testing.T, queue int, cfg session.Config, players store.Play
 
 func newRigLog(t *testing.T, queue int, cfg session.Config, players store.Players, log *slog.Logger) *rig {
 	t.Helper()
+	return newRigSystems(t, queue, cfg, players, log, nil)
+}
+
+// newRigSystems is newRigLog with extra systems, from extra if set,
+// registered after chat and before the session.
+func newRigSystems(t *testing.T, queue int, cfg session.Config, players store.Players, log *slog.Logger,
+	extra func(*session.Server) []world.System) *rig {
+	t.Helper()
 	clock := world.NewFakeClock(time.Unix(0, 0))
 	w := world.New(world.DefaultConfig())
 	st := &stats{}
@@ -61,7 +69,11 @@ func newRigLog(t *testing.T, queue int, cfg session.Config, players store.Player
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []world.System{mv, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess), sess} {
+	systems := []world.System{mv, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess)}
+	if extra != nil {
+		systems = append(systems, extra(sess)...)
+	}
+	for _, s := range append(systems, sess) {
 		if err := w.Register(s); err != nil {
 			t.Fatal(err)
 		}
