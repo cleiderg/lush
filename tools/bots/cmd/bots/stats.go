@@ -13,6 +13,9 @@ type stats struct {
 	bytes     atomic.Uint64 // bytes received
 	snapshots atomic.Uint64
 	chats     atomic.Uint64
+	waves     atomic.Uint64 // wave emotes sent
+	items     atomic.Uint64 // ItemActions sent
+	invStates atomic.Uint64 // InventoryState messages received
 	lost      atomic.Uint64 // bots that lost an established connection
 
 	mu   sync.Mutex
