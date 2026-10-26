@@ -489,6 +489,60 @@ func TestUnequip(t *testing.T) {
 	}
 }
 
+func TestRemoveWorn(t *testing.T) {
+	d := gameData(t)
+	stick, helm := itemID(t, d, "wooden_stick"), itemID(t, d, "leather_cap")
+
+	tests := []struct {
+		name    string
+		inv     func() world.Inventory
+		slot    gamedata.Slot
+		wantErr error
+	}{
+		{"empty inventory", func() world.Inventory {
+			inv := world.NewInventory(d)
+			inv.Equipment = world.Equipment{Weapon: stick, Head: helm}
+			return inv
+		}, gamedata.SlotWeapon, nil},
+		{"full inventory", func() world.Inventory {
+			inv := fill(t, d, "boba")
+			inv.Equipment = world.Equipment{Weapon: stick, Head: helm}
+			return inv
+		}, gamedata.SlotWeapon, nil},
+		{"nothing worn", func() world.Inventory {
+			inv := world.NewInventory(d)
+			inv.Equipment.Weapon = stick
+			return inv
+		}, gamedata.SlotHead, world.ErrNothingEquipped},
+		{"not a slot", func() world.Inventory { return world.NewInventory(d) }, gamedata.SlotNone, world.ErrBadEquipmentSlot},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inv := tt.inv()
+			before := clone(inv)
+			changes, err := inv.RemoveWorn(tt.slot)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if err != nil {
+				if !reflect.DeepEqual(inv, before) || changes != nil {
+					t.Errorf("failed remove changed inventory or returned changes %+v", changes)
+				}
+				return
+			}
+			want := before
+			want.Equipment.Weapon = 0
+			if !reflect.DeepEqual(inv, want) {
+				t.Errorf("inventory = %+v, want %+v", inv, want)
+			}
+			wantCh := []world.Change{{Kind: world.ChangeRemoveWorn, Item: stick, Qty: 1}}
+			if !reflect.DeepEqual(changes, wantCh) {
+				t.Errorf("changes = %+v, want %+v", changes, wantCh)
+			}
+		})
+	}
+}
+
 func TestBonuses(t *testing.T) {
 	d := gameData(t)
 	id := func(key string) gamedata.ItemID { return itemID(t, d, key) }
@@ -528,6 +582,7 @@ func TestChangeKindString(t *testing.T) {
 		{world.ChangeEquip, "item_equip"},
 		{world.ChangeUnequip, "item_unequip"},
 		{world.ChangeGold, "gold"},
+		{world.ChangeRemoveWorn, "item_remove_worn"},
 		{0, "ChangeKind(0)"},
 		{200, "ChangeKind(200)"},
 	}
@@ -567,6 +622,7 @@ func TestLocked(t *testing.T) {
 		{"SpendGold", func(inv *world.Inventory) ([]world.Change, error) { return inv.SpendGold(1) }},
 		{"Equip", func(inv *world.Inventory) ([]world.Change, error) { return inv.Equip(d, 1, 99) }},
 		{"Unequip", func(inv *world.Inventory) ([]world.Change, error) { return inv.Unequip(gamedata.SlotWeapon) }},
+		{"RemoveWorn", func(inv *world.Inventory) ([]world.Change, error) { return inv.RemoveWorn(gamedata.SlotWeapon) }},
 	}
 	for _, tt := range ops {
 		t.Run(tt.name, func(t *testing.T) {
