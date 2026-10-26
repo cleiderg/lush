@@ -13,6 +13,7 @@ import { CollisionGrid } from './state/collision';
 import { GameState } from './state/world';
 import { Controls } from './ui/controls';
 import { Hud } from './ui/hud';
+import { PvpWarning } from './ui/pvpWarning';
 import { RestartBanner } from './ui/restartBanner';
 import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
 import { TradePanel } from './ui/tradePanel';
@@ -57,6 +58,7 @@ const shop = new ShopPanel({
   position: () => game.prediction.pos,
   onOpen: () => hud.setOpen(false),
 });
+const pvpWarning = new PvpWarning({ parent: document.body, position: () => game.prediction.pos });
 new TradePanel({
   parent: document.body,
   trade: game.trade,
@@ -81,6 +83,7 @@ session.start();
 new GameLoop({
   update: (stepMs) => {
     shop.update();
+    pvpWarning.update();
     const m = controls.worldMove();
     // Inputs the server will never see would pile up unacknowledged; Welcome resets prediction anyway.
     if (!session.connected) return;
