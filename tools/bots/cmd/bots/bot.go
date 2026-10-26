@@ -27,9 +27,10 @@ type bot struct {
 	rng   *rand.Rand
 	self  uint16
 	spawn [2]float64 // from Welcome, in metres
-	mu    sync.Mutex // guards x, z and sentP (shared by play and the read goroutine)
+	mu    sync.Mutex // guards x, z, sentP and inv (shared by play and the read goroutine)
 	x, z  float64    // metres from the spawn point, from the latest Snapshot
 	sentP map[uint32]time.Time
+	inv   inventory // from the latest InventoryState
 }
 
 // setPos records the server's position for this bot (Snapshot decimetres).
@@ -43,6 +44,18 @@ func (b *bot) pos() (float64, float64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.x, b.z
+}
+
+func (b *bot) setInventory(inv inventory) {
+	b.mu.Lock()
+	b.inv = inv
+	b.mu.Unlock()
+}
+
+func (b *bot) inventory() inventory {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.inv
 }
 
 func (b *bot) notePing(tok uint32, t time.Time) {
@@ -119,7 +132,7 @@ func (b *bot) connect(ctx context.Context) (*websocket.Conn, error) {
 	}
 }
 
-// play sends inputs, chat and pings and reads everything the server sends.
+// play sends inputs, chat, waves, item actions and pings and reads everything the server sends.
 func (b *bot) play(ctx context.Context, conn *websocket.Conn) error {
 	readErr := make(chan error, 1)
 	go func() {
@@ -140,6 +153,8 @@ func (b *bot) play(ctx context.Context, conn *websocket.Conn) error {
 	// The first chat comes within 20 s so short runs (make smoke) see chat too.
 	nextChat := time.Now().Add(time.Duration(b.rng.Int63n(int64(20 * time.Second))))
 	nextPing := time.Now().Add(time.Duration(b.rng.Int63n(int64(pingEvery))))
+	waves := newSchedule(time.Now(), b.cfg.waveEvery, b.cfg.waveFirst, b.rng)
+	items := &itemCycle{sched: newSchedule(time.Now(), b.cfg.itemEvery, b.cfg.itemFirst, b.rng)}
 	tick := time.NewTicker(inputEvery)
 	defer tick.Stop()
 	bld := flatbuffers.NewBuilder(128)
@@ -172,6 +187,19 @@ func (b *bot) play(ctx context.Context, conn *websocket.Conn) error {
 					return err
 				}
 			}
+			if waves.due(now) {
+				waves.done(now)
+				if err := conn.Write(ctx, websocket.MessageBinary, encodeWave(bld)); err != nil {
+					return err
+				}
+				b.st.waves.Add(1)
+			}
+			if a, ok := items.step(now, b.inventory()); ok {
+				if err := conn.Write(ctx, websocket.MessageBinary, encodeItemAction(bld, a)); err != nil {
+					return err
+				}
+				b.st.items.Add(1)
+			}
 			if now.After(nextPing) {
 				nextPing = now.Add(pingEvery)
 				pingTok++
@@ -198,6 +226,9 @@ func (b *bot) handle(data []byte) {
 		}
 	case protocol.MessageChatMessage:
 		b.st.chats.Add(1)
+	case protocol.MessageInventoryState:
+		b.st.invStates.Add(1)
+		b.setInventory(m.inv)
 	case protocol.MessagePong:
 		if t, ok := b.takePing(m.token); ok {
 			b.st.addRTT(time.Since(t))

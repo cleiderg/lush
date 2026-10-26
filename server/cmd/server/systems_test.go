@@ -8,15 +8,17 @@ import (
 	"github.com/cleiderg/lush/server/internal/session"
 	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/trade"
 	"github.com/cleiderg/lush/server/internal/world"
+	"github.com/cleiderg/lush/server/internal/world/areas"
 )
 
-func TestGameSystemsRegisterRegenBeforeSession(t *testing.T) {
+func TestGameSystemsRegisterItemsShopTradeRegenBeforeSession(t *testing.T) {
 	data, err := gamedata.Default()
 	if err != nil {
 		t.Fatal(err)
 	}
-	mover, _, err := newMover(5)
+	mover, grid, err := newMover(5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +26,11 @@ func TestGameSystemsRegisterRegenBeforeSession(t *testing.T) {
 	w := world.New(world.DefaultConfig())
 	sess := session.New(session.Config{Data: data}, w, clock, store.NewMemory(), nil)
 	defer sess.Close()
-	systems, err := gameSystems(mover, data.Rules, clock, sess)
+	lookup, err := areas.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	systems, err := gameSystems(mover, data, lookup, grid.CellSize(), clock, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,8 +41,11 @@ func TestGameSystemsRegisterRegenBeforeSession(t *testing.T) {
 		}
 		names = append(names, s.Name())
 	}
-	want := []string{"movement", "emote", "chat", "regen", "session"}
+	want := []string{"movement", "emote", "chat", "items", "shop", "trade", "regen", "session"}
 	if !slices.Equal(names, want) {
 		t.Fatalf("systems = %v, want %v", names, want)
+	}
+	if _, ok := systems[slices.Index(names, "trade")].(*trade.System); !ok {
+		t.Fatalf("system %q is %T, want *trade.System", "trade", systems[slices.Index(names, "trade")])
 	}
 }

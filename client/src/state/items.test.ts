@@ -2,9 +2,11 @@ import * as flatbuffers from 'flatbuffers';
 import { describe, expect, it } from 'vitest';
 import { decode } from '../net/codec';
 import {
-  EntityHealth, EntityInfo, EntityKind, Envelope, EquipSlot, HealthRatio, InventorySlot, InventoryState, ItemCatalog,
-  ItemDef, ItemKind, Message, PlayerStats, Snapshot, Entity, Vec2, Welcome,
+  CombatHit, EntityHealth, EntityInfo, EntityKind, Envelope, EquipSlot, GroundItem, GroundItems, HealthRatio, Hit,
+  InventorySlot, InventoryState, ItemCatalog, ItemDef, ItemKind, Message, NpcCatalog, NpcDef, PlayerStats, ShopResult,
+  ShopResultCode, Snapshot, Entity, Vec2, Welcome,
 } from '../protocol';
+import { MAX_HIT_BATCHES } from './combat';
 import { ItemState } from './items';
 import { GameState } from './world';
 
@@ -230,5 +232,119 @@ describe('ItemState notifications', () => {
     s.resetEntities();
     expect(count).toBe(2);
     expect(s.entityInfo(1)).toBeUndefined();
+  });
+});
+
+function groundItems(items: [number, number, number, number, number][]): Uint8Array {
+  const b = new flatbuffers.Builder(128);
+  GroundItems.startItemsVector(b, items.length);
+  for (let i = items.length - 1; i >= 0; i--) GroundItem.createGroundItem(b, ...items[i]);
+  const v = b.endVector();
+  return finish(b, Message.GroundItems, GroundItems.createGroundItems(b, v));
+}
+
+function npcCatalog(npcs: [number, string, number][]): Uint8Array {
+  const b = new flatbuffers.Builder(128);
+  const defs = npcs.map(([id, name, level]) => NpcDef.createNpcDef(b, id, b.createString(name), level));
+  return finish(b, Message.NpcCatalog, NpcCatalog.createNpcCatalog(b, NpcCatalog.createNpcsVector(b, defs)));
+}
+
+function shopResult(code: ShopResultCode): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return finish(b, Message.ShopResult, ShopResult.createShopResult(b, code));
+}
+
+function combatHit(tick: number, hits: [number, number, number, boolean][]): Uint8Array {
+  const b = new flatbuffers.Builder(64);
+  CombatHit.startHitsVector(b, hits.length);
+  for (let i = hits.length - 1; i >= 0; i--) Hit.createHit(b, ...hits[i]);
+  const v = b.endVector();
+  return finish(b, Message.CombatHit, CombatHit.createCombatHit(b, tick, v));
+}
+
+describe('decode + GameState: ground items', () => {
+  it('replaces the whole list with each message', () => {
+    const game = setup();
+    expect(game.items.groundItems).toEqual([]);
+    feed(game, groundItems([[1, 5, 1, 100, 200], [2, 9, 3, -10, 0]]));
+    expect(game.items.groundItems).toEqual([
+      { id: 1, itemId: 5, quantity: 1, x: 10, z: 20 },
+      { id: 2, itemId: 9, quantity: 3, x: -1, z: 0 },
+    ]);
+    feed(game, groundItems([[2, 9, 3, -10, 0]]));
+    expect(game.items.groundItems.map((g) => g.id)).toEqual([2]);
+    feed(game, groundItems([]));
+    expect(game.items.groundItems).toEqual([]);
+  });
+
+  it('notifies only on change and forgets ground items on a new Welcome', () => {
+    const game = setup();
+    let count = 0;
+    game.items.subscribe(() => count++);
+    feed(game, groundItems([[1, 5, 1, 0, 0]]));
+    feed(game, groundItems([[1, 5, 1, 0, 0]]));
+    expect(count).toBe(1);
+    feed(game, welcome(1));
+    expect(game.items.groundItems).toEqual([]);
+  });
+});
+
+describe('decode + GameState: NPC catalog', () => {
+  it('looks NPC types up by id and replaces the catalog', () => {
+    const game = setup();
+    feed(game, npcCatalog([[1, 'Rat', 2], [4, 'Anteater', 15]]));
+    expect(game.items.npc(4)).toEqual({ id: 4, name: 'Anteater', combatLevel: 15 });
+    expect(game.items.npc(1)?.name).toBe('Rat');
+    expect(game.items.npc(2)).toBeUndefined();
+    feed(game, npcCatalog([[2, 'Goose', 5]]));
+    expect(game.items.npc(1)).toBeUndefined();
+    expect(game.items.npc(2)?.combatLevel).toBe(5);
+  });
+});
+
+describe('decode + GameState: shop result', () => {
+  it('keeps the last result and counts repeats as new results', () => {
+    const game = setup();
+    let count = 0;
+    game.items.subscribe(() => count++);
+    expect(game.items.shopResult).toBeNull();
+    feed(game, shopResult(ShopResultCode.NotEnoughGold));
+    expect(game.items.shopResult).toEqual({ code: ShopResultCode.NotEnoughGold, seq: 1 });
+    feed(game, shopResult(ShopResultCode.NotEnoughGold));
+    expect(game.items.shopResult).toEqual({ code: ShopResultCode.NotEnoughGold, seq: 2 });
+    feed(game, shopResult(ShopResultCode.Ok));
+    expect(game.items.shopResult?.code).toBe(ShopResultCode.Ok);
+    expect(count).toBe(3);
+  });
+});
+
+describe('decode + GameState: combat hits', () => {
+  it('queues each tick of hits until render drains them', () => {
+    const game = setup();
+    feed(game, combatHit(10, [[1, 3, 4, false]]), combatHit(11, [[3, 1, 0, false], [1, 3, 9, true]]));
+    expect(game.hits.length).toBe(2);
+    expect(game.hits.drain()).toEqual([
+      { tick: 10, hits: [{ attacker: 1, target: 3, damage: 4, died: false }] },
+      {
+        tick: 11,
+        hits: [
+          { attacker: 3, target: 1, damage: 0, died: false },
+          { attacker: 1, target: 3, damage: 9, died: true },
+        ],
+      },
+    ]);
+    expect(game.hits.drain()).toEqual([]);
+    feed(game, combatHit(12, [[1, 3, 1, false]]));
+    expect(game.hits.drain().map((b) => b.tick)).toEqual([12]);
+  });
+
+  it('drops the oldest batches past the cap and clears on a new Welcome', () => {
+    const game = setup();
+    for (let t = 0; t < MAX_HIT_BATCHES + 5; t++) feed(game, combatHit(t, [[1, 2, 1, false]]));
+    const drained = game.hits.drain();
+    expect(drained.length).toBe(MAX_HIT_BATCHES);
+    expect(drained[0].tick).toBe(5);
+    feed(game, combatHit(1, [[1, 2, 1, false]]), welcome(1));
+    expect(game.hits.drain()).toEqual([]);
   });
 });

@@ -1,8 +1,10 @@
 import type { ServerMessage } from '../net/codec';
 import type { CollisionGrid } from './collision';
+import { HitQueue } from './combat';
 import { Interpolator } from './interpolation';
 import { ItemState } from './items';
 import { Prediction } from './prediction';
+import { TradeStore } from './trade';
 
 export interface PlayerView {
   readonly id: number;
@@ -28,6 +30,10 @@ export class GameState {
   readonly interp = new Interpolator();
   /** Stats, inventory, item catalog, entity info and health; subscribe for changes. */
   readonly items = new ItemState();
+  /** CombatHit batches for render to drain each frame. */
+  readonly hits = new HitQueue();
+  /** Pending trade request, open trade window and last trade result; subscribe for changes. */
+  readonly trade = new TradeStore();
 
   /** Gives prediction the collision grid; it applies now and after every Welcome. */
   setCollision(grid: CollisionGrid | null): void {
@@ -44,6 +50,8 @@ export class GameState {
       this.animation = 0;
       this.restartSeconds = null;
       this.items.resetEntities();
+      this.hits.clear();
+      this.trade.clear();
     } else if (msg.type === 'restartCountdown') {
       this.restartSeconds = msg.seconds;
     } else if (msg.type === 'snapshot') {
@@ -64,6 +72,20 @@ export class GameState {
       this.items.setEntityInfo(msg);
     } else if (msg.type === 'entityHealth') {
       this.items.setHealth(msg.entries);
+    } else if (msg.type === 'groundItems') {
+      this.items.setGroundItems(msg.items);
+    } else if (msg.type === 'shopResult') {
+      this.items.setShopResult(msg.code);
+    } else if (msg.type === 'npcCatalog') {
+      this.items.setNpcCatalog(msg.npcs);
+    } else if (msg.type === 'tradeRequestNotice') {
+      this.trade.setRequest(msg.fromId);
+    } else if (msg.type === 'tradeState') {
+      this.trade.setState(msg);
+    } else if (msg.type === 'tradeResult') {
+      this.trade.setResult(msg.code);
+    } else if (msg.type === 'combatHit') {
+      this.hits.push(msg.tick, msg.hits);
     }
   }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sync"
 	"time"
 
@@ -24,10 +25,46 @@ type saveReq struct {
 	ver     int64 // version the player was loaded with
 }
 
-// saver writes player positions to the store on its own goroutine, so the
-// tick never waits on the database. Saves are serialized, and each uses the
-// version returned by that player's last successful save, so periodic,
-// disconnect and shutdown saves never conflict with each other.
+// econReq is one ApplyEconomy ready for the store: an economy outbox event
+// (one player's holdings right after it and its audit entries) or a trade
+// (both players' holdings and audit entries in one transaction).
+type econReq struct {
+	changes []store.EconomyChange
+	entries []store.Entry
+	// done, if set, is told whether the write committed. A request with done
+	// is never retried: a failure is final and does not hold back the
+	// players' later writes. Called on the saver goroutine.
+	done func(ok bool)
+}
+
+// econEvent is the econReq for one player's outbox event.
+func econEvent(storeID int64, h store.Holdings, entries []store.Entry) econReq {
+	return econReq{changes: []store.EconomyChange{{PlayerID: storeID, Holdings: h}}, entries: entries}
+}
+
+// blocks reports whether r names any player in blocked.
+func (r *econReq) blocks(blocked map[int64]bool) bool {
+	for _, c := range r.changes {
+		if blocked[c.PlayerID] {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *econReq) block(blocked map[int64]bool) {
+	for _, c := range r.changes {
+		blocked[c.PlayerID] = true
+	}
+}
+
+// saver writes player positions and economy events to the store on its own
+// goroutine, so the tick never waits on the database. Saves are serialized,
+// and each uses the version returned by that player's last successful save, so
+// periodic, disconnect and shutdown saves never conflict with each other.
+// Economy writes are kept in one queue and written one ApplyEconomy each, in
+// order for every player they name; a failed one stays queued, holding back
+// the later writes of every player it names, until it is retried.
 type saver struct {
 	store store.Players
 	log   *slog.Logger
@@ -37,6 +74,8 @@ type saver struct {
 	pending  map[int64]saveReq // latest request per player, not yet written
 	failed   map[int64]saveReq // last write failed; retried at the next submit
 	vers     map[int64]int64   // version from the last successful save
+	econ     []econReq         // economy writes, oldest first, not yet written
+	econFail map[int64]bool    // a write naming this player failed; retried at the next submit
 	inflight bool
 	closed   bool
 
@@ -50,7 +89,8 @@ func newSaver(players store.Players, log *slog.Logger) *saver {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &saver{store: players, log: log,
 		pending: map[int64]saveReq{}, failed: map[int64]saveReq{}, vers: map[int64]int64{},
-		wake: make(chan struct{}, 1), ctx: ctx, stop: cancel, done: make(chan struct{})}
+		econFail: map[int64]bool{},
+		wake:     make(chan struct{}, 1), ctx: ctx, stop: cancel, done: make(chan struct{})}
 	s.idle = sync.NewCond(&s.mu)
 	go s.run()
 	return s
@@ -67,13 +107,59 @@ func (s *saver) submit(reqs []saveReq) {
 		delete(s.failed, r.storeID)
 	}
 	s.mu.Unlock()
+	s.signal()
+}
+
+// submitEconomy queues economy writes after the ones already queued, and
+// re-queues earlier failures. It never blocks on the store.
+func (s *saver) submitEconomy(reqs ...econReq) {
+	if len(reqs) == 0 {
+		return
+	}
+	s.mu.Lock()
+	s.requeueFailedLocked()
+	s.econ = append(s.econ, reqs...)
+	s.mu.Unlock()
+	s.signal()
+}
+
+func (s *saver) signal() {
 	select {
 	case s.wake <- struct{}{}:
 	default:
 	}
 }
 
+// takeReadyLocked removes and returns, in order, the queued economy writes
+// that don't wait behind a failed or held-back write of a player they name.
+// With take false it only reports whether there are any.
+func (s *saver) takeReadyLocked(take bool) (ready []econReq, any bool) {
+	blocked := maps.Clone(s.econFail)
+	rest := s.econ[:0:0]
+	for _, r := range s.econ {
+		if r.blocks(blocked) {
+			r.block(blocked)
+			rest = append(rest, r)
+			continue
+		}
+		if !take {
+			return nil, true
+		}
+		ready = append(ready, r)
+	}
+	if take {
+		s.econ = rest
+	}
+	return ready, len(ready) > 0
+}
+
+func (s *saver) econReadyLocked() bool {
+	_, ok := s.takeReadyLocked(false)
+	return ok
+}
+
 func (s *saver) requeueFailedLocked() {
+	clear(s.econFail)
 	for id, r := range s.failed {
 		if _, newer := s.pending[id]; !newer {
 			s.pending[id] = r
@@ -98,7 +184,7 @@ func (s *saver) run() {
 // drain writes one batch of pending saves. It reports whether there was work.
 func (s *saver) drain() bool {
 	s.mu.Lock()
-	if len(s.pending) == 0 {
+	if len(s.pending) == 0 && !s.econReadyLocked() {
 		s.inflight = false
 		s.idle.Broadcast()
 		s.mu.Unlock()
@@ -109,13 +195,52 @@ func (s *saver) drain() bool {
 		batch = append(batch, r)
 		delete(s.pending, id)
 	}
+	econ, _ := s.takeReadyLocked(true)
 	s.inflight = true
 	s.mu.Unlock()
 
 	for _, r := range batch {
 		s.write(r)
 	}
+	s.writeEconomy(econ)
 	return true
+}
+
+// writeEconomy writes economy writes in order. A failed write without a done
+// callback, and every later one naming a player it names, goes back ahead of
+// anything queued since, to be retried at the next submit. A failed write
+// with a done callback is reported and dropped.
+func (s *saver) writeEconomy(q []econReq) {
+	failed := map[int64]bool{}
+	var back []econReq
+	for _, r := range q {
+		if r.blocks(failed) {
+			r.block(failed)
+			back = append(back, r)
+			continue
+		}
+		ctx, cancel := context.WithTimeout(s.ctx, saveTimeout)
+		err := s.store.ApplyEconomy(ctx, r.changes, r.entries)
+		cancel()
+		if err != nil {
+			s.log.Error("apply economy", "store_id", r.changes[0].PlayerID, "players", len(r.changes), "retry", r.done == nil, "err", err)
+		}
+		if r.done != nil {
+			r.done(err == nil)
+			continue
+		}
+		if err != nil {
+			r.block(failed)
+			back = append(back, r)
+		}
+	}
+	if len(back) == 0 {
+		return
+	}
+	s.mu.Lock()
+	s.econ = append(back, s.econ...)
+	maps.Copy(s.econFail, failed)
+	s.mu.Unlock()
 }
 
 func (s *saver) write(r saveReq) {
@@ -142,8 +267,8 @@ func (s *saver) write(r saveReq) {
 	s.vers[r.storeID] = rec.Version
 }
 
-// flush retries failed saves, waits for everything queued to be written, and
-// returns an error if any save is still failing.
+// flush retries failed saves and economy writes, waits for everything queued
+// to be written, and returns an error if any is still failing.
 func (s *saver) flush(ctx context.Context) error {
 	stopWatch := context.AfterFunc(ctx, func() {
 		s.mu.Lock()
@@ -155,14 +280,11 @@ func (s *saver) flush(ctx context.Context) error {
 	s.mu.Lock()
 	s.requeueFailedLocked()
 	s.mu.Unlock()
-	select {
-	case s.wake <- struct{}{}:
-	default:
-	}
+	s.signal()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for (len(s.pending) > 0 || s.inflight) && ctx.Err() == nil && !s.closed {
+	for (len(s.pending) > 0 || s.econReadyLocked() || s.inflight) && ctx.Err() == nil && !s.closed {
 		s.idle.Wait()
 	}
 	if err := ctx.Err(); err != nil {
@@ -170,6 +292,9 @@ func (s *saver) flush(ctx context.Context) error {
 	}
 	if n := len(s.failed); n > 0 {
 		return fmt.Errorf("%d player saves failed", n)
+	}
+	if n := len(s.econFail); n > 0 {
+		return fmt.Errorf("economy writes failed for %d players", n)
 	}
 	return nil
 }

@@ -317,6 +317,54 @@ func TestGold(t *testing.T) {
 	}
 }
 
+func TestRemoveFromSlot(t *testing.T) {
+	d := gameData(t)
+	acorn, boba := itemID(t, d, "acorn"), itemID(t, d, "boba")
+	n := d.Rules.InventorySlots
+	tests := []struct {
+		name     string
+		index    int
+		qty      int
+		wantErr  error
+		wantSlot world.Stack // slot index afterwards, when index is in range
+	}{
+		{"part of a stack", 2, 3, nil, world.Stack{Item: acorn, Qty: 2}},
+		{"whole stack", 2, 5, nil, world.Stack{}},
+		{"single item", 0, 1, nil, world.Stack{}},
+		{"more than held", 2, 6, world.ErrNotEnoughItems, world.Stack{Item: acorn, Qty: 5}},
+		{"zero", 2, 0, world.ErrBadQuantity, world.Stack{Item: acorn, Qty: 5}},
+		{"negative", 2, -1, world.ErrBadQuantity, world.Stack{Item: acorn, Qty: 5}},
+		{"empty slot", 3, 1, world.ErrEmptySlot, world.Stack{}},
+		{"below range", -1, 1, world.ErrBadSlot, world.Stack{}},
+		{"above range", n, 1, world.ErrBadSlot, world.Stack{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inv := world.NewInventory(d)
+			inv.Slots[0] = world.Stack{Item: boba, Qty: 1}
+			inv.Slots[2] = world.Stack{Item: acorn, Qty: 5}
+			before := clone(inv)
+			changes, err := inv.RemoveFromSlot(tt.index, tt.qty)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if err != nil {
+				if !reflect.DeepEqual(inv, before) || changes != nil {
+					t.Errorf("failed remove changed the inventory or returned changes %+v", changes)
+				}
+				return
+			}
+			if inv.Slots[tt.index] != tt.wantSlot {
+				t.Errorf("slot = %+v, want %+v", inv.Slots[tt.index], tt.wantSlot)
+			}
+			want := []world.Change{{Kind: world.ChangeRemove, Item: before.Slots[tt.index].Item, Qty: tt.qty}}
+			if !reflect.DeepEqual(changes, want) {
+				t.Errorf("changes = %+v, want %+v", changes, want)
+			}
+		})
+	}
+}
+
 func TestEquip(t *testing.T) {
 	d := gameData(t)
 	stick, dagger, lock := itemID(t, d, "wooden_stick"), itemID(t, d, "bronze_dagger"), itemID(t, d, "bike_lock")
@@ -441,6 +489,60 @@ func TestUnequip(t *testing.T) {
 	}
 }
 
+func TestRemoveWorn(t *testing.T) {
+	d := gameData(t)
+	stick, helm := itemID(t, d, "wooden_stick"), itemID(t, d, "leather_cap")
+
+	tests := []struct {
+		name    string
+		inv     func() world.Inventory
+		slot    gamedata.Slot
+		wantErr error
+	}{
+		{"empty inventory", func() world.Inventory {
+			inv := world.NewInventory(d)
+			inv.Equipment = world.Equipment{Weapon: stick, Head: helm}
+			return inv
+		}, gamedata.SlotWeapon, nil},
+		{"full inventory", func() world.Inventory {
+			inv := fill(t, d, "boba")
+			inv.Equipment = world.Equipment{Weapon: stick, Head: helm}
+			return inv
+		}, gamedata.SlotWeapon, nil},
+		{"nothing worn", func() world.Inventory {
+			inv := world.NewInventory(d)
+			inv.Equipment.Weapon = stick
+			return inv
+		}, gamedata.SlotHead, world.ErrNothingEquipped},
+		{"not a slot", func() world.Inventory { return world.NewInventory(d) }, gamedata.SlotNone, world.ErrBadEquipmentSlot},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inv := tt.inv()
+			before := clone(inv)
+			changes, err := inv.RemoveWorn(tt.slot)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if err != nil {
+				if !reflect.DeepEqual(inv, before) || changes != nil {
+					t.Errorf("failed remove changed inventory or returned changes %+v", changes)
+				}
+				return
+			}
+			want := before
+			want.Equipment.Weapon = 0
+			if !reflect.DeepEqual(inv, want) {
+				t.Errorf("inventory = %+v, want %+v", inv, want)
+			}
+			wantCh := []world.Change{{Kind: world.ChangeRemoveWorn, Item: stick, Qty: 1}}
+			if !reflect.DeepEqual(changes, wantCh) {
+				t.Errorf("changes = %+v, want %+v", changes, wantCh)
+			}
+		})
+	}
+}
+
 func TestBonuses(t *testing.T) {
 	d := gameData(t)
 	id := func(key string) gamedata.ItemID { return itemID(t, d, key) }
@@ -480,6 +582,7 @@ func TestChangeKindString(t *testing.T) {
 		{world.ChangeEquip, "item_equip"},
 		{world.ChangeUnequip, "item_unequip"},
 		{world.ChangeGold, "gold"},
+		{world.ChangeRemoveWorn, "item_remove_worn"},
 		{0, "ChangeKind(0)"},
 		{200, "ChangeKind(200)"},
 	}
@@ -498,5 +601,57 @@ func BenchmarkBonuses(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		_, _ = eq.Bonuses(d)
+	}
+}
+
+// TestLocked checks that every method that changes items, equipment or gold
+// fails with ErrInventoryLocked on a locked inventory, or a clone of one,
+// and changes nothing, and that unlocking lets changes through again.
+func TestLocked(t *testing.T) {
+	d := gameData(t)
+	acorn, dagger := itemID(t, d, "acorn"), itemID(t, d, "bronze_dagger")
+	ops := []struct {
+		name string
+		op   func(inv *world.Inventory) ([]world.Change, error)
+	}{
+		{"Add", func(inv *world.Inventory) ([]world.Change, error) { return inv.Add(d, acorn, 1) }},
+		{"Remove", func(inv *world.Inventory) ([]world.Change, error) { return inv.Remove(acorn, 1) }},
+		{"RemoveAt", func(inv *world.Inventory) ([]world.Change, error) { return inv.RemoveAt(0) }},
+		{"RemoveFromSlot", func(inv *world.Inventory) ([]world.Change, error) { return inv.RemoveFromSlot(0, 1) }},
+		{"AddGold", func(inv *world.Inventory) ([]world.Change, error) { return inv.AddGold(1) }},
+		{"SpendGold", func(inv *world.Inventory) ([]world.Change, error) { return inv.SpendGold(1) }},
+		{"Equip", func(inv *world.Inventory) ([]world.Change, error) { return inv.Equip(d, 1, 99) }},
+		{"Unequip", func(inv *world.Inventory) ([]world.Change, error) { return inv.Unequip(gamedata.SlotWeapon) }},
+		{"RemoveWorn", func(inv *world.Inventory) ([]world.Change, error) { return inv.RemoveWorn(gamedata.SlotWeapon) }},
+	}
+	for _, tt := range ops {
+		t.Run(tt.name, func(t *testing.T) {
+			inv, _, err := world.NewStartingInventory(d)
+			if err != nil {
+				t.Fatal(err)
+			}
+			inv.Slots[0] = world.Stack{Item: acorn, Qty: 5}
+			inv.Slots[1] = world.Stack{Item: dagger, Qty: 1}
+			inv.SetLocked(true)
+			if !inv.Locked() {
+				t.Fatal("not locked after SetLocked")
+			}
+			before := clone(inv)
+			changes, err := tt.op(&inv)
+			if !errors.Is(err, world.ErrInventoryLocked) || changes != nil {
+				t.Fatalf("locked: changes %v, err %v; want ErrInventoryLocked", changes, err)
+			}
+			if !reflect.DeepEqual(inv, before) {
+				t.Fatalf("locked inventory changed: %+v, want %+v", inv, before)
+			}
+			cp := inv.Clone()
+			if _, err := tt.op(&cp); !errors.Is(err, world.ErrInventoryLocked) {
+				t.Fatalf("locked clone: err %v, want ErrInventoryLocked", err)
+			}
+			inv.SetLocked(false)
+			if _, err := tt.op(&inv); err != nil {
+				t.Fatalf("unlocked: %v", err)
+			}
+		})
 	}
 }

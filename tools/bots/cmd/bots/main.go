@@ -20,19 +20,29 @@ import (
 
 func main() {
 	var (
-		wsURL    = flag.String("url", "ws://127.0.0.1:8080/ws", "server WebSocket URL")
-		count    = flag.Int("bots", 50, "number of bots")
-		steady   = flag.Duration("duration", 20*time.Second, "steady period after all bots are connected")
-		ramp     = flag.Duration("ramp", 5*time.Second, "time over which connections are spread")
-		radius   = flag.Float64("radius", 25, "bots wander within this many metres of the spawn point")
-		out      = flag.String("out", "", "write the JSON summary here (default stdout)")
-		metrics  = flag.String("metrics", "", "metrics URL (default derived from -url)")
-		strict   = flag.Bool("strict", false, "exit 1 on any failed connection, lost connection or dropped frame")
-		seedFlag = flag.Int64("seed", 0, "random seed (0 = time)")
+		wsURL     = flag.String("url", "ws://127.0.0.1:8080/ws", "server WebSocket URL")
+		count     = flag.Int("bots", 50, "number of bots")
+		steady    = flag.Duration("duration", 20*time.Second, "steady period after all bots are connected")
+		ramp      = flag.Duration("ramp", 5*time.Second, "time over which connections are spread")
+		radius    = flag.Float64("radius", 25, "bots wander within this many metres of the spawn point")
+		out       = flag.String("out", "", "write the JSON summary here (default stdout)")
+		metrics   = flag.String("metrics", "", "metrics URL (default derived from -url)")
+		strict    = flag.Bool("strict", false, "exit 1 on any failed connection, lost connection or dropped frame")
+		seedFlag  = flag.Int64("seed", 0, "random seed (0 = time)")
+		waveFirst = flag.Duration("wave-first", 15*time.Second, "each bot's first wave comes within this long of connecting")
+		itemFirst = flag.Duration("item-first", 15*time.Second, "each bot's first weapon unequip comes within this long of connecting")
 	)
+	waveEvery := span{20 * time.Second, 40 * time.Second}
+	itemEvery := span{30 * time.Second, 60 * time.Second}
+	flag.Var(&waveEvery, "wave-every", "each bot waves every min-max (e.g. 20s-40s)")
+	flag.Var(&itemEvery, "item-every", "each bot unequips and re-equips its weapon every min-max (e.g. 30s-60s)")
 	flag.Parse()
 	if *count <= 0 || *radius <= 0 {
 		fmt.Fprintln(os.Stderr, "bots: -bots and -radius must be positive")
+		os.Exit(2)
+	}
+	if *waveFirst < 0 || *itemFirst < 0 {
+		fmt.Fprintln(os.Stderr, "bots: -wave-first and -item-first must not be negative")
 		os.Exit(2)
 	}
 	mURL := *metrics
@@ -51,7 +61,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	sum := run(ctx, config{url: *wsURL, metricsURL: mURL, bots: *count, steady: *steady,
-		ramp: *ramp, radius: *radius, seed: seed})
+		ramp: *ramp, radius: *radius, seed: seed, waveEvery: waveEvery, waveFirst: *waveFirst,
+		itemEvery: itemEvery, itemFirst: *itemFirst})
 
 	data, _ := json.MarshalIndent(sum, "", "  ")
 	data = append(data, '\n')
@@ -75,6 +86,10 @@ type config struct {
 	steady, ramp    time.Duration
 	radius          float64
 	seed            int64
+	waveEvery       span
+	waveFirst       time.Duration
+	itemEvery       span
+	itemFirst       time.Duration
 }
 
 // summary is the JSON document the bots write. CI reads these field names.
@@ -89,6 +104,9 @@ type summary struct {
 	SteadySeconds           float64         `json:"steady_seconds"`
 	SnapshotsReceived       uint64          `json:"snapshots_received"`
 	ChatsReceived           uint64          `json:"chats_received"`
+	WavesSent               uint64          `json:"waves_sent"`
+	ItemActionsSent         uint64          `json:"item_actions_sent"`
+	InventoryStatesReceived uint64          `json:"inventory_states_received"`
 	ServerMaxDroppedPerS    float64         `json:"server_max_dropped_per_s"`
 	Server                  json.RawMessage `json:"server"`
 }
@@ -185,6 +203,7 @@ func run(ctx context.Context, cfg config) *summary {
 		Bots: cfg.bots, ConnectedAtEnd: connected, FailedToConnect: int(failed.Load()),
 		DisconnectedEarly: int(st.lost.Load()), SteadySeconds: steadySecs,
 		SnapshotsReceived: snaps1 - snaps0, ChatsReceived: st.chats.Load(),
+		WavesSent: st.waves.Load(), ItemActionsSent: st.items.Load(), InventoryStatesReceived: st.invStates.Load(),
 		ServerMaxDroppedPerS: maxDrop, Server: raw,
 	}
 	if steadySecs > 0 && connected > 0 {

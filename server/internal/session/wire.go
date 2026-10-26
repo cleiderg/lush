@@ -8,6 +8,9 @@ import (
 
 	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/items"
+	"github.com/cleiderg/lush/server/internal/systems/shop"
+	"github.com/cleiderg/lush/server/internal/systems/trade"
 	"github.com/cleiderg/lush/server/internal/world"
 )
 
@@ -62,6 +65,51 @@ func encodeChat(speaker world.PlayerID, text string) []byte {
 	return finish(b, protocol.MessageChatMessage, protocol.ChatMessageEnd(b))
 }
 
+func encodeShopResult(r shop.Result) []byte {
+	b := flatbuffers.NewBuilder(32)
+	protocol.ShopResultStart(b)
+	protocol.ShopResultAddCode(b, protocol.ShopResultCode(r))
+	return finish(b, protocol.MessageShopResult, protocol.ShopResultEnd(b))
+}
+
+func encodeTradeRequestNotice(from world.PlayerID) []byte {
+	b := flatbuffers.NewBuilder(32)
+	protocol.TradeRequestNoticeStart(b)
+	protocol.TradeRequestNoticeAddFromId(b, uint16(from))
+	return finish(b, protocol.MessageTradeRequestNotice, protocol.TradeRequestNoticeEnd(b))
+}
+
+func encodeTradeResult(r trade.Result) []byte {
+	b := flatbuffers.NewBuilder(32)
+	protocol.TradeResultStart(b)
+	protocol.TradeResultAddCode(b, protocol.TradeResultCode(r))
+	return finish(b, protocol.MessageTradeResult, protocol.TradeResultEnd(b))
+}
+
+// encodeTradeState builds the trade window as v's player sees it. b is reused
+// across calls.
+func encodeTradeState(b *flatbuffers.Builder, v trade.View) []byte {
+	b.Reset()
+	items := func(o trade.Offer) flatbuffers.UOffsetT {
+		protocol.TradeStateStartMyItemsVector(b, len(o.Items))
+		for i := len(o.Items) - 1; i >= 0; i-- {
+			protocol.CreateTradeItem(b, uint16(o.Items[i].Item), clampU32(o.Items[i].Qty))
+		}
+		return b.EndVector(len(o.Items))
+	}
+	mine, theirs := items(v.Mine), items(v.Partners)
+	protocol.TradeStateStart(b)
+	protocol.TradeStateAddPartnerId(b, uint16(v.Partner))
+	protocol.TradeStateAddScreen(b, clampU8(v.Screen))
+	protocol.TradeStateAddMyItems(b, mine)
+	protocol.TradeStateAddMyGold(b, clampU32(v.Mine.Gold))
+	protocol.TradeStateAddPartnerItems(b, theirs)
+	protocol.TradeStateAddPartnerGold(b, clampU32(v.Partners.Gold))
+	protocol.TradeStateAddMyAccepted(b, v.MyAccepted)
+	protocol.TradeStateAddPartnerAccepted(b, v.PartnerAccepted)
+	return finish(b, protocol.MessageTradeState, protocol.TradeStateEnd(b))
+}
+
 // decimetres converts world units (metres) to the wire's int16 decimetres.
 func decimetres(v float32) int16 {
 	d := math.Round(float64(v) * 10)
@@ -105,6 +153,71 @@ type message struct {
 	chatText  string
 	emote     protocol.Emote
 	pingToken uint32
+	// ItemAction, ShopBuy and ShopSell.
+	itemAction protocol.ItemActionKind
+	slot       int // inventory slot index
+	equipSlot  protocol.EquipSlot
+	itemID     uint16
+	quantity   uint32
+	// Trade messages; slot and quantity are shared with the above.
+	partner uint16 // TradeRequest target
+	index   int    // TradeRemove offer index
+	gold    uint32 // TradeSetGold
+	screen  uint8  // TradeAccept
+}
+
+// gameSlots maps wire equipment slots to game data slots. EquipSlotNone is
+// absent: nothing is worn there.
+var gameSlots = map[protocol.EquipSlot]gamedata.Slot{
+	protocol.EquipSlotWeapon: gamedata.SlotWeapon,
+	protocol.EquipSlotHead:   gamedata.SlotHead,
+	protocol.EquipSlotBody:   gamedata.SlotBody,
+	protocol.EquipSlotShield: gamedata.SlotShield,
+}
+
+// command turns a decoded ItemAction, ShopBuy, ShopSell or trade message into
+// the world command for player id. It returns nil for other messages and for
+// values the protocol doesn't define (an unknown action or equipment slot, a
+// trade request naming no player, an accept of a screen other than 1 or 2, an
+// offer of nothing); those are ignored, not fatal. Everything else is checked
+// by the systems.
+func (m message) command(id world.PlayerID) world.Command {
+	switch m.typ {
+	case protocol.MessageItemAction:
+		switch m.itemAction {
+		case protocol.ItemActionKindEquip:
+			return items.EquipCommand{Player: id, Slot: m.slot}
+		case protocol.ItemActionKindEat:
+			return items.EatCommand{Player: id, Slot: m.slot}
+		case protocol.ItemActionKindUnequip:
+			if slot, ok := gameSlots[m.equipSlot]; ok {
+				return items.UnequipCommand{Player: id, Slot: slot}
+			}
+		}
+	case protocol.MessageShopBuy:
+		return shop.BuyCommand{Player: id, Item: gamedata.ItemID(m.itemID), Quantity: int(m.quantity)}
+	case protocol.MessageShopSell:
+		return shop.SellCommand{Player: id, Slot: m.slot, Quantity: int(m.quantity)}
+	case protocol.MessageTradeRequest:
+		if m.partner != 0 {
+			return trade.RequestCommand{Player: id, Partner: world.PlayerID(m.partner)}
+		}
+	case protocol.MessageTradeOffer:
+		if m.quantity != 0 {
+			return trade.OfferCommand{Player: id, Slot: m.slot, Quantity: int(m.quantity)}
+		}
+	case protocol.MessageTradeRemove:
+		return trade.RemoveCommand{Player: id, Index: m.index}
+	case protocol.MessageTradeSetGold:
+		return trade.SetGoldCommand{Player: id, Gold: int(m.gold)}
+	case protocol.MessageTradeAccept:
+		if m.screen == trade.ScreenOffer || m.screen == trade.ScreenConfirm {
+			return trade.AcceptCommand{Player: id, Screen: int(m.screen)}
+		}
+	case protocol.MessageTradeCancel:
+		return trade.CancelCommand{Player: id}
+	}
+	return nil
 }
 
 // decode parses an inbound frame and reads every field it uses, so that all
@@ -146,6 +259,40 @@ func decode(buf []byte) (m message, err error) {
 		var p protocol.Ping
 		p.Init(tbl.Bytes, tbl.Pos)
 		m.pingToken = p.Token()
+	case protocol.MessageItemAction:
+		var ia protocol.ItemAction
+		ia.Init(tbl.Bytes, tbl.Pos)
+		m.itemAction, m.slot, m.equipSlot = ia.Action(), int(ia.Slot()), ia.EquipSlot()
+	case protocol.MessageShopBuy:
+		var sb protocol.ShopBuy
+		sb.Init(tbl.Bytes, tbl.Pos)
+		m.itemID, m.quantity = sb.ItemId(), sb.Quantity()
+	case protocol.MessageShopSell:
+		var ss protocol.ShopSell
+		ss.Init(tbl.Bytes, tbl.Pos)
+		m.slot, m.quantity = int(ss.Slot()), ss.Quantity()
+	case protocol.MessageTradeRequest:
+		var tr protocol.TradeRequest
+		tr.Init(tbl.Bytes, tbl.Pos)
+		m.partner = tr.TargetId()
+	case protocol.MessageTradeOffer:
+		var to protocol.TradeOffer
+		to.Init(tbl.Bytes, tbl.Pos)
+		m.slot, m.quantity = int(to.Slot()), to.Quantity()
+	case protocol.MessageTradeRemove:
+		var tr protocol.TradeRemove
+		tr.Init(tbl.Bytes, tbl.Pos)
+		m.index = int(tr.Index())
+	case protocol.MessageTradeSetGold:
+		var tg protocol.TradeSetGold
+		tg.Init(tbl.Bytes, tbl.Pos)
+		m.gold = tg.Gold()
+	case protocol.MessageTradeAccept:
+		var ta protocol.TradeAccept
+		ta.Init(tbl.Bytes, tbl.Pos)
+		m.screen = ta.Screen()
+	case protocol.MessageTradeCancel:
+		// No fields.
 	}
 	return m, nil
 }

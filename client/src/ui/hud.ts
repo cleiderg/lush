@@ -1,3 +1,5 @@
+import { encodeItemAction } from '../net/codec';
+import { EquipSlot, ItemActionKind, ItemKind } from '../protocol';
 import type { Equipment, ItemState } from '../state/items';
 import { hudLayout, place } from './hudLayout';
 
@@ -6,14 +8,25 @@ export interface HudOptions {
   items: ItemState;
   /** Current viewport size; defaults to the window's. */
   viewport?: () => { width: number; height: number };
+  /** Sends an encoded client message (ItemAction) to the server. */
+  send?: (bytes: Uint8Array) => void;
+  /** Called when the inventory panel opens, so other panels in its place can close. */
+  onOpen?: () => void;
 }
 
-const EQUIP_SLOTS: { key: keyof Equipment; label: string }[] = [
-  { key: 'weapon', label: 'Weapon' },
-  { key: 'head', label: 'Head' },
-  { key: 'body', label: 'Body' },
-  { key: 'shield', label: 'Shield' },
+const EQUIP_SLOTS: { key: keyof Equipment; label: string; slot: EquipSlot }[] = [
+  { key: 'weapon', label: 'Weapon', slot: EquipSlot.Weapon },
+  { key: 'head', label: 'Head', slot: EquipSlot.Head },
+  { key: 'body', label: 'Body', slot: EquipSlot.Body },
+  { key: 'shield', label: 'Shield', slot: EquipSlot.Shield },
 ];
+
+/** What tapping an inventory item of this kind does: equip gear, eat food; loot does nothing. */
+export function slotAction(kind: ItemKind | undefined): ItemActionKind | null {
+  if (kind === ItemKind.Weapon || kind === ItemKind.Armor) return ItemActionKind.Equip;
+  if (kind === ItemKind.Food) return ItemActionKind.Eat;
+  return null;
+}
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -69,6 +82,7 @@ export class Hud {
   }
 
   setOpen(open: boolean): void {
+    if (open && !this.isOpen) this.opts.onOpen?.();
     this.panel.hidden = !open;
     this.toggle.setAttribute('aria-expanded', String(open));
     this.toggle.classList.toggle('on', open);
@@ -91,10 +105,14 @@ export class Hud {
 
     const name = (id: number): string => items.item(id)?.name ?? `Item ${id}`;
     const inv = items.inventory;
-    this.equipment.replaceChildren(...EQUIP_SLOTS.map(({ key, label }) => {
+    this.equipment.replaceChildren(...EQUIP_SLOTS.map(({ key, label, slot }) => {
       const id = inv.equipment[key];
       const cell = el('div', id ? 'lush-equip-slot' : 'lush-equip-slot empty');
       cell.dataset.slot = key;
+      if (id) {
+        cell.classList.add('usable');
+        cell.addEventListener('click', () => this.opts.send?.(encodeItemAction(ItemActionKind.Unequip, 0, slot)));
+      }
       cell.append(el('span', 'lush-equip-label', label), el('span', 'lush-equip-name', id ? name(id) : 'Empty'));
       return cell;
     }));
@@ -102,6 +120,11 @@ export class Hud {
       const cell = el('div', slot.itemId ? 'lush-slot' : 'lush-slot empty');
       cell.dataset.index = String(i);
       if (slot.itemId) {
+        const action = slotAction(items.item(slot.itemId)?.kind);
+        if (action !== null) {
+          cell.classList.add('usable');
+          cell.addEventListener('click', () => this.opts.send?.(encodeItemAction(action, i)));
+        }
         cell.append(el('span', 'lush-slot-name', name(slot.itemId)));
         if (slot.quantity > 1) cell.append(el('span', 'lush-slot-qty', String(slot.quantity)));
       }
@@ -138,6 +161,8 @@ function injectStyle(): void {
 .lush-equip-label { color: #aab; font-size: 10px; }
 .lush-equip-slot.empty .lush-equip-name { color: #778; }
 .lush-inv-grid { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: minmax(40px, 1fr); gap: 4px; flex: 1; }
+.lush-equip-slot.usable, .lush-slot.usable { cursor: pointer; touch-action: manipulation; }
+.lush-equip-slot.usable:active, .lush-slot.usable:active { background: #4a8f4a; }
 .lush-slot.empty { background: #2c2c3a; }
 .lush-slot-name { display: block; word-break: break-word; }
 .lush-slot-qty { position: absolute; right: 4px; bottom: 2px; color: #ffd54f; font-weight: 700; }
