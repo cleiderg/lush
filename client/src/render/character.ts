@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { Animation } from '../protocol';
+import { SLOTS, equipmentMaterial, itemColor, slotGeometry, type EquipSlotName } from './equipment';
+import type { EntityLookup, EquipmentView } from './worldView';
 
 /** One box of the slim character. `pivot` is the joint the part swings around. */
 export interface PartDef {
@@ -58,6 +60,8 @@ export function makePartMaterial(part: PartDef): THREE.MeshLambertMaterial {
 export class Character {
   readonly root = new THREE.Group();
   private readonly joints: { part: PartDef; node: THREE.Group }[] = [];
+  /** Attachment mesh per equipment slot; meshes share geometry and material with every other wearer. */
+  readonly attachments = new Map<EquipSlotName, THREE.Mesh>();
   private phase = 0;
 
   constructor() {
@@ -67,6 +71,30 @@ export class Character {
       node.add(new THREE.Mesh(makePartGeometry(part), makePartMaterial(part)));
       this.root.add(node);
       this.joints.push({ part, node });
+    }
+  }
+
+  /** Shows one attachment per worn slot; `undefined` removes them all. Cheap when nothing changed. */
+  setEquipment(eq: EquipmentView | undefined, lookup?: EntityLookup): void {
+    for (const def of SLOTS) {
+      const itemId = eq ? eq[def.slot] : 0;
+      const current = this.attachments.get(def.slot);
+      if (itemId === 0) {
+        if (current) {
+          current.removeFromParent();
+          this.attachments.delete(def.slot);
+        }
+        continue;
+      }
+      const material = equipmentMaterial(itemColor(itemId, lookup));
+      if (current) {
+        current.material = material;
+        continue;
+      }
+      const mesh = new THREE.Mesh(slotGeometry(def), material);
+      mesh.name = `equip:${def.slot}`;
+      this.joints.find((j) => j.part.name === def.part)!.node.add(mesh);
+      this.attachments.set(def.slot, mesh);
     }
   }
 

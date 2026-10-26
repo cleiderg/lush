@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Character } from './character';
 import { CameraRig } from './cameraRig';
 import { RemotePlayers } from './remotePlayers';
+import { HealthBars, type BarEntry } from './healthBars';
 import { Hitsplats } from './hitsplats';
 import { CampusMap, loadCampus } from './campusMap';
 import { GroundItems } from './groundItems';
@@ -35,6 +36,8 @@ export class WorldScene {
   readonly areas = new AreaMarkers(loadAreas());
   private readonly player = new Character();
   private readonly remotes = new RemotePlayers();
+  readonly healthBars = new HealthBars();
+  private readonly bars: { x: number; z: number; ratio: number }[] = [];
   readonly hitsplats = new Hitsplats();
   /** Created on the first view that carries groundItems, so views without it leave the scene as before. */
   private groundItems: GroundItems | null = null;
@@ -50,7 +53,7 @@ export class WorldScene {
     const sun = new THREE.DirectionalLight(0xffffff, 1.6);
     sun.position.set(30, 60, 20);
     this.scene.add(sun);
-    this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.areas.group, this.player.root, this.remotes.group);
+    this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.areas.group, this.player.root, this.remotes.group, this.healthBars.group);
   }
 
   update(view: WorldView): void {
@@ -59,7 +62,9 @@ export class WorldScene {
     this.lastX = local.x;
     this.lastZ = local.z;
     this.player.update(local.x, local.z, local.heading, dist, local.animation ?? 0);
-    this.remotes.update(view.remotes);
+    const lookup = view.entities;
+    this.player.setEquipment(lookup?.entityInfo(local.id)?.equipment, lookup);
+    this.remotes.update(view.remotes, lookup);
     if (view.groundItems) {
       if (!this.groundItems) {
         this.groundItems = new GroundItems();
@@ -82,6 +87,29 @@ export class WorldScene {
     // Hitsplats join the scene with the first hit, so a view without hits leaves the graph as it was.
     if (view.hits?.length && !this.hitsplats.group.parent) this.scene.add(this.hitsplats.group);
     if (this.hitsplats.group.parent) this.hitsplats.update(view, this.now(), this.rig.camera.quaternion);
+    this.healthBars.update(this.barEntries(view), this.rig.camera.quaternion);
+  }
+
+  /** Bar entries for every drawn player and NPC, reusing the same objects each frame. */
+  private barEntries(view: WorldView): readonly BarEntry[] {
+    const lookup = view.entities;
+    let n = 0;
+    const add = (p: { id: number; x: number; z: number }) => {
+      const ratio = lookup!.healthRatio(p.id);
+      if (!(ratio < 1)) return;
+      const e = (this.bars[n] ??= { x: 0, z: 0, ratio: 1 });
+      e.x = p.x;
+      e.z = p.z;
+      e.ratio = ratio;
+      n++;
+    };
+    if (lookup) {
+      add(view.local);
+      for (const p of view.remotes) add(p);
+      for (const p of view.npcs ?? []) add(p);
+    }
+    this.bars.length = n;
+    return this.bars;
   }
 }
 
