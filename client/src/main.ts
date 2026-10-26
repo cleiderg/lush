@@ -14,6 +14,7 @@ import { Controls } from './ui/controls';
 import { Hud } from './ui/hud';
 import { RestartBanner } from './ui/restartBanner';
 import { ShopPanel } from './ui/shopPanel';
+import { TradePanel } from './ui/tradePanel';
 
 initErrorReporting();
 
@@ -49,6 +50,16 @@ const shop = new ShopPanel({
   send,
   position: () => game.prediction.pos,
   onOpen: () => hud.setOpen(false),
+});
+new TradePanel({
+  parent: document.body,
+  trade: game.trade,
+  items: game.items,
+  send,
+  onOpen: () => {
+    hud.setOpen(false);
+    shop.close();
+  },
 });
 const session = new Session({
   factory: () => new WebSocketTransport(),
