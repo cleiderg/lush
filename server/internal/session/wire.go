@@ -8,6 +8,8 @@ import (
 
 	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/items"
+	"github.com/cleiderg/lush/server/internal/systems/shop"
 	"github.com/cleiderg/lush/server/internal/world"
 )
 
@@ -62,6 +64,13 @@ func encodeChat(speaker world.PlayerID, text string) []byte {
 	return finish(b, protocol.MessageChatMessage, protocol.ChatMessageEnd(b))
 }
 
+func encodeShopResult(r shop.Result) []byte {
+	b := flatbuffers.NewBuilder(32)
+	protocol.ShopResultStart(b)
+	protocol.ShopResultAddCode(b, protocol.ShopResultCode(r))
+	return finish(b, protocol.MessageShopResult, protocol.ShopResultEnd(b))
+}
+
 // decimetres converts world units (metres) to the wire's int16 decimetres.
 func decimetres(v float32) int16 {
 	d := math.Round(float64(v) * 10)
@@ -105,6 +114,46 @@ type message struct {
 	chatText  string
 	emote     protocol.Emote
 	pingToken uint32
+	// ItemAction, ShopBuy and ShopSell.
+	itemAction protocol.ItemActionKind
+	slot       int // inventory slot index
+	equipSlot  protocol.EquipSlot
+	itemID     uint16
+	quantity   uint32
+}
+
+// gameSlots maps wire equipment slots to game data slots. EquipSlotNone is
+// absent: nothing is worn there.
+var gameSlots = map[protocol.EquipSlot]gamedata.Slot{
+	protocol.EquipSlotWeapon: gamedata.SlotWeapon,
+	protocol.EquipSlotHead:   gamedata.SlotHead,
+	protocol.EquipSlotBody:   gamedata.SlotBody,
+	protocol.EquipSlotShield: gamedata.SlotShield,
+}
+
+// command turns a decoded ItemAction, ShopBuy or ShopSell into the world
+// command for player id. It returns nil for other messages and for values
+// the protocol doesn't define (an unknown action or equipment slot); those
+// are ignored, not fatal. Everything else is checked by the systems.
+func (m message) command(id world.PlayerID) world.Command {
+	switch m.typ {
+	case protocol.MessageItemAction:
+		switch m.itemAction {
+		case protocol.ItemActionKindEquip:
+			return items.EquipCommand{Player: id, Slot: m.slot}
+		case protocol.ItemActionKindEat:
+			return items.EatCommand{Player: id, Slot: m.slot}
+		case protocol.ItemActionKindUnequip:
+			if slot, ok := gameSlots[m.equipSlot]; ok {
+				return items.UnequipCommand{Player: id, Slot: slot}
+			}
+		}
+	case protocol.MessageShopBuy:
+		return shop.BuyCommand{Player: id, Item: gamedata.ItemID(m.itemID), Quantity: int(m.quantity)}
+	case protocol.MessageShopSell:
+		return shop.SellCommand{Player: id, Slot: m.slot, Quantity: int(m.quantity)}
+	}
+	return nil
 }
 
 // decode parses an inbound frame and reads every field it uses, so that all
@@ -146,6 +195,18 @@ func decode(buf []byte) (m message, err error) {
 		var p protocol.Ping
 		p.Init(tbl.Bytes, tbl.Pos)
 		m.pingToken = p.Token()
+	case protocol.MessageItemAction:
+		var ia protocol.ItemAction
+		ia.Init(tbl.Bytes, tbl.Pos)
+		m.itemAction, m.slot, m.equipSlot = ia.Action(), int(ia.Slot()), ia.EquipSlot()
+	case protocol.MessageShopBuy:
+		var sb protocol.ShopBuy
+		sb.Init(tbl.Bytes, tbl.Pos)
+		m.itemID, m.quantity = sb.ItemId(), sb.Quantity()
+	case protocol.MessageShopSell:
+		var ss protocol.ShopSell
+		ss.Init(tbl.Bytes, tbl.Pos)
+		m.slot, m.quantity = int(ss.Slot()), ss.Quantity()
 	}
 	return m, nil
 }
