@@ -1,6 +1,9 @@
 package world
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // NPCID identifies an NPC entity. NPC ids come from Config's NPC id range.
 type NPCID uint64
@@ -24,7 +27,12 @@ type NPC struct {
 	HasGoal bool
 	// Returning is set while the NPC walks home after going past its leash.
 	Returning bool
+	// LastCombat is when the NPC last dealt or took damage; zero if never.
+	LastCombat time.Time
 }
+
+// MarkCombat records that the NPC dealt or took damage at now.
+func (n *NPC) MarkCombat(now time.Time) { n.LastCombat = now }
 
 func (w *World) isNPCID(id uint64) bool {
 	return id >= uint64(w.cfg.NPCIDMin) && id <= uint64(w.cfg.NPCIDMax)
