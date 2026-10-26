@@ -104,3 +104,30 @@ func TestLoadCommittedGrid(t *testing.T) {
 		t.Fatal("far outside should be blocked")
 	}
 }
+
+func TestCellCenter(t *testing.T) {
+	// 3x3 grid, 1 m cells, origin (-10 m, 20 m).
+	g, err := world.ParseGrid(MakeGrid([]string{"..#", ".#.", "#.."}, 10, -100, 200))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		col, row int
+		want     world.Vec2
+		blocked  bool
+	}{
+		{0, 0, world.Vec2{X: -9.5, Y: 20.5}, false},
+		{2, 0, world.Vec2{X: -7.5, Y: 20.5}, true},
+		{1, 1, world.Vec2{X: -8.5, Y: 21.5}, true},
+		{2, 2, world.Vec2{X: -7.5, Y: 22.5}, false},
+	}
+	for _, tc := range tests {
+		got := g.CellCenter(tc.col, tc.row)
+		if got != tc.want {
+			t.Errorf("CellCenter(%d,%d) = %+v, want %+v", tc.col, tc.row, got, tc.want)
+		}
+		if g.Blocked(got) != tc.blocked || g.CellBlocked(tc.col, tc.row) != tc.blocked {
+			t.Errorf("cell (%d,%d) centre blocked = %v, want %v", tc.col, tc.row, g.Blocked(got), tc.blocked)
+		}
+	}
+}
