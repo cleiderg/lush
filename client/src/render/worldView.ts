@@ -9,7 +9,16 @@ export interface PlayerView {
   readonly animation?: number;
 }
 
+/** One combat hit on an entity. Damage 0 is a miss. */
+export interface HitView {
+  readonly target: number;
+  readonly damage: number;
+  readonly died: boolean;
+}
+
 export interface WorldView {
   readonly local: PlayerView;
   readonly remotes: readonly PlayerView[];
+  /** Hits that arrived since the last frame, oldest first. Missing means none. */
+  readonly hits?: readonly HitView[];
 }

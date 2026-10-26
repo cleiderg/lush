@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Character } from './character';
 import { CameraRig } from './cameraRig';
 import { RemotePlayers } from './remotePlayers';
+import { Hitsplats } from './hitsplats';
 import { CampusMap, loadCampus } from './campusMap';
 import { AreaMarkers, loadAreas } from './gameAreas';
 import type { CampusData } from './mapData';
@@ -32,10 +33,12 @@ export class WorldScene {
   readonly areas = new AreaMarkers(loadAreas());
   private readonly player = new Character();
   private readonly remotes = new RemotePlayers();
+  readonly hitsplats = new Hitsplats();
   private lastX: number | null = null;
   private lastZ = 0;
 
-  constructor() {
+  /** `now` is the render clock in milliseconds; tests pass a controlled one. */
+  constructor(private readonly now: () => number = () => performance.now()) {
     this.scene.background = new THREE.Color(SKY);
     this.scene.add(new THREE.AmbientLight(0xffffff, 1.6));
     const sun = new THREE.DirectionalLight(0xffffff, 1.6);
@@ -52,6 +55,9 @@ export class WorldScene {
     this.player.update(local.x, local.z, local.heading, dist, local.animation ?? 0);
     this.remotes.update(view.remotes);
     this.rig.follow(local.x, local.z);
+    // Hitsplats join the scene with the first hit, so a view without hits leaves the graph as it was.
+    if (view.hits?.length && !this.hitsplats.group.parent) this.scene.add(this.hitsplats.group);
+    if (this.hitsplats.group.parent) this.hitsplats.update(view, this.now(), this.rig.camera.quaternion);
   }
 }
 
