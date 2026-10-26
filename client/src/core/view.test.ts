@@ -59,6 +59,26 @@ describe('buildWorldView', () => {
     expect(buildWorldView(g, 0).hits).toEqual([]);
   });
 
+  it('carries the game item state as entities for the local player and remotes', () => {
+    const g = new GameState();
+    g.handle({ type: 'welcome', playerId: 7, tickRate: 20, spawn: { x: 0, z: 0 } } as never, 0);
+    g.handle(
+      { type: 'snapshot', tick: 1, lastInputSeq: 0, entities: [{ id: 7, x: 0, z: 0, heading: 0 }, { id: 9, x: 1, z: 1, heading: 0 }] } as never,
+      0,
+    );
+    const equip = (weapon: number) => ({ weapon, head: 0, body: 0, shield: 0 });
+    g.handle({ type: 'entityInfo', id: 7, kind: EntityKind.Player, npcType: 0, combatLevel: 3, equipment: equip(11) } as never, 0);
+    g.handle({ type: 'entityInfo', id: 9, kind: EntityKind.Player, npcType: 0, combatLevel: 3, equipment: equip(12) } as never, 0);
+    g.handle({ type: 'entityHealth', entries: [{ id: 7, ratio: 0.5 }, { id: 9, ratio: 0.25 }] } as never, 0);
+    const v = buildWorldView(g, 1000);
+    expect(v.entities).toBe(g.items);
+    expect(v.entities?.entityInfo(v.local.id)?.equipment.weapon).toBe(11);
+    expect(v.entities?.healthRatio(v.local.id)).toBe(0.5);
+    expect(v.remotes.map((r) => r.id)).toEqual([9]);
+    expect(v.entities?.entityInfo(v.remotes[0].id)?.equipment.weapon).toBe(12);
+    expect(v.entities?.healthRatio(v.remotes[0].id)).toBe(0.25);
+  });
+
   it('has no ground items or hits after a Welcome', () => {
     const g = new GameState();
     g.handle({ type: 'welcome', playerId: 7, tickRate: 20, spawn: { x: 0, z: 0 } } as never, 0);

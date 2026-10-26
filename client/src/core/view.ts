@@ -5,7 +5,7 @@ import { EntityKind } from '../protocol';
 
 /**
  * Snapshot of game state for the renderer: predicted local player, interpolated remotes and
- * NPCs, ground items, and the hits received since the previous view. An entity is an NPC when
+ * NPCs, entity state (equipment and health) from game.items, ground items, and the hits received since the previous view. An entity is an NPC when
  * its EntityInfo kind is Npc; players and entities with no EntityInfo yet stay in remotes.
  * Drains game.hits, so each hit appears in exactly one view.
  */
@@ -18,7 +18,7 @@ export function buildWorldView(game: GameState, now: number): WorldView {
     if (info?.kind === EntityKind.Npc) npcs.push({ id: r.id, npcType: info.npcType, x: r.x, z: r.z, heading: r.heading });
     else remotes.push(r);
   }
-  return { local: game.local, remotes, npcs, groundItems: game.items.groundItems, hits };
+  return { local: game.local, remotes, npcs, entities: game.items, groundItems: game.items.groundItems, hits };
 }
 
 /**
