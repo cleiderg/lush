@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { EntityKind } from '../protocol';
 import { GameState } from '../state/world';
 import { buildWorldView, controlYaw, moveForRigYaw } from './view';
 
@@ -67,6 +68,57 @@ describe('buildWorldView', () => {
     const v = buildWorldView(g, 0);
     expect(v.groundItems).toEqual([]);
     expect(v.hits).toEqual([]);
+  });
+});
+
+describe('buildWorldView NPCs', () => {
+  const equipment = { weapon: 0, head: 0, body: 0, shield: 0 };
+  const info = (id: number, kind: EntityKind, npcType: number) =>
+    ({ type: 'entityInfo', id, kind, npcType, combatLevel: 3, equipment }) as never;
+  const snapshot = (tick: number, entities: { id: number; x: number; z: number; heading: number }[]) =>
+    ({ type: 'snapshot', tick, lastInputSeq: 0, entities: [{ id: 7, x: 0, z: 0, heading: 0 }, ...entities] }) as never;
+
+  function game(): GameState {
+    const g = new GameState();
+    g.handle({ type: 'welcome', playerId: 7, tickRate: 20, spawn: { x: 0, z: 0 } } as never, 0);
+    return g;
+  }
+
+  it('puts an Npc entity in npcs with its npcType, position and heading, not in remotes', () => {
+    const g = game();
+    g.handle(snapshot(1, [{ id: 20, x: 5, z: 6, heading: 0.5 }]), 0);
+    g.handle(info(20, EntityKind.Npc, 4), 0);
+    const v = buildWorldView(g, 1000);
+    expect(v.npcs).toEqual([{ id: 20, npcType: 4, x: 5, z: 6, heading: 0.5 }]);
+    expect(v.remotes).toEqual([]);
+  });
+
+  it('keeps players and entities with no EntityInfo yet in remotes', () => {
+    const g = game();
+    g.handle(snapshot(1, [
+      { id: 9, x: 1, z: 2, heading: 0 },
+      { id: 10, x: 3, z: 4, heading: 1 },
+      { id: 20, x: 5, z: 6, heading: 2 },
+    ]), 0);
+    g.handle(info(9, EntityKind.Player, 0), 0);
+    g.handle(info(20, EntityKind.Npc, 2), 0);
+    const v = buildWorldView(g, 1000);
+    expect(v.remotes).toEqual([
+      { id: 9, x: 1, z: 2, heading: 0 },
+      { id: 10, x: 3, z: 4, heading: 1 },
+    ]);
+    expect(v.npcs).toEqual([{ id: 20, npcType: 2, x: 5, z: 6, heading: 2 }]);
+  });
+
+  it('drops an NPC whose entity leaves the snapshot', () => {
+    const g = game();
+    g.handle(snapshot(1, [{ id: 20, x: 5, z: 6, heading: 0 }]), 0);
+    g.handle(info(20, EntityKind.Npc, 4), 0);
+    expect(buildWorldView(g, 1000).npcs).toHaveLength(1);
+    g.handle(snapshot(2, []), 1000);
+    const v = buildWorldView(g, 2000);
+    expect(v.npcs).toEqual([]);
+    expect(v.remotes).toEqual([]);
   });
 });
 

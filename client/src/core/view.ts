@@ -1,15 +1,24 @@
 import type { GameState } from '../state/world';
 import { toWorldMove, type Vec2 } from '../input/joystick';
-import type { WorldView } from '../render/worldView';
+import type { NpcView, PlayerView, WorldView } from '../render/worldView';
+import { EntityKind } from '../protocol';
 
 /**
- * Snapshot of game state for the renderer: predicted local player, interpolated remotes,
- * ground items, and the hits received since the previous view. Drains game.hits, so each
- * hit appears in exactly one view.
+ * Snapshot of game state for the renderer: predicted local player, interpolated remotes and
+ * NPCs, ground items, and the hits received since the previous view. An entity is an NPC when
+ * its EntityInfo kind is Npc; players and entities with no EntityInfo yet stay in remotes.
+ * Drains game.hits, so each hit appears in exactly one view.
  */
 export function buildWorldView(game: GameState, now: number): WorldView {
   const hits = game.hits.drain().flatMap((b) => b.hits.map((h) => ({ target: h.target, damage: h.damage, died: h.died })));
-  return { local: game.local, remotes: game.remotes(now), groundItems: game.items.groundItems, hits };
+  const remotes: PlayerView[] = [];
+  const npcs: NpcView[] = [];
+  for (const r of game.remotes(now)) {
+    const info = game.items.entityInfo(r.id);
+    if (info?.kind === EntityKind.Npc) npcs.push({ id: r.id, npcType: info.npcType, x: r.x, z: r.z, heading: r.heading });
+    else remotes.push(r);
+  }
+  return { local: game.local, remotes, npcs, groundItems: game.items.groundItems, hits };
 }
 
 /**
