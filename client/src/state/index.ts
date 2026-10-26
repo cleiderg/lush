@@ -1,5 +1,6 @@
 export * from './collision';
 export * from './combat';
+export * from './interact';
 export * from './interpolation';
 export * from './items';
 export * from './prediction';
