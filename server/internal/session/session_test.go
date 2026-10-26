@@ -30,6 +30,7 @@ func (s *stats) AddDropped(n int)  { s.dropped.Add(int64(n)) }
 type rig struct {
 	t     *testing.T
 	w     *world.World
+	clock *world.FakeClock
 	sess  *session.Server
 	url   string
 	stats *stats
@@ -67,7 +68,7 @@ func newRigLog(t *testing.T, queue int, cfg session.Config, players store.Player
 	}
 	srv := httptest.NewServer(transport.NewWebSocket(st, transport.WithSendQueue(queue)).HTTPHandler(sess.ServeConn))
 	t.Cleanup(srv.Close)
-	return &rig{t: t, w: w, sess: sess, url: "ws" + strings.TrimPrefix(srv.URL, "http"), stats: st}
+	return &rig{t: t, w: w, clock: clock, sess: sess, url: "ws" + strings.TrimPrefix(srv.URL, "http"), stats: st}
 }
 
 func envelope(typ protocol.Message, build func(b *flatbuffers.Builder) flatbuffers.UOffsetT) []byte {
@@ -396,6 +397,7 @@ func TestGuestIdsRecycledWhenFull(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatal("first guest never left")
 		}
+		r.clock.Advance(time.Second) // past the logout lock
 		r.w.Tick()
 	}
 	d := r.dial(hello(v, ""))

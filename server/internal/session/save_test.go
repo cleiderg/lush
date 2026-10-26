@@ -20,6 +20,9 @@ import (
 
 const interval = 5 * time.Second
 
+// lock is logout_combat_lock_s in the default rules.
+const lock = 10 * time.Second
+
 type saveRec struct {
 	p   store.Player // as passed to Save
 	err error
@@ -109,10 +112,14 @@ type saveRig struct {
 
 func newSaveRig(t *testing.T) *saveRig {
 	t.Helper()
+	return newSaveRigCfg(t, cfg())
+}
+
+func newSaveRigCfg(t *testing.T, c session.Config) *saveRig {
+	t.Helper()
 	clock := world.NewFakeClock(time.Unix(0, 0))
 	w := world.New(world.DefaultConfig())
 	st := &recStore{Players: store.NewMemory()}
-	c := cfg()
 	c.SaveInterval = interval
 	sess := session.New(c, w, clock, st, nil)
 	t.Cleanup(sess.Close)
@@ -127,7 +134,7 @@ func newSaveRig(t *testing.T) *saveRig {
 	}
 	srv := httptest.NewServer(transport.NewWebSocket(&stats{}).HTTPHandler(sess.ServeConn))
 	t.Cleanup(srv.Close)
-	r := &rig{t: t, w: w, sess: sess, url: "ws" + strings.TrimPrefix(srv.URL, "http"), stats: &stats{}}
+	r := &rig{t: t, w: w, clock: clock, sess: sess, url: "ws" + strings.TrimPrefix(srv.URL, "http"), stats: &stats{}}
 	return &saveRig{r, clock, st}
 }
 
@@ -149,10 +156,27 @@ func (r *saveRig) intervalPasses() {
 	r.w.Tick()
 }
 
-// tickUntilGone ticks until the player has left the world.
+// tickUntilDisconnected ticks until the server has seen the player's
+// connection end; the player is still in the world, waiting out the logout lock.
+func (r *saveRig) tickUntilDisconnected(id world.PlayerID) {
+	r.t.Helper()
+	for i := 0; i < 2000 && !session.Disconnected(r.sess, id); i++ {
+		r.w.Tick()
+		time.Sleep(time.Millisecond)
+	}
+	if !session.Disconnected(r.sess, id) {
+		r.t.Fatal("disconnect never seen")
+	}
+}
+
+// tickUntilGone ticks until the player has left the world, advancing the
+// clock past the logout lock once the disconnect is seen.
 func (r *saveRig) tickUntilGone(id world.PlayerID) {
 	r.t.Helper()
 	for i := 0; i < 2000 && r.w.Player(id) != nil; i++ {
+		if session.Disconnected(r.sess, id) {
+			r.clock.Advance(lock)
+		}
 		r.w.Tick()
 		time.Sleep(time.Millisecond)
 	}
@@ -200,13 +224,9 @@ func TestDisconnectSavesFinalPosition(t *testing.T) {
 		t.Fatalf("player did not move: %+v", want)
 	}
 	c.c.CloseNow()
-	for i := 0; i < 2000 && r.w.Player(id) != nil; i++ {
-		if p := r.w.Player(id); p != nil {
-			want = p.Pos // last position before the leave is applied
-		}
-		r.w.Tick()
-		time.Sleep(time.Millisecond)
-	}
+	r.tickUntilDisconnected(id)
+	want = r.w.Player(id).Pos // last position before the player is removed
+	r.tickUntilGone(id)
 	r.st.waitFor(t, "logout save", func() bool { ok, _ := r.st.count(sid); return ok == 1 })
 	got := r.st.snapshot()[0].p
 	if got.X != want.X || got.Z != want.Y {
