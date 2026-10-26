@@ -1,32 +1,32 @@
 [
   {"id": 1, "key": "rabbit", "name": "Rabbit", "area": "aldrich_park", "level": 1, "hp": 3,
-   "accuracy": 0, "strength": 0, "defence": 0, "attack_speed": 4, "behaviour": "passive", "respawn_s": 15,
+   "accuracy": 0, "strength": 0, "defence": 0, "attack_speed": 4, "behaviour": "passive", "respawn_s": 15, "population": 12,
    "gold_min": 1, "gold_max": 3, "drops": []},
   {"id": 2, "key": "squirrel", "name": "Squirrel", "area": "aldrich_park", "level": 2, "hp": 5,
-   "accuracy": 2, "strength": 0, "defence": 2, "attack_speed": 4, "behaviour": "passive", "respawn_s": 20,
+   "accuracy": 2, "strength": 0, "defence": 2, "attack_speed": 4, "behaviour": "passive", "respawn_s": 20, "population": 10,
    "gold_min": 2, "gold_max": 6, "drops": [
      {"item": "acorn", "chance": 2, "quantity": 1}
    ]},
   {"id": 3, "key": "crow", "name": "Crow", "area": "aldrich_park", "level": 4, "hp": 8,
-   "accuracy": 5, "strength": 3, "defence": 3, "attack_speed": 4, "behaviour": "passive", "respawn_s": 30,
+   "accuracy": 5, "strength": 3, "defence": 3, "attack_speed": 4, "behaviour": "passive", "respawn_s": 30, "population": 8,
    "gold_min": 3, "gold_max": 10, "drops": [
      {"item": "shiny_trinket", "chance": 8, "quantity": 1}
    ]},
   {"id": 4, "key": "coyote", "name": "Coyote", "area": "south_fields", "level": 9, "hp": 20,
-   "accuracy": 12, "strength": 10, "defence": 8, "attack_speed": 4, "behaviour": "aggressive", "respawn_s": 45,
+   "accuracy": 12, "strength": 10, "defence": 8, "attack_speed": 4, "behaviour": "aggressive", "respawn_s": 45, "population": 8,
    "gold_min": 8, "gold_max": 25, "drops": [
      {"item": "coyote_pelt", "chance": 2, "quantity": 1},
      {"item": "leather_cap", "chance": 20, "quantity": 1}
    ]},
   {"id": 5, "key": "rogue_delivery_robot", "name": "Rogue delivery robot", "area": "south_fields", "level": 15, "hp": 35,
-   "accuracy": 20, "strength": 18, "defence": 25, "attack_speed": 5, "behaviour": "aggressive", "respawn_s": 60,
+   "accuracy": 20, "strength": 18, "defence": 25, "attack_speed": 5, "behaviour": "aggressive", "respawn_s": 60, "population": 5,
    "gold_min": 20, "gold_max": 50, "drops": [
      {"item": "scrap_metal", "chance": 2, "quantity": 1},
      {"item": "bike_lock", "chance": 32, "quantity": 1},
      {"item": "robot_plating", "chance": 64, "quantity": 1}
    ]},
   {"id": 6, "key": "coyote_alpha", "name": "Coyote alpha", "area": "south_fields", "level": 20, "hp": 50,
-   "accuracy": 28, "strength": 26, "defence": 22, "attack_speed": 4, "behaviour": "aggressive", "respawn_s": 180,
+   "accuracy": 28, "strength": 26, "defence": 22, "attack_speed": 4, "behaviour": "aggressive", "respawn_s": 180, "population": 1,
    "max_alive": 1,
    "gold_min": 40, "gold_max": 100, "drops": [
      {"item": "coyote_pelt", "chance": 1, "quantity": 3},
