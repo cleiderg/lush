@@ -56,15 +56,10 @@ func (s *recSink) take() []event {
 	return got
 }
 
-type commit struct {
-	a, b           world.PlayerID
-	offerA, offerB trade.Offer
-}
+type recCommitter struct{ got []trade.CommitRequest }
 
-type recCommitter struct{ got []commit }
-
-func (c *recCommitter) CommitTrade(a, b world.PlayerID, offerA, offerB trade.Offer) {
-	c.got = append(c.got, commit{a, b, offerA, offerB})
+func (c *recCommitter) CommitTrade(req trade.CommitRequest) {
+	c.got = append(c.got, req)
 }
 
 type fixture struct {
@@ -357,9 +352,12 @@ func TestAccept(t *testing.T) {
 			t.Fatalf("step %q", s.name)
 		}
 	}
-	want := []commit{{a: a, b: b, offerA: offerA, offerB: offerB}}
-	if !reflect.DeepEqual(f.commit.got, want) {
-		t.Errorf("commits = %+v, want %+v", f.commit.got, want)
+	if len(f.commit.got) != 1 {
+		t.Fatalf("commits = %+v, want 1", f.commit.got)
+	}
+	got := f.commit.got[0]
+	if got.A.Player != a || got.B.Player != b || !reflect.DeepEqual(got.A.Gave, offerA) || !reflect.DeepEqual(got.B.Gave, offerB) {
+		t.Errorf("commit = %+v, want a gives %+v, b gives %+v", got, offerA, offerB)
 	}
 	if f.sys.Trading(a) || f.sys.Trading(b) {
 		t.Error("trade still open after commit")

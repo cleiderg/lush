@@ -548,3 +548,54 @@ func BenchmarkBonuses(b *testing.B) {
 		_, _ = eq.Bonuses(d)
 	}
 }
+
+// TestLocked checks that every method that changes items, equipment or gold
+// fails with ErrInventoryLocked on a locked inventory, or a clone of one,
+// and changes nothing, and that unlocking lets changes through again.
+func TestLocked(t *testing.T) {
+	d := gameData(t)
+	acorn, dagger := itemID(t, d, "acorn"), itemID(t, d, "bronze_dagger")
+	ops := []struct {
+		name string
+		op   func(inv *world.Inventory) ([]world.Change, error)
+	}{
+		{"Add", func(inv *world.Inventory) ([]world.Change, error) { return inv.Add(d, acorn, 1) }},
+		{"Remove", func(inv *world.Inventory) ([]world.Change, error) { return inv.Remove(acorn, 1) }},
+		{"RemoveAt", func(inv *world.Inventory) ([]world.Change, error) { return inv.RemoveAt(0) }},
+		{"RemoveFromSlot", func(inv *world.Inventory) ([]world.Change, error) { return inv.RemoveFromSlot(0, 1) }},
+		{"AddGold", func(inv *world.Inventory) ([]world.Change, error) { return inv.AddGold(1) }},
+		{"SpendGold", func(inv *world.Inventory) ([]world.Change, error) { return inv.SpendGold(1) }},
+		{"Equip", func(inv *world.Inventory) ([]world.Change, error) { return inv.Equip(d, 1, 99) }},
+		{"Unequip", func(inv *world.Inventory) ([]world.Change, error) { return inv.Unequip(gamedata.SlotWeapon) }},
+	}
+	for _, tt := range ops {
+		t.Run(tt.name, func(t *testing.T) {
+			inv, _, err := world.NewStartingInventory(d)
+			if err != nil {
+				t.Fatal(err)
+			}
+			inv.Slots[0] = world.Stack{Item: acorn, Qty: 5}
+			inv.Slots[1] = world.Stack{Item: dagger, Qty: 1}
+			inv.SetLocked(true)
+			if !inv.Locked() {
+				t.Fatal("not locked after SetLocked")
+			}
+			before := clone(inv)
+			changes, err := tt.op(&inv)
+			if !errors.Is(err, world.ErrInventoryLocked) || changes != nil {
+				t.Fatalf("locked: changes %v, err %v; want ErrInventoryLocked", changes, err)
+			}
+			if !reflect.DeepEqual(inv, before) {
+				t.Fatalf("locked inventory changed: %+v, want %+v", inv, before)
+			}
+			cp := inv.Clone()
+			if _, err := tt.op(&cp); !errors.Is(err, world.ErrInventoryLocked) {
+				t.Fatalf("locked clone: err %v, want ErrInventoryLocked", err)
+			}
+			inv.SetLocked(false)
+			if _, err := tt.op(&inv); err != nil {
+				t.Fatalf("unlocked: %v", err)
+			}
+		})
+	}
+}

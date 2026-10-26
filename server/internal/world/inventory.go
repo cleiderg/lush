@@ -24,6 +24,7 @@ var (
 	ErrLevelTooLow      = errors.New("combat level too low to equip")
 	ErrNothingEquipped  = errors.New("nothing equipped in slot")
 	ErrBadEquipmentSlot = errors.New("not an equipment slot")
+	ErrInventoryLocked  = errors.New("inventory locked")
 )
 
 // Stack is the content of one inventory slot. Item 0 means the slot is empty.
@@ -113,11 +114,25 @@ type Change struct {
 // Inventory is a player's items and gold: a fixed number of slots
 // (Rules.InventorySlots), the equipment worn (which takes no slot) and a gold
 // balance that is never negative. Only the tick may mutate it.
+//
+// A locked inventory (see SetLocked) refuses every change: each method that would
+// change items, equipment or gold returns ErrInventoryLocked instead. Clone
+// keeps the lock, so a system working on a copy is refused too.
 type Inventory struct {
 	Slots     []Stack
 	Equipment Equipment
 	Gold      int
+
+	locked bool
 }
+
+// SetLocked locks or unlocks the inventory. While locked, every change fails
+// with ErrInventoryLocked. The trade system locks both players' inventories
+// while their trade is being saved.
+func (inv *Inventory) SetLocked(locked bool) { inv.locked = locked }
+
+// Locked reports whether the inventory is locked.
+func (inv *Inventory) Locked() bool { return inv.locked }
 
 // NewInventory returns an empty inventory with d.Rules.InventorySlots slots.
 func NewInventory(d *gamedata.Data) Inventory {
@@ -191,6 +206,9 @@ func (inv *Inventory) firstFree() int {
 // existing stack or one free slot; other items take one free slot each. If
 // they don't all fit, nothing changes.
 func (inv *Inventory) Add(d *gamedata.Data, item gamedata.ItemID, qty int) ([]Change, error) {
+	if inv.locked {
+		return nil, fmt.Errorf("add item %d: %w", item, ErrInventoryLocked)
+	}
 	it, ok := d.Item(item)
 	if !ok {
 		return nil, fmt.Errorf("add item %d: %w", item, ErrUnknownItem)
@@ -227,6 +245,9 @@ func (inv *Inventory) Add(d *gamedata.Data, item gamedata.ItemID, qty int) ([]Ch
 // Remove takes qty of item out of the inventory slots, from the last slot
 // holding it backwards. If fewer than qty are held, nothing changes.
 func (inv *Inventory) Remove(item gamedata.ItemID, qty int) ([]Change, error) {
+	if inv.locked {
+		return nil, fmt.Errorf("remove item %d: %w", item, ErrInventoryLocked)
+	}
 	if qty <= 0 {
 		return nil, fmt.Errorf("remove %d × item %d: %w", qty, item, ErrBadQuantity)
 	}
@@ -255,6 +276,9 @@ func (inv *Inventory) Remove(item gamedata.ItemID, qty int) ([]Change, error) {
 // RemoveAt takes one item out of inventory slot index. It fails, changing
 // nothing, if there is no such slot or it is empty.
 func (inv *Inventory) RemoveAt(index int) ([]Change, error) {
+	if inv.locked {
+		return nil, fmt.Errorf("remove from slot %d: %w", index, ErrInventoryLocked)
+	}
 	if index < 0 || index >= len(inv.Slots) {
 		return nil, fmt.Errorf("remove from slot %d: %w", index, ErrBadSlot)
 	}
@@ -274,6 +298,9 @@ func (inv *Inventory) RemoveAt(index int) ([]Change, error) {
 // changing nothing, if there is no such slot, it is empty, qty is not positive
 // or the slot holds fewer than qty.
 func (inv *Inventory) RemoveFromSlot(index, qty int) ([]Change, error) {
+	if inv.locked {
+		return nil, fmt.Errorf("remove from slot %d: %w", index, ErrInventoryLocked)
+	}
 	if index < 0 || index >= len(inv.Slots) {
 		return nil, fmt.Errorf("remove from slot %d: %w", index, ErrBadSlot)
 	}
@@ -297,6 +324,9 @@ func (inv *Inventory) RemoveFromSlot(index, qty int) ([]Change, error) {
 
 // AddGold increases the gold balance by amount.
 func (inv *Inventory) AddGold(amount int) ([]Change, error) {
+	if inv.locked {
+		return nil, fmt.Errorf("add %d gold: %w", amount, ErrInventoryLocked)
+	}
 	if amount <= 0 {
 		return nil, fmt.Errorf("add %d gold: %w", amount, ErrBadQuantity)
 	}
@@ -310,6 +340,9 @@ func (inv *Inventory) AddGold(amount int) ([]Change, error) {
 // SpendGold decreases the gold balance by amount. It fails, changing nothing,
 // if the balance would go below 0.
 func (inv *Inventory) SpendGold(amount int) ([]Change, error) {
+	if inv.locked {
+		return nil, fmt.Errorf("spend %d gold: %w", amount, ErrInventoryLocked)
+	}
 	if amount <= 0 {
 		return nil, fmt.Errorf("spend %d gold: %w", amount, ErrBadQuantity)
 	}
@@ -325,6 +358,9 @@ func (inv *Inventory) SpendGold(amount int) ([]Change, error) {
 // inventory slot. It fails, changing nothing, if the slot is empty, the item
 // isn't equipment or level is below the item's level to equip.
 func (inv *Inventory) Equip(d *gamedata.Data, index, level int) ([]Change, error) {
+	if inv.locked {
+		return nil, fmt.Errorf("equip slot %d: %w", index, ErrInventoryLocked)
+	}
 	if index < 0 || index >= len(inv.Slots) {
 		return nil, fmt.Errorf("equip slot %d: %w", index, ErrBadSlot)
 	}
@@ -357,6 +393,9 @@ func (inv *Inventory) Equip(d *gamedata.Data, index, level int) ([]Change, error
 // Unequip moves the item worn in slot into the first free inventory slot. It
 // fails, changing nothing, if nothing is worn there or the inventory is full.
 func (inv *Inventory) Unequip(slot gamedata.Slot) ([]Change, error) {
+	if inv.locked {
+		return nil, fmt.Errorf("unequip %q: %w", slot, ErrInventoryLocked)
+	}
 	ref := inv.Equipment.ref(slot)
 	if ref == nil {
 		return nil, fmt.Errorf("unequip %q: %w", slot, ErrBadEquipmentSlot)
