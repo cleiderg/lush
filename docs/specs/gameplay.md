@@ -44,7 +44,7 @@
 | Rogue delivery robot | South fields | 5 | 15 | 35 | 20 / 18 / 25 | 5 | Aggressive | 60 s | 20–50 gold; Scrap metal (1 in 2); Bike lock (1 in 32); Robot plating (1 in 64) |
 | Coyote alpha | South fields | 1 | 20 | 50 | 28 / 26 / 22 | 4 | Aggressive | 3 min | 40–100 gold; 3 Coyote pelts; Bike helmet (1 in 8) |
 
-Every kill drops the gold; each item rolls separately. Drops appear on the ground where the NPC died and follow the same rules as PvP drops below, with the killer as owner.
+Every kill credits the gold straight to the killer's balance; each item rolls separately. Item drops appear on the ground where the NPC died and follow the same rules as PvP drops below, with the killer as owner.
 
 ## Items
 
