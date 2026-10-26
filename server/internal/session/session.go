@@ -35,6 +35,11 @@ import (
 	"github.com/cleiderg/lush/server/internal/world"
 )
 
+// MaxGuestID is the highest session id a guest can get: one below 0xC000,
+// where the world's NPC id range (0xC000..0xFFFF, #142) starts and AddPlayer
+// refuses player ids. Replace with world.DefaultNPCIDMin-1 once #152 merges.
+const MaxGuestID = 0xC000 - 1
+
 // Config holds session tuning.
 type Config struct {
 	TickRate     int
@@ -44,8 +49,8 @@ type Config struct {
 	HelloTimeout time.Duration // how long a connection may stay silent before Hello
 	// MaxMsgPerSec disconnects clients that send faster than this (0 = 120).
 	MaxMsgPerSec int
-	// MaxGuests caps session ids (0 = 65535, the wire limit). When every id is
-	// taken, the guest that has been offline longest loses its session id and
+	// MaxGuests caps session ids (0 or above MaxGuestID = MaxGuestID, so guest
+	// ids never reach the NPC id range). When every id is taken, the guest that has been offline longest loses its session id and
 	// the id is reused; that player gets a new id on its next Hello.
 	MaxGuests int
 	// SaveInterval is how often live players' positions are saved
@@ -142,8 +147,8 @@ func New(cfg Config, w *world.World, clock world.Clock, players store.Players, l
 	if cfg.MaxMsgPerSec <= 0 {
 		cfg.MaxMsgPerSec = 120
 	}
-	if cfg.MaxGuests <= 0 || cfg.MaxGuests > math.MaxUint16 {
-		cfg.MaxGuests = math.MaxUint16
+	if cfg.MaxGuests <= 0 || cfg.MaxGuests > MaxGuestID {
+		cfg.MaxGuests = MaxGuestID
 	}
 	if cfg.TickRate <= 0 {
 		cfg.TickRate = int(time.Second / w.TickInterval())
