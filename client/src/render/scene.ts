@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Character } from './character';
 import { CameraRig } from './cameraRig';
 import { RemotePlayers } from './remotePlayers';
+import { HealthBars, type BarEntry } from './healthBars';
 import { CampusMap, loadCampus } from './campusMap';
 import { AreaMarkers, loadAreas } from './gameAreas';
 import type { CampusData } from './mapData';
@@ -32,6 +33,8 @@ export class WorldScene {
   readonly areas = new AreaMarkers(loadAreas());
   private readonly player = new Character();
   private readonly remotes = new RemotePlayers();
+  readonly healthBars = new HealthBars();
+  private readonly bars: { x: number; z: number; ratio: number }[] = [];
   private lastX: number | null = null;
   private lastZ = 0;
 
@@ -41,7 +44,7 @@ export class WorldScene {
     const sun = new THREE.DirectionalLight(0xffffff, 1.6);
     sun.position.set(30, 60, 20);
     this.scene.add(sun);
-    this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.areas.group, this.player.root, this.remotes.group);
+    this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.areas.group, this.player.root, this.remotes.group, this.healthBars.group);
   }
 
   update(view: WorldView): void {
@@ -50,8 +53,30 @@ export class WorldScene {
     this.lastX = local.x;
     this.lastZ = local.z;
     this.player.update(local.x, local.z, local.heading, dist, local.animation ?? 0);
-    this.remotes.update(view.remotes);
+    const lookup = view.entities;
+    this.player.setEquipment(lookup?.entityInfo(local.id)?.equipment, lookup);
+    this.remotes.update(view.remotes, lookup);
     this.rig.follow(local.x, local.z);
+    this.healthBars.update(this.barEntries(view), this.rig.camera.quaternion);
+  }
+
+  /** Bar entries for every drawn entity, reusing the same objects each frame. */
+  private barEntries(view: WorldView): readonly BarEntry[] {
+    const lookup = view.entities;
+    let n = 0;
+    if (lookup) {
+      for (const p of [view.local, ...view.remotes]) {
+        const ratio = lookup.healthRatio(p.id);
+        if (!(ratio < 1)) continue;
+        const e = (this.bars[n] ??= { x: 0, z: 0, ratio: 1 });
+        e.x = p.x;
+        e.z = p.z;
+        e.ratio = ratio;
+        n++;
+      }
+    }
+    this.bars.length = n;
+    return this.bars;
   }
 }
 
