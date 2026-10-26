@@ -12,7 +12,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/world/areas"
 )
 
-func TestGameSystemsRegisterItemsShopRegenBeforeSession(t *testing.T) {
+func TestGameSystemsRegisterItemsShopTradeRegenBeforeSession(t *testing.T) {
 	data, err := gamedata.Default()
 	if err != nil {
 		t.Fatal(err)
@@ -40,7 +40,7 @@ func TestGameSystemsRegisterItemsShopRegenBeforeSession(t *testing.T) {
 		}
 		names = append(names, s.Name())
 	}
-	want := []string{"movement", "emote", "chat", "items", "shop", "regen", "session"}
+	want := []string{"movement", "emote", "chat", "items", "shop", "trade", "regen", "session"}
 	if !slices.Equal(names, want) {
 		t.Fatalf("systems = %v, want %v", names, want)
 	}
