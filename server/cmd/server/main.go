@@ -24,6 +24,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/items"
 	"github.com/cleiderg/lush/server/internal/systems/regen"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
+	"github.com/cleiderg/lush/server/internal/systems/trade"
 	"github.com/cleiderg/lush/server/internal/transport"
 	"github.com/cleiderg/lush/server/internal/world"
 	"github.com/cleiderg/lush/server/internal/world/areas"
@@ -196,16 +197,19 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 // gameSystems lists the world systems in registration order. Order matters:
 // movement applies inputs, emote overrides animation, chat delivers, items
 // and shop apply item actions and trades with the stall (whose results the
-// session sends at once), regen heals (SW1), and the session sends
+// session sends at once), trade runs player trades and commits them through
+// the session's Committer, regen heals (SW1), and the session sends
 // snapshots, stats and inventory last. tileSize is the collision grid's cell
-// size in metres, the unit of the shop distance.
+// size in metres, the unit of the shop and trade distances.
 func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, tileSize float64, clock world.Clock, sess *session.Server) ([]world.System, error) {
 	heal, err := regen.New(data.Rules, clock)
 	if err != nil {
 		return nil, err
 	}
+	trades := trade.New(data, lookup, tileSize, sess, sess)
+	sess.SetTrades(trades)
 	return []world.System{mover, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess),
-		items.New(data), shop.New(data, lookup, tileSize, sess), heal, sess}, nil
+		items.New(data), shop.New(data, lookup, tileSize, sess), trades, heal, sess}, nil
 }
 
 // openDatabase connects a pool and applies pending migrations. The returned

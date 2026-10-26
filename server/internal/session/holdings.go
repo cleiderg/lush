@@ -83,6 +83,9 @@ func equipRef(e *world.Equipment, slot gamedata.Slot) *gamedata.ItemID {
 // auditPayload is the JSON detail of an economy audit entry.
 type auditPayload struct {
 	Reason string `json:"reason"`
+	// Change is the change kind ("item_add", "gold", ...) when the entry's
+	// kind is not the change kind itself, as for trades.
+	Change string `json:"change,omitempty"`
 	Item   int    `json:"item,omitempty"`
 	Qty    int    `json:"qty,omitempty"`
 	Gold   int    `json:"gold,omitempty"`

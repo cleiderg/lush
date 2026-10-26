@@ -8,11 +8,12 @@ import (
 	"github.com/cleiderg/lush/server/internal/session"
 	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/trade"
 	"github.com/cleiderg/lush/server/internal/world"
 	"github.com/cleiderg/lush/server/internal/world/areas"
 )
 
-func TestGameSystemsRegisterItemsShopRegenBeforeSession(t *testing.T) {
+func TestGameSystemsRegisterItemsShopTradeRegenBeforeSession(t *testing.T) {
 	data, err := gamedata.Default()
 	if err != nil {
 		t.Fatal(err)
@@ -40,8 +41,11 @@ func TestGameSystemsRegisterItemsShopRegenBeforeSession(t *testing.T) {
 		}
 		names = append(names, s.Name())
 	}
-	want := []string{"movement", "emote", "chat", "items", "shop", "regen", "session"}
+	want := []string{"movement", "emote", "chat", "items", "shop", "trade", "regen", "session"}
 	if !slices.Equal(names, want) {
 		t.Fatalf("systems = %v, want %v", names, want)
+	}
+	if _, ok := systems[slices.Index(names, "trade")].(*trade.System); !ok {
+		t.Fatalf("system %q is %T, want *trade.System", "trade", systems[slices.Index(names, "trade")])
 	}
 }

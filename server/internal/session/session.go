@@ -30,6 +30,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/emote"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
+	"github.com/cleiderg/lush/server/internal/systems/trade"
 	"github.com/cleiderg/lush/server/internal/transport"
 	"github.com/cleiderg/lush/server/internal/world"
 )
@@ -98,7 +99,8 @@ type op struct {
 }
 
 // Server is the session layer. It implements world.System, chat.Sink,
-// shop.Sink and transport.Handler (via ServeConn).
+// shop.Sink, trade.Sink, trade.Committer and transport.Handler (via
+// ServeConn).
 type Server struct {
 	cfg   Config
 	w     *world.World
@@ -120,6 +122,7 @@ type Server struct {
 	saver *saver
 
 	// Tick-goroutine only.
+	trades   *trade.System // set by SetTrades; nil without trading
 	live     map[world.PlayerID]*guest
 	gone     map[world.PlayerID]*guest // live players with no connection, waiting out the logout lock
 	nextSave time.Time
@@ -237,7 +240,9 @@ func (s *Server) ServeConn(c transport.Conn) {
 			}
 		case protocol.MessagePing:
 			c.Send(encodePong(m.pingToken))
-		case protocol.MessageItemAction, protocol.MessageShopBuy, protocol.MessageShopSell:
+		case protocol.MessageItemAction, protocol.MessageShopBuy, protocol.MessageShopSell,
+			protocol.MessageTradeRequest, protocol.MessageTradeOffer, protocol.MessageTradeRemove,
+			protocol.MessageTradeSetGold, protocol.MessageTradeAccept, protocol.MessageTradeCancel:
 			if cmd := m.command(g.id); cmd != nil {
 				s.w.Enqueue(cmd)
 			}
@@ -440,7 +445,7 @@ func (s *Server) Handle(cmd world.Command, p *world.Player) {
 }
 
 // Tick applies joins and leaves, removes disconnected players whose logout
-// lock has passed, then sends every connected player a snapshot.
+// lock has passed and who have no trade being saved, then sends every connected player a snapshot.
 func (s *Server) Tick(w *world.World, _ time.Duration) {
 	s.mu.Lock()
 	ops := s.ops
@@ -462,6 +467,9 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 			!p.LastCombat.IsZero() && now.Before(p.LastCombat.Add(lock))) {
 			continue // closing the tab must not end a fight early
 		}
+		if p != nil && s.trades != nil && s.trades.Committing(id) {
+			continue // the trade's result must reach the player first
+		}
 		s.remove(g)
 	}
 
@@ -471,7 +479,7 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 			s.econ = s.appendEconomy(s.econ, g, p)
 		}
 	}
-	s.saver.submitEconomy(s.econ)
+	s.saver.submitEconomy(s.econ...)
 
 	if !now.Before(s.nextSave) {
 		if !s.nextSave.IsZero() {
@@ -580,7 +588,7 @@ func (s *Server) remove(g *guest) {
 	req := saveReq{storeID: g.storeID, x: g.pos.X, z: g.pos.Y, xp: int64(g.xp), ver: g.ver}
 	s.mu.Unlock()
 	if p := s.w.Player(g.id); p != nil {
-		s.saver.submitEconomy(s.appendEconomy(nil, g, p))
+		s.saver.submitEconomy(s.appendEconomy(nil, g, p)...)
 	}
 	s.saver.submit([]saveReq{req})
 	s.w.RemovePlayer(g.id)
@@ -621,10 +629,13 @@ func (s *Server) ShopResult(to world.PlayerID, r shop.Result) {
 }
 
 // appendEconomy drains p's economy outbox and appends one store write per
-// event: the holdings from the event's inventory copy and an audit entry per
+// event, except completed trades, which CommitTrade already saved: the holdings from the event's inventory copy and an audit entry per
 // change, tagged with the event's reason. Tick goroutine only.
 func (s *Server) appendEconomy(dst []econReq, g *guest, p *world.Player) []econReq {
 	for _, ev := range p.DrainEconomy() {
+		if ev.Reason == trade.ReasonTrade {
+			continue // saved by the trade's own transaction (CommitTrade)
+		}
 		h, err := toHoldings(ev.Inv)
 		if err != nil {
 			s.log.Error("economy event", "player", g.id, "store_id", g.storeID, "reason", ev.Reason, "err", err)
@@ -634,7 +645,7 @@ func (s *Server) appendEconomy(dst []econReq, g *guest, p *world.Player) []econR
 		for i := range entries {
 			entries[i].Actor = g.storeID
 		}
-		dst = append(dst, econReq{storeID: g.storeID, holdings: h, entries: entries})
+		dst = append(dst, econEvent(g.storeID, h, entries))
 	}
 	return dst
 }
@@ -664,7 +675,7 @@ func (s *Server) SaveAll(ctx context.Context) error {
 			s.econ = s.appendEconomy(s.econ, g, p)
 		}
 	}
-	s.saver.submitEconomy(s.econ)
+	s.saver.submitEconomy(s.econ...)
 	s.saver.submit(s.collectSaves())
 	return s.saver.flush(ctx)
 }
@@ -672,3 +683,78 @@ func (s *Server) SaveAll(ctx context.Context) error {
 // Close stops the saver after its current write. Call SaveAll first to keep
 // pending saves.
 func (s *Server) Close() { s.saver.close() }
+
+// ---- trades ----
+
+// SetTrades connects the trade system, so that CommitTrade can report results
+// to it and a disconnected player is not removed while their trade is being
+// saved. Call it before the world starts ticking.
+func (s *Server) SetTrades(t *trade.System) { s.trades = t }
+
+// TradeRequestNotice implements trade.Sink. Called on the tick goroutine.
+func (s *Server) TradeRequestNotice(to, from world.PlayerID) {
+	if g := s.live[to]; g != nil && g.conn != nil {
+		g.conn.Send(encodeTradeRequestNotice(from))
+	}
+}
+
+// TradeState implements trade.Sink. Called on the tick goroutine.
+func (s *Server) TradeState(to world.PlayerID, v trade.View) {
+	if g := s.live[to]; g != nil && g.conn != nil {
+		g.conn.Send(encodeTradeState(s.bld, v))
+	}
+}
+
+// TradeResult implements trade.Sink. Called on the tick goroutine, before
+// this Tick sends the changed PlayerStats and InventoryState.
+func (s *Server) TradeResult(to world.PlayerID, r trade.Result) {
+	if g := s.live[to]; g != nil && g.conn != nil {
+		g.conn.Send(encodeTradeResult(r))
+	}
+}
+
+// CommitTrade implements trade.Committer. It first queues both players'
+// pending economy events, then the trade as one ApplyEconomy holding both
+// players' resulting holdings and a "trade" audit entry per change, with
+// Actor and Counterparty set to the two players. The saver writes it after
+// every earlier write of either player, and the result goes back to the trade
+// system through Resolve. Called on the tick goroutine; never blocks.
+func (s *Server) CommitTrade(req trade.CommitRequest) {
+	resolve := func(ok bool) {
+		if s.trades != nil {
+			s.trades.Resolve(req.ID, ok)
+		}
+	}
+	ga, gb := s.live[req.A.Player], s.live[req.B.Player]
+	pa, pb := s.w.Player(req.A.Player), s.w.Player(req.B.Player)
+	if ga == nil || gb == nil || pa == nil || pb == nil {
+		s.log.Error("commit trade: player not live", "a", req.A.Player, "b", req.B.Player)
+		resolve(false)
+		return
+	}
+	ha, errA := toHoldings(req.A.Inv)
+	hb, errB := toHoldings(req.B.Inv)
+	if err := errors.Join(errA, errB); err != nil {
+		s.log.Error("commit trade", "a", ga.storeID, "b", gb.storeID, "err", err)
+		resolve(false)
+		return
+	}
+	entries := tradeEntries(nil, req.A.Changes, ga.storeID, gb.storeID)
+	entries = tradeEntries(entries, req.B.Changes, gb.storeID, ga.storeID)
+	earlier := s.appendEconomy(s.appendEconomy(nil, ga, pa), gb, pb)
+	s.saver.submitEconomy(append(earlier, econReq{
+		changes: []store.EconomyChange{{PlayerID: ga.storeID, Holdings: ha}, {PlayerID: gb.storeID, Holdings: hb}},
+		entries: entries,
+		done:    resolve,
+	})...)
+}
+
+// tradeEntries appends an audit entry of kind "trade" per change, made by
+// actor with counterparty.
+func tradeEntries(dst []store.Entry, changes []world.Change, actor, counterparty int64) []store.Entry {
+	for _, c := range changes {
+		dst = append(dst, store.Entry{Kind: trade.ReasonTrade, Actor: actor, Counterparty: counterparty,
+			Payload: auditPayload{Reason: trade.ReasonTrade, Change: c.Kind.String(), Item: int(c.Item), Qty: c.Qty, Gold: c.Gold}})
+	}
+	return dst
+}
