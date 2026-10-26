@@ -1,4 +1,8 @@
-import { decode, encodeHello, type ServerMessage } from './codec';
+import type { EquipSlot, ItemActionKind } from '../protocol';
+import {
+  decode, encodeAttackTarget, encodeHello, encodeItemAction, encodePickUp, encodeShopBuy, encodeShopSell,
+  type ServerMessage,
+} from './codec';
 import type { Transport, TransportFactory } from './transport';
 
 export const TOKEN_KEY = 'lush.guestToken';
@@ -74,6 +78,27 @@ export class Session {
 
   send(bytes: Uint8Array): void {
     if (this.ready) this.transport?.send(bytes);
+  }
+
+  /** Equip or Eat the item in inventory slot `slot`, or Unequip `equipSlot`. */
+  sendItemAction(action: ItemActionKind, slot: number, equipSlot?: EquipSlot): void {
+    this.send(encodeItemAction(action, slot, equipSlot));
+  }
+
+  sendShopBuy(itemId: number, quantity: number): void {
+    this.send(encodeShopBuy(itemId, quantity));
+  }
+
+  sendShopSell(slot: number, quantity: number): void {
+    this.send(encodeShopSell(slot, quantity));
+  }
+
+  sendPickUp(groundItemId: number): void {
+    this.send(encodePickUp(groundItemId));
+  }
+
+  sendAttackTarget(targetId: number): void {
+    this.send(encodeAttackTarget(targetId));
   }
 
   private connect(): void {

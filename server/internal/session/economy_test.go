@@ -90,12 +90,13 @@ func (l *logBuf) String() string {
 }
 
 type econRig struct {
-	t    *testing.T
-	d    *gamedata.Data
-	w    *world.World
-	s    *Server
-	st   *econStore
-	logs *logBuf
+	clock *world.FakeClock
+	t     *testing.T
+	d     *gamedata.Data
+	w     *world.World
+	s     *Server
+	st    *econStore
+	logs  *logBuf
 
 	hashes map[*guest]string
 }
@@ -109,14 +110,15 @@ func newEconRig(t *testing.T) *econRig {
 	st := &econStore{Memory: store.NewMemory()}
 	logs := &logBuf{}
 	w := world.New(world.DefaultConfig())
-	s := New(Config{Data: d}, w, world.NewFakeClock(time.Unix(0, 0)), st, slog.New(slog.NewTextHandler(logs, nil)))
+	clock := world.NewFakeClock(time.Unix(0, 0))
+	s := New(Config{Data: d}, w, clock, st, slog.New(slog.NewTextHandler(logs, nil)))
 	t.Cleanup(s.Close)
 	for _, sys := range []world.System{items.New(d), s} {
 		if err := w.Register(sys); err != nil {
 			t.Fatal(err)
 		}
 	}
-	return &econRig{t: t, d: d, w: w, s: s, st: st, logs: logs, hashes: map[*guest]string{}}
+	return &econRig{clock: clock, t: t, d: d, w: w, s: s, st: st, logs: logs, hashes: map[*guest]string{}}
 }
 
 // addPlayer creates a stored guest with the starting kit and puts it in the
@@ -370,10 +372,15 @@ func TestLeaveDrainsOutboxAndSaveAllWaits(t *testing.T) {
 	stay, sg := r.addPlayer("b")
 	start := p.Inv.Gold
 
-	gain(t, p, 7)
 	r.s.mu.Lock()
 	r.s.ops = append(r.s.ops, op{g: g}) // leave, as a closed connection queues it
 	r.s.mu.Unlock()
+	r.w.Tick() // disconnected; stays in the world for the logout lock
+	if r.w.Player(p.ID) == nil {
+		t.Fatal("player left before the logout lock ended")
+	}
+	r.clock.Advance(r.d.Rules.LogoutCombatLock())
+	gain(t, p, 7) // pending when the player leaves the world
 	r.w.Tick()
 	if r.w.Player(p.ID) != nil {
 		t.Fatal("player still in the world")

@@ -78,11 +78,12 @@ type guest struct {
 	xp      int        // combat XP, restored on resume
 	inv     world.Inventory
 	conns   int           // connections that completed the handshake and have not ended
-	idle    *list.Element // in Server.idle while conns == 0
+	idle    *list.Element // in Server.idle while conns == 0 and out of the world
 
 	// Tick-goroutine only.
 	conn    transport.Conn
 	lastSeq uint32
+	goneAt  time.Time // when the last connection ended, while waiting out the logout lock
 	// What the client last got in PlayerStats and InventoryState.
 	sentStats stats
 	sentInv   world.Inventory
@@ -119,6 +120,7 @@ type Server struct {
 
 	// Tick-goroutine only.
 	live     map[world.PlayerID]*guest
+	gone     map[world.PlayerID]*guest // live players with no connection, waiting out the logout lock
 	nextSave time.Time
 	saves    []saveReq
 	econ     []econReq
@@ -162,7 +164,7 @@ func New(cfg Config, w *world.World, clock world.Clock, players store.Players, l
 	return &Server{saver: newSaver(players, log), cfg: cfg, w: w, log: log, clock: clock, store: players,
 		data: data, catalog: encodeItemCatalog(data), newToken: newToken,
 		guests: map[int64]*guest{}, idle: list.New(), conns: map[transport.Conn]struct{}{},
-		live: map[world.PlayerID]*guest{}, grid: interest.NewGrid(), bld: flatbuffers.NewBuilder(1024)}
+		live: map[world.PlayerID]*guest{}, gone: map[world.PlayerID]*guest{}, grid: interest.NewGrid(), bld: flatbuffers.NewBuilder(1024)}
 }
 
 // ---- connection goroutines ----
@@ -199,9 +201,7 @@ func (s *Server) ServeConn(c transport.Conn) {
 		s.mu.Lock()
 		delete(s.conns, c)
 		s.ops = append(s.ops, op{g: g, conn: c})
-		if g.conns--; g.conns == 0 {
-			g.idle = s.idle.PushBack(g)
-		}
+		g.conns-- // the tick marks g idle once it has left the world
 		s.mu.Unlock()
 	}()
 
@@ -330,8 +330,8 @@ func (s *Server) resolve(ctx context.Context, tok string) (sp store.Player, toke
 
 // guestLocked returns the session guest for a stored player, assigning a
 // session id if it has none. When every id is in use it drops the id of the
-// guest offline longest and reuses it; that guest's leave is already queued
-// ahead of the new join. It returns nil if all guests are online.
+// guest offline longest and reuses it; only guests already out of the world
+// are offline. It returns nil if all guests are online.
 // Caller holds s.mu.
 func (s *Server) guestLocked(sp store.Player, fresh bool) (*guest, error) {
 	if g := s.guests[sp.ID]; g != nil {
@@ -434,7 +434,8 @@ func (s *Server) Handle(cmd world.Command, p *world.Player) {
 	p.HasDesired = true
 }
 
-// Tick applies joins and leaves, then sends every connected player a snapshot.
+// Tick applies joins and leaves, removes disconnected players whose logout
+// lock has passed, then sends every connected player a snapshot.
 func (s *Server) Tick(w *world.World, _ time.Duration) {
 	s.mu.Lock()
 	ops := s.ops
@@ -448,6 +449,17 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		}
 	}
 
+	now := s.clock.Now()
+	lock := s.data.Rules.LogoutCombatLock()
+	for id, g := range s.gone {
+		p := w.Player(id)
+		if p != nil && (now.Before(g.goneAt.Add(lock)) ||
+			!p.LastCombat.IsZero() && now.Before(p.LastCombat.Add(lock))) {
+			continue // closing the tab must not end a fight early
+		}
+		s.remove(g)
+	}
+
 	s.econ = s.econ[:0]
 	for id, g := range s.live {
 		if p := w.Player(id); p != nil {
@@ -456,7 +468,7 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 	}
 	s.saver.submitEconomy(s.econ)
 
-	if now := s.clock.Now(); !now.Before(s.nextSave) {
+	if !now.Before(s.nextSave) {
 		if !s.nextSave.IsZero() {
 			s.saver.submit(s.collectSaves())
 		}
@@ -493,7 +505,9 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 	g.conn = c
 	g.lastSeq = 0 // input sequence numbers are per connection
 	if p := s.w.Player(g.id); p != nil && s.live[g.id] == g {
-		// Still in the world from the previous connection.
+		// Still in the world from the previous connection, or waiting out
+		// the logout lock after it ended: take over the same player.
+		delete(s.gone, g.id)
 		c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate))
 		s.sendInitial(g, p)
 		return
@@ -538,11 +552,22 @@ func (s *Server) sendChanged(g *guest, p *world.Player) {
 	}
 }
 
+// leave handles a connection that ended. The player stays in the world, seen
+// by others, until the logout lock has passed (see Tick).
 func (s *Server) leave(g *guest, c transport.Conn) {
 	if g.conn != c {
-		return // a newer connection already took over
+		// A newer connection already took over, or the join failed.
+		s.idleIfGone(g)
+		return
 	}
 	g.conn = nil
+	g.goneAt = s.clock.Now()
+	s.gone[g.id] = g
+	s.log.Info("player disconnected", "player", g.id)
+}
+
+// remove takes a disconnected player out of the world and saves it.
+func (s *Server) remove(g *guest) {
 	s.mu.Lock()
 	if p := s.w.Player(g.id); p != nil {
 		g.pos, g.xp, g.inv = p.Pos, p.XP, cloneInventory(p.Inv)
@@ -556,7 +581,22 @@ func (s *Server) leave(g *guest, c transport.Conn) {
 	s.w.RemovePlayer(g.id)
 	s.grid.Remove(g.id)
 	delete(s.live, g.id)
+	delete(s.gone, g.id)
+	s.idleIfGone(g)
 	s.log.Info("player left", "player", g.id)
+}
+
+// idleIfGone marks g offline, so its session id may be reused, once it has
+// no connections and is out of the world.
+func (s *Server) idleIfGone(g *guest) {
+	if s.live[g.id] == g {
+		return
+	}
+	s.mu.Lock()
+	if g.conns == 0 && g.idle == nil {
+		g.idle = s.idle.PushBack(g)
+	}
+	s.mu.Unlock()
 }
 
 // Deliver implements chat.Sink. Called on the tick goroutine.
@@ -597,8 +637,9 @@ func (s *Server) collectSaves() []saveReq {
 	return s.saves
 }
 
-// SaveAll drains every connected player's economy outbox, saves every
-// connected player and waits until all pending saves and economy writes are
+// SaveAll drains the economy outbox of every player in the world, including
+// disconnected ones waiting out the logout lock, saves every one of them and
+// waits until all pending saves and economy writes are
 // written. The caller must have stopped the world tick first, because it reads
 // world state from the calling goroutine. It returns an error if ctx ends
 // first or any save failed.

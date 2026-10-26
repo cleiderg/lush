@@ -7,90 +7,117 @@ import "strconv"
 type Message byte
 
 const (
-	MessageNONE             Message = 0
-	MessageHello            Message = 1
-	MessageWelcome          Message = 2
-	MessageInput            Message = 3
-	MessageSnapshot         Message = 4
-	MessageChatSend         Message = 5
-	MessageChatMessage      Message = 6
-	MessagePing             Message = 7
-	MessagePong             Message = 8
-	MessageReload           Message = 9
-	MessageRestartCountdown Message = 10
-	MessageEmoteSend        Message = 11
-	MessagePlayerStats      Message = 12
-	MessageInventoryState   Message = 13
-	MessageItemCatalog      Message = 14
-	MessageEntityInfo       Message = 15
-	MessageEntityHealth     Message = 16
-	MessageItemAction       Message = 17
-	MessageGroundItems      Message = 18
-	MessagePickUp           Message = 19
-	MessageShopBuy          Message = 20
-	MessageShopSell         Message = 21
-	MessageShopResult       Message = 22
-	MessageAttackTarget     Message = 23
-	MessageCombatHit        Message = 24
-	MessageNpcCatalog       Message = 25
+	MessageNONE               Message = 0
+	MessageHello              Message = 1
+	MessageWelcome            Message = 2
+	MessageInput              Message = 3
+	MessageSnapshot           Message = 4
+	MessageChatSend           Message = 5
+	MessageChatMessage        Message = 6
+	MessagePing               Message = 7
+	MessagePong               Message = 8
+	MessageReload             Message = 9
+	MessageRestartCountdown   Message = 10
+	MessageEmoteSend          Message = 11
+	MessagePlayerStats        Message = 12
+	MessageInventoryState     Message = 13
+	MessageItemCatalog        Message = 14
+	MessageEntityInfo         Message = 15
+	MessageEntityHealth       Message = 16
+	MessageItemAction         Message = 17
+	MessageGroundItems        Message = 18
+	MessagePickUp             Message = 19
+	MessageShopBuy            Message = 20
+	MessageShopSell           Message = 21
+	MessageShopResult         Message = 22
+	MessageAttackTarget       Message = 23
+	MessageCombatHit          Message = 24
+	MessageNpcCatalog         Message = 25
+	MessageTradeRequest       Message = 26
+	MessageTradeOffer         Message = 27
+	MessageTradeRemove        Message = 28
+	MessageTradeSetGold       Message = 29
+	MessageTradeAccept        Message = 30
+	MessageTradeCancel        Message = 31
+	MessageTradeRequestNotice Message = 32
+	MessageTradeState         Message = 33
+	MessageTradeResult        Message = 34
 )
 
 var EnumNamesMessage = map[Message]string{
-	MessageNONE:             "NONE",
-	MessageHello:            "Hello",
-	MessageWelcome:          "Welcome",
-	MessageInput:            "Input",
-	MessageSnapshot:         "Snapshot",
-	MessageChatSend:         "ChatSend",
-	MessageChatMessage:      "ChatMessage",
-	MessagePing:             "Ping",
-	MessagePong:             "Pong",
-	MessageReload:           "Reload",
-	MessageRestartCountdown: "RestartCountdown",
-	MessageEmoteSend:        "EmoteSend",
-	MessagePlayerStats:      "PlayerStats",
-	MessageInventoryState:   "InventoryState",
-	MessageItemCatalog:      "ItemCatalog",
-	MessageEntityInfo:       "EntityInfo",
-	MessageEntityHealth:     "EntityHealth",
-	MessageItemAction:       "ItemAction",
-	MessageGroundItems:      "GroundItems",
-	MessagePickUp:           "PickUp",
-	MessageShopBuy:          "ShopBuy",
-	MessageShopSell:         "ShopSell",
-	MessageShopResult:       "ShopResult",
-	MessageAttackTarget:     "AttackTarget",
-	MessageCombatHit:        "CombatHit",
-	MessageNpcCatalog:       "NpcCatalog",
+	MessageNONE:               "NONE",
+	MessageHello:              "Hello",
+	MessageWelcome:            "Welcome",
+	MessageInput:              "Input",
+	MessageSnapshot:           "Snapshot",
+	MessageChatSend:           "ChatSend",
+	MessageChatMessage:        "ChatMessage",
+	MessagePing:               "Ping",
+	MessagePong:               "Pong",
+	MessageReload:             "Reload",
+	MessageRestartCountdown:   "RestartCountdown",
+	MessageEmoteSend:          "EmoteSend",
+	MessagePlayerStats:        "PlayerStats",
+	MessageInventoryState:     "InventoryState",
+	MessageItemCatalog:        "ItemCatalog",
+	MessageEntityInfo:         "EntityInfo",
+	MessageEntityHealth:       "EntityHealth",
+	MessageItemAction:         "ItemAction",
+	MessageGroundItems:        "GroundItems",
+	MessagePickUp:             "PickUp",
+	MessageShopBuy:            "ShopBuy",
+	MessageShopSell:           "ShopSell",
+	MessageShopResult:         "ShopResult",
+	MessageAttackTarget:       "AttackTarget",
+	MessageCombatHit:          "CombatHit",
+	MessageNpcCatalog:         "NpcCatalog",
+	MessageTradeRequest:       "TradeRequest",
+	MessageTradeOffer:         "TradeOffer",
+	MessageTradeRemove:        "TradeRemove",
+	MessageTradeSetGold:       "TradeSetGold",
+	MessageTradeAccept:        "TradeAccept",
+	MessageTradeCancel:        "TradeCancel",
+	MessageTradeRequestNotice: "TradeRequestNotice",
+	MessageTradeState:         "TradeState",
+	MessageTradeResult:        "TradeResult",
 }
 
 var EnumValuesMessage = map[string]Message{
-	"NONE":             MessageNONE,
-	"Hello":            MessageHello,
-	"Welcome":          MessageWelcome,
-	"Input":            MessageInput,
-	"Snapshot":         MessageSnapshot,
-	"ChatSend":         MessageChatSend,
-	"ChatMessage":      MessageChatMessage,
-	"Ping":             MessagePing,
-	"Pong":             MessagePong,
-	"Reload":           MessageReload,
-	"RestartCountdown": MessageRestartCountdown,
-	"EmoteSend":        MessageEmoteSend,
-	"PlayerStats":      MessagePlayerStats,
-	"InventoryState":   MessageInventoryState,
-	"ItemCatalog":      MessageItemCatalog,
-	"EntityInfo":       MessageEntityInfo,
-	"EntityHealth":     MessageEntityHealth,
-	"ItemAction":       MessageItemAction,
-	"GroundItems":      MessageGroundItems,
-	"PickUp":           MessagePickUp,
-	"ShopBuy":          MessageShopBuy,
-	"ShopSell":         MessageShopSell,
-	"ShopResult":       MessageShopResult,
-	"AttackTarget":     MessageAttackTarget,
-	"CombatHit":        MessageCombatHit,
-	"NpcCatalog":       MessageNpcCatalog,
+	"NONE":               MessageNONE,
+	"Hello":              MessageHello,
+	"Welcome":            MessageWelcome,
+	"Input":              MessageInput,
+	"Snapshot":           MessageSnapshot,
+	"ChatSend":           MessageChatSend,
+	"ChatMessage":        MessageChatMessage,
+	"Ping":               MessagePing,
+	"Pong":               MessagePong,
+	"Reload":             MessageReload,
+	"RestartCountdown":   MessageRestartCountdown,
+	"EmoteSend":          MessageEmoteSend,
+	"PlayerStats":        MessagePlayerStats,
+	"InventoryState":     MessageInventoryState,
+	"ItemCatalog":        MessageItemCatalog,
+	"EntityInfo":         MessageEntityInfo,
+	"EntityHealth":       MessageEntityHealth,
+	"ItemAction":         MessageItemAction,
+	"GroundItems":        MessageGroundItems,
+	"PickUp":             MessagePickUp,
+	"ShopBuy":            MessageShopBuy,
+	"ShopSell":           MessageShopSell,
+	"ShopResult":         MessageShopResult,
+	"AttackTarget":       MessageAttackTarget,
+	"CombatHit":          MessageCombatHit,
+	"NpcCatalog":         MessageNpcCatalog,
+	"TradeRequest":       MessageTradeRequest,
+	"TradeOffer":         MessageTradeOffer,
+	"TradeRemove":        MessageTradeRemove,
+	"TradeSetGold":       MessageTradeSetGold,
+	"TradeAccept":        MessageTradeAccept,
+	"TradeCancel":        MessageTradeCancel,
+	"TradeRequestNotice": MessageTradeRequestNotice,
+	"TradeState":         MessageTradeState,
+	"TradeResult":        MessageTradeResult,
 }
 
 func (v Message) String() string {
