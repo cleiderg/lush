@@ -96,3 +96,11 @@ func (g *Grid) Blocked(p Vec2) bool {
 
 // CellSize returns the cell edge length in metres.
 func (g *Grid) CellSize() float64 { return g.cellSize }
+
+// CellCenter returns the world position of the centre of cell (col,row).
+func (g *Grid) CellCenter(col, row int) Vec2 {
+	return Vec2{
+		X: float32(g.originX + (float64(col)+0.5)*g.cellSize),
+		Y: float32(g.originY + (float64(row)+0.5)*g.cellSize),
+	}
+}

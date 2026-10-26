@@ -122,8 +122,9 @@ type NPCType struct {
 	AttackSpeed    int       `json:"attack_speed"` // combat ticks between attacks
 	Behaviour      Behaviour `json:"behaviour"`
 	RespawnSeconds int       `json:"respawn_s"`
-	MaxAlive       int       `json:"max_alive"` // most alive at once; 0 means no limit
-	GoldMin        int       `json:"gold_min"`  // every kill drops GoldMin..GoldMax gold
+	Population     int       `json:"population"` // how many the spawner keeps in the area
+	MaxAlive       int       `json:"max_alive"`  // most alive at once; 0 means no limit
+	GoldMin        int       `json:"gold_min"`   // every kill drops GoldMin..GoldMax gold
 	GoldMax        int       `json:"gold_max"`
 	Drops          []Drop    `json:"drops"` // each rolls separately
 }
@@ -362,6 +363,12 @@ func (d *Data) index() error {
 		}
 		if n.Level <= 0 || n.HP <= 0 || n.AttackSpeed <= 0 || n.RespawnSeconds <= 0 || n.MaxAlive < 0 {
 			return fmt.Errorf("gamedata: %s: level, hp, attack_speed and respawn_s must be positive and max_alive not negative", where)
+		}
+		if n.Population < 0 {
+			return fmt.Errorf("gamedata: %s: negative population %d", where, n.Population)
+		}
+		if n.MaxAlive > 0 && n.Population > n.MaxAlive {
+			return fmt.Errorf("gamedata: %s: population %d exceeds max_alive %d", where, n.Population, n.MaxAlive)
 		}
 		if n.GoldMin < 0 || n.GoldMax < n.GoldMin {
 			return fmt.Errorf("gamedata: %s: bad gold range %d to %d", where, n.GoldMin, n.GoldMax)
