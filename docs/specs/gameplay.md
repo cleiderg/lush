@@ -35,14 +35,14 @@
 
 ## NPCs
 
-| NPC | Area | Level | HP | Accuracy / strength / defence | Attack speed | Behaviour | Respawn | Drops |
-|---|---|---|---|---|---|---|---|---|
-| Rabbit | Aldrich Park | 1 | 3 | 0 / 0 / 0 | 4 | Passive | 15 s | 1–3 gold |
-| Squirrel | Aldrich Park | 2 | 5 | 2 / 0 / 2 | 4 | Passive | 20 s | 2–6 gold; Acorn (1 in 2) |
-| Crow | Aldrich Park | 4 | 8 | 5 / 3 / 3 | 4 | Passive | 30 s | 3–10 gold; Shiny trinket (1 in 8) |
-| Coyote | South fields | 9 | 20 | 12 / 10 / 8 | 4 | Aggressive | 45 s | 8–25 gold; Coyote pelt (1 in 2); Leather cap (1 in 20) |
-| Rogue delivery robot | South fields | 15 | 35 | 20 / 18 / 25 | 5 | Aggressive | 60 s | 20–50 gold; Scrap metal (1 in 2); Bike lock (1 in 32); Robot plating (1 in 64) |
-| Coyote alpha | South fields (one at a time) | 20 | 50 | 28 / 26 / 22 | 4 | Aggressive | 3 min | 40–100 gold; 3 Coyote pelts; Bike helmet (1 in 8) |
+| NPC | Area | Population | Level | HP | Accuracy / strength / defence | Attack speed | Behaviour | Respawn | Drops |
+|---|---|---|---|---|---|---|---|---|---|
+| Rabbit | Aldrich Park | 12 | 1 | 3 | 0 / 0 / 0 | 4 | Passive | 15 s | 1–3 gold |
+| Squirrel | Aldrich Park | 10 | 2 | 5 | 2 / 0 / 2 | 4 | Passive | 20 s | 2–6 gold; Acorn (1 in 2) |
+| Crow | Aldrich Park | 8 | 4 | 8 | 5 / 3 / 3 | 4 | Passive | 30 s | 3–10 gold; Shiny trinket (1 in 8) |
+| Coyote | South fields | 8 | 9 | 20 | 12 / 10 / 8 | 4 | Aggressive | 45 s | 8–25 gold; Coyote pelt (1 in 2); Leather cap (1 in 20) |
+| Rogue delivery robot | South fields | 5 | 15 | 35 | 20 / 18 / 25 | 5 | Aggressive | 60 s | 20–50 gold; Scrap metal (1 in 2); Bike lock (1 in 32); Robot plating (1 in 64) |
+| Coyote alpha | South fields | 1 | 20 | 50 | 28 / 26 / 22 | 4 | Aggressive | 3 min | 40–100 gold; 3 Coyote pelts; Bike helmet (1 in 8) |
 
 Every kill drops the gold; each item rolls separately. Drops appear on the ground where the NPC died and follow the same rules as PvP drops below, with the killer as owner.
 
