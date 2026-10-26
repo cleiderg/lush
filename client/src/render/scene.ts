@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Character } from './character';
 import { CameraRig } from './cameraRig';
 import { RemotePlayers } from './remotePlayers';
+import { Hitsplats } from './hitsplats';
 import { CampusMap, loadCampus } from './campusMap';
 import { GroundItems } from './groundItems';
 import { AreaMarkers, loadAreas } from './gameAreas';
@@ -33,12 +34,14 @@ export class WorldScene {
   readonly areas = new AreaMarkers(loadAreas());
   private readonly player = new Character();
   private readonly remotes = new RemotePlayers();
+  readonly hitsplats = new Hitsplats();
   /** Created on the first view that carries groundItems, so views without it leave the scene as before. */
   private groundItems: GroundItems | null = null;
   private lastX: number | null = null;
   private lastZ = 0;
 
-  constructor() {
+  /** `now` is the render clock in milliseconds; tests pass a controlled one. */
+  constructor(private readonly now: () => number = () => performance.now()) {
     this.scene.background = new THREE.Color(SKY);
     this.scene.add(new THREE.AmbientLight(0xffffff, 1.6));
     const sun = new THREE.DirectionalLight(0xffffff, 1.6);
@@ -64,6 +67,9 @@ export class WorldScene {
       this.groundItems.update([]);
     }
     this.rig.follow(local.x, local.z);
+    // Hitsplats join the scene with the first hit, so a view without hits leaves the graph as it was.
+    if (view.hits?.length && !this.hitsplats.group.parent) this.scene.add(this.hitsplats.group);
+    if (this.hitsplats.group.parent) this.hitsplats.update(view, this.now(), this.rig.camera.quaternion);
   }
 }
 
