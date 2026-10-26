@@ -317,6 +317,54 @@ func TestGold(t *testing.T) {
 	}
 }
 
+func TestRemoveFromSlot(t *testing.T) {
+	d := gameData(t)
+	acorn, boba := itemID(t, d, "acorn"), itemID(t, d, "boba")
+	n := d.Rules.InventorySlots
+	tests := []struct {
+		name     string
+		index    int
+		qty      int
+		wantErr  error
+		wantSlot world.Stack // slot index afterwards, when index is in range
+	}{
+		{"part of a stack", 2, 3, nil, world.Stack{Item: acorn, Qty: 2}},
+		{"whole stack", 2, 5, nil, world.Stack{}},
+		{"single item", 0, 1, nil, world.Stack{}},
+		{"more than held", 2, 6, world.ErrNotEnoughItems, world.Stack{Item: acorn, Qty: 5}},
+		{"zero", 2, 0, world.ErrBadQuantity, world.Stack{Item: acorn, Qty: 5}},
+		{"negative", 2, -1, world.ErrBadQuantity, world.Stack{Item: acorn, Qty: 5}},
+		{"empty slot", 3, 1, world.ErrEmptySlot, world.Stack{}},
+		{"below range", -1, 1, world.ErrBadSlot, world.Stack{}},
+		{"above range", n, 1, world.ErrBadSlot, world.Stack{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inv := world.NewInventory(d)
+			inv.Slots[0] = world.Stack{Item: boba, Qty: 1}
+			inv.Slots[2] = world.Stack{Item: acorn, Qty: 5}
+			before := clone(inv)
+			changes, err := inv.RemoveFromSlot(tt.index, tt.qty)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if err != nil {
+				if !reflect.DeepEqual(inv, before) || changes != nil {
+					t.Errorf("failed remove changed the inventory or returned changes %+v", changes)
+				}
+				return
+			}
+			if inv.Slots[tt.index] != tt.wantSlot {
+				t.Errorf("slot = %+v, want %+v", inv.Slots[tt.index], tt.wantSlot)
+			}
+			want := []world.Change{{Kind: world.ChangeRemove, Item: before.Slots[tt.index].Item, Qty: tt.qty}}
+			if !reflect.DeepEqual(changes, want) {
+				t.Errorf("changes = %+v, want %+v", changes, want)
+			}
+		})
+	}
+}
+
 func TestEquip(t *testing.T) {
 	d := gameData(t)
 	stick, dagger, lock := itemID(t, d, "wooden_stick"), itemID(t, d, "bronze_dagger"), itemID(t, d, "bike_lock")
