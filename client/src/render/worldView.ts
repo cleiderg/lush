@@ -9,7 +9,18 @@ export interface PlayerView {
   readonly animation?: number;
 }
 
+/** An item lying on the ground. Positions are metres from the map origin. */
+export interface GroundItemView {
+  readonly id: number;
+  readonly itemId: number;
+  readonly quantity: number;
+  readonly x: number;
+  readonly z: number;
+}
+
 export interface WorldView {
   readonly local: PlayerView;
   readonly remotes: readonly PlayerView[];
+  /** Items on the ground in view; missing means none are drawn and no marker mesh is added. */
+  readonly groundItems?: readonly GroundItemView[];
 }
