@@ -231,6 +231,8 @@ func TestRulesMatchSpec(t *testing.T) {
 		{"PvP items kept", r.PvPItemsKept, 3},
 		{"drop reservation", r.DropReservation(), 60 * time.Second},
 		{"drop despawn", r.DropDespawn(), 3 * time.Minute},
+		{"pickup range tiles", r.PickupRangeTiles, 1},
+		{"pickup range includes diagonals", r.PickupRangeDiagonal, true},
 		{"logout combat lock", r.LogoutCombatLock(), 10 * time.Second},
 		{"eat attack delay combat ticks", r.EatAttackDelayTicks, 1},
 	}

@@ -183,6 +183,8 @@ type Rules struct {
 	PvPItemsKept            int         `json:"pvp_items_kept"`
 	DropReservationSeconds  int         `json:"drop_reservation_s"`
 	DropDespawnSeconds      int         `json:"drop_despawn_s"`
+	PickupRangeTiles        int         `json:"pickup_range_tiles"`
+	PickupRangeDiagonal     bool        `json:"pickup_range_diagonal"` // diagonal neighbours count as in range
 	LogoutCombatLockSeconds int         `json:"logout_combat_lock_s"`
 	EatAttackDelayTicks     int         `json:"eat_attack_delay_combat_ticks"`
 }
