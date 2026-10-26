@@ -121,6 +121,7 @@ type Server struct {
 	live     map[world.PlayerID]*guest
 	nextSave time.Time
 	saves    []saveReq
+	econ     []econReq
 	grid     *interest.Grid
 	hits     []interest.Hit
 	ents     []*world.Player
@@ -447,6 +448,14 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		}
 	}
 
+	s.econ = s.econ[:0]
+	for id, g := range s.live {
+		if p := w.Player(id); p != nil {
+			s.econ = s.appendEconomy(s.econ, g, p)
+		}
+	}
+	s.saver.submitEconomy(s.econ)
+
 	if now := s.clock.Now(); !now.Before(s.nextSave) {
 		if !s.nextSave.IsZero() {
 			s.saver.submit(s.collectSaves())
@@ -540,6 +549,9 @@ func (s *Server) leave(g *guest, c transport.Conn) {
 	}
 	req := saveReq{storeID: g.storeID, x: g.pos.X, z: g.pos.Y, xp: int64(g.xp), ver: g.ver}
 	s.mu.Unlock()
+	if p := s.w.Player(g.id); p != nil {
+		s.saver.submitEconomy(s.appendEconomy(nil, g, p))
+	}
 	s.saver.submit([]saveReq{req})
 	s.w.RemovePlayer(g.id)
 	s.grid.Remove(g.id)
@@ -554,6 +566,25 @@ func (s *Server) Deliver(to world.PlayerID, m chat.Message) {
 	}
 }
 
+// appendEconomy drains p's economy outbox and appends one store write per
+// event: the holdings from the event's inventory copy and an audit entry per
+// change, tagged with the event's reason. Tick goroutine only.
+func (s *Server) appendEconomy(dst []econReq, g *guest, p *world.Player) []econReq {
+	for _, ev := range p.DrainEconomy() {
+		h, err := toHoldings(ev.Inv)
+		if err != nil {
+			s.log.Error("economy event", "player", g.id, "store_id", g.storeID, "reason", ev.Reason, "err", err)
+			continue
+		}
+		entries := auditEntries(ev.Changes, ev.Reason)
+		for i := range entries {
+			entries[i].Actor = g.storeID
+		}
+		dst = append(dst, econReq{storeID: g.storeID, holdings: h, entries: entries})
+	}
+	return dst
+}
+
 // collectSaves copies (store id, position, XP, version) of every live player into
 // a reused buffer. Tick goroutine only; the saver copies what it keeps.
 func (s *Server) collectSaves() []saveReq {
@@ -566,11 +597,19 @@ func (s *Server) collectSaves() []saveReq {
 	return s.saves
 }
 
-// SaveAll saves every connected player and waits until all pending saves are
+// SaveAll drains every connected player's economy outbox, saves every
+// connected player and waits until all pending saves and economy writes are
 // written. The caller must have stopped the world tick first, because it reads
 // world state from the calling goroutine. It returns an error if ctx ends
 // first or any save failed.
 func (s *Server) SaveAll(ctx context.Context) error {
+	s.econ = s.econ[:0]
+	for id, g := range s.live {
+		if p := s.w.Player(id); p != nil {
+			s.econ = s.appendEconomy(s.econ, g, p)
+		}
+	}
+	s.saver.submitEconomy(s.econ)
 	s.saver.submit(s.collectSaves())
 	return s.saver.flush(ctx)
 }
