@@ -26,6 +26,15 @@ import { ShopBuy } from '../protocol/shop-buy';
 import { ShopResult } from '../protocol/shop-result';
 import { ShopSell } from '../protocol/shop-sell';
 import { Snapshot } from '../protocol/snapshot';
+import { TradeAccept } from '../protocol/trade-accept';
+import { TradeCancel } from '../protocol/trade-cancel';
+import { TradeOffer } from '../protocol/trade-offer';
+import { TradeRemove } from '../protocol/trade-remove';
+import { TradeRequest } from '../protocol/trade-request';
+import { TradeRequestNotice } from '../protocol/trade-request-notice';
+import { TradeResult } from '../protocol/trade-result';
+import { TradeSetGold } from '../protocol/trade-set-gold';
+import { TradeState } from '../protocol/trade-state';
 import { Welcome } from '../protocol/welcome';
 
 
@@ -55,13 +64,22 @@ export enum Message {
   ShopResult = 22,
   AttackTarget = 23,
   CombatHit = 24,
-  NpcCatalog = 25
+  NpcCatalog = 25,
+  TradeRequest = 26,
+  TradeOffer = 27,
+  TradeRemove = 28,
+  TradeSetGold = 29,
+  TradeAccept = 30,
+  TradeCancel = 31,
+  TradeRequestNotice = 32,
+  TradeState = 33,
+  TradeResult = 34
 }
 
 export function unionToMessage(
   type: Message,
-  accessor: (obj:AttackTarget|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|Welcome) => AttackTarget|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|Welcome|null
-): AttackTarget|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|Welcome|null {
+  accessor: (obj:AttackTarget|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome) => AttackTarget|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null
+): AttackTarget|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null {
   switch(Message[type]) {
     case 'NONE': return null; 
     case 'Hello': return accessor(new Hello())! as Hello;
@@ -89,15 +107,24 @@ export function unionToMessage(
     case 'AttackTarget': return accessor(new AttackTarget())! as AttackTarget;
     case 'CombatHit': return accessor(new CombatHit())! as CombatHit;
     case 'NpcCatalog': return accessor(new NpcCatalog())! as NpcCatalog;
+    case 'TradeRequest': return accessor(new TradeRequest())! as TradeRequest;
+    case 'TradeOffer': return accessor(new TradeOffer())! as TradeOffer;
+    case 'TradeRemove': return accessor(new TradeRemove())! as TradeRemove;
+    case 'TradeSetGold': return accessor(new TradeSetGold())! as TradeSetGold;
+    case 'TradeAccept': return accessor(new TradeAccept())! as TradeAccept;
+    case 'TradeCancel': return accessor(new TradeCancel())! as TradeCancel;
+    case 'TradeRequestNotice': return accessor(new TradeRequestNotice())! as TradeRequestNotice;
+    case 'TradeState': return accessor(new TradeState())! as TradeState;
+    case 'TradeResult': return accessor(new TradeResult())! as TradeResult;
     default: return null;
   }
 }
 
 export function unionListToMessage(
   type: Message, 
-  accessor: (index: number, obj:AttackTarget|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|Welcome) => AttackTarget|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|Welcome|null, 
+  accessor: (index: number, obj:AttackTarget|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome) => AttackTarget|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null, 
   index: number
-): AttackTarget|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|Welcome|null {
+): AttackTarget|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShopBuy|ShopResult|ShopSell|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null {
   switch(Message[type]) {
     case 'NONE': return null; 
     case 'Hello': return accessor(index, new Hello())! as Hello;
@@ -125,6 +152,15 @@ export function unionListToMessage(
     case 'AttackTarget': return accessor(index, new AttackTarget())! as AttackTarget;
     case 'CombatHit': return accessor(index, new CombatHit())! as CombatHit;
     case 'NpcCatalog': return accessor(index, new NpcCatalog())! as NpcCatalog;
+    case 'TradeRequest': return accessor(index, new TradeRequest())! as TradeRequest;
+    case 'TradeOffer': return accessor(index, new TradeOffer())! as TradeOffer;
+    case 'TradeRemove': return accessor(index, new TradeRemove())! as TradeRemove;
+    case 'TradeSetGold': return accessor(index, new TradeSetGold())! as TradeSetGold;
+    case 'TradeAccept': return accessor(index, new TradeAccept())! as TradeAccept;
+    case 'TradeCancel': return accessor(index, new TradeCancel())! as TradeCancel;
+    case 'TradeRequestNotice': return accessor(index, new TradeRequestNotice())! as TradeRequestNotice;
+    case 'TradeState': return accessor(index, new TradeState())! as TradeState;
+    case 'TradeResult': return accessor(index, new TradeResult())! as TradeResult;
     default: return null;
   }
 }
