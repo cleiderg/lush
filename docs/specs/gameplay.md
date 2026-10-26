@@ -54,6 +54,7 @@ Every kill drops the gold; each item rolls separately. Drops appear on the groun
 - **Inventory:** 28 slots. Equipped items don't take a slot. Gold is a separate balance, not an item, and never takes a slot.
 - **Equipment slots:** weapon, head, body, shield.
 - **Stacking:** loot stacks without limit in one slot; equipment and food don't stack.
+- **Picking up:** a player within 1 tile of a ground item, including diagonals, can pick it up (subject to the drop reservation below).
 - **Starting kit:** Wooden stick and Hoodie (both equipped) and 3 Boba.
 
 | Item | Kind | Slot | Accuracy / strength / defence | Attack speed | Level to equip | Shop buys for | Shop sells for | Comes from |
