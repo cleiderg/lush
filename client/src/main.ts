@@ -1,5 +1,6 @@
 import { AudioManager } from './audio';
 import { initErrorReporting } from './core/errorReporting';
+import { interact } from './core/interact';
 import { GameLoop } from './core/loop';
 import { buildWorldView, controlYaw } from './core/view';
 import { sendWave } from './core/wave';
@@ -13,7 +14,7 @@ import { GameState } from './state/world';
 import { Controls } from './ui/controls';
 import { Hud } from './ui/hud';
 import { RestartBanner } from './ui/restartBanner';
-import { ShopPanel } from './ui/shopPanel';
+import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
 import { TradePanel } from './ui/tradePanel';
 
 initErrorReporting();
@@ -29,7 +30,12 @@ const controls = new Controls({
   onWave: () => sendWave(session),
   tray: document.getElementById('control-tray') as HTMLElement,
   getCameraYaw: () => controlYaw(renderer.world.rig.yaw),
-  onInteract: () => shop.tryOpen(),
+  onInteract: () =>
+    interact(game, performance.now(), SHOP_STALL, {
+      openShop: () => shop.tryOpen(),
+      sendAttackTarget: (id) => session.sendAttackTarget(id),
+      sendTradeRequest: (id) => session.sendTradeRequest(id),
+    }),
 });
 
 const game = new GameState();
