@@ -13,6 +13,7 @@ import { GameState } from './state/world';
 import { Controls } from './ui/controls';
 import { Hud } from './ui/hud';
 import { RestartBanner } from './ui/restartBanner';
+import { ShopPanel } from './ui/shopPanel';
 
 initErrorReporting();
 
@@ -27,6 +28,7 @@ const controls = new Controls({
   onWave: () => sendWave(session),
   tray: document.getElementById('control-tray') as HTMLElement,
   getCameraYaw: () => controlYaw(renderer.world.rig.yaw),
+  onInteract: () => shop.tryOpen(),
 });
 
 const game = new GameState();
@@ -39,7 +41,15 @@ fetch(collisionUrl)
   .then((buf) => game.setCollision(CollisionGrid.parse(new Uint8Array(buf))))
   .catch((err: unknown) => console.error('collision grid not loaded', err));
 const banner = new RestartBanner(document.body);
-new Hud({ parent: document.body, items: game.items });
+const send = (bytes: Uint8Array): void => session.send(bytes);
+const hud = new Hud({ parent: document.body, items: game.items, send, onOpen: () => shop.close() });
+const shop = new ShopPanel({
+  parent: document.body,
+  items: game.items,
+  send,
+  position: () => game.prediction.pos,
+  onOpen: () => hud.setOpen(false),
+});
 const session = new Session({
   factory: () => new WebSocketTransport(),
   store: localTokenStore(),
@@ -53,6 +63,7 @@ session.start();
 
 new GameLoop({
   update: (stepMs) => {
+    shop.update();
     const m = controls.worldMove();
     // Inputs the server will never see would pile up unacknowledged; Welcome resets prediction anyway.
     if (!session.connected) return;

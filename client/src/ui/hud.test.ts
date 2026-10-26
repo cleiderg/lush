@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
+import * as flatbuffers from 'flatbuffers';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EquipSlot, ItemKind } from '../protocol';
+import { Envelope, EquipSlot, ItemAction, ItemActionKind, ItemKind, Message } from '../protocol';
 import { ItemState, type ItemInfo } from '../state/items';
 import { Controls } from './controls';
 import { Hud } from './hud';
@@ -26,11 +27,18 @@ function emptySlots(n = 28) {
 
 let hud: Hud | null = null;
 
-function setup() {
+function setup(send?: (bytes: Uint8Array) => void) {
   const items = new ItemState();
   items.setCatalog(CATALOG);
-  hud = new Hud({ parent: document.body, items, viewport: () => ({ width: 390, height: 844 }) });
+  hud = new Hud({ parent: document.body, items, send, viewport: () => ({ width: 390, height: 844 }) });
   return { items, hud };
+}
+
+function decodeAction(bytes: Uint8Array) {
+  const env = Envelope.getRootAsEnvelope(new flatbuffers.ByteBuffer(bytes));
+  expect(env.msgType()).toBe(Message.ItemAction);
+  const a = env.msg(new ItemAction()) as ItemAction;
+  return { action: a.action(), slot: a.slot(), equipSlot: a.equipSlot() };
 }
 
 beforeEach(() => document.body.replaceChildren());
@@ -122,6 +130,45 @@ describe('Hud inventory panel', () => {
       expect(e.style.width).toBe(`${r.w}px`);
       expect(e.style.height).toBe(`${r.h}px`);
     }
+  });
+});
+
+describe('Hud item actions (AC1)', () => {
+  it('tapping equipment sends Equip, food sends Eat, loot sends nothing', () => {
+    const send = vi.fn<(bytes: Uint8Array) => void>();
+    const { items, hud } = setup(send);
+    const slots = emptySlots();
+    slots[0] = { itemId: 1, quantity: 1 };
+    slots[3] = { itemId: 2, quantity: 1 };
+    slots[5] = { itemId: 3, quantity: 4 };
+    slots[6] = { itemId: 4, quantity: 2 };
+    items.setInventory({ slots, equipment: { weapon: 0, head: 0, body: 0, shield: 0 } });
+    hud.toggle.click();
+    const cell = (i: number) => hud.panel.querySelector(`.lush-slot[data-index="${i}"]`) as HTMLElement;
+
+    cell(0).click();
+    expect(decodeAction(send.mock.calls[0][0])).toMatchObject({ action: ItemActionKind.Equip, slot: 0 });
+    cell(3).click();
+    expect(decodeAction(send.mock.calls[1][0])).toMatchObject({ action: ItemActionKind.Equip, slot: 3 });
+    cell(5).click();
+    expect(decodeAction(send.mock.calls[2][0])).toMatchObject({ action: ItemActionKind.Eat, slot: 5 });
+    cell(6).click();
+    cell(7).click();
+    expect(send).toHaveBeenCalledTimes(3);
+  });
+
+  it('tapping a worn item sends Unequip for its equip slot; empty equip slots send nothing', () => {
+    const send = vi.fn<(bytes: Uint8Array) => void>();
+    const { items, hud } = setup(send);
+    items.setInventory({ slots: emptySlots(), equipment: { weapon: 1, head: 0, body: 2, shield: 0 } });
+    const slot = (k: string) => hud.panel.querySelector(`.lush-equip-slot[data-slot="${k}"]`) as HTMLElement;
+    slot('weapon').click();
+    expect(decodeAction(send.mock.calls[0][0])).toMatchObject({ action: ItemActionKind.Unequip, equipSlot: EquipSlot.Weapon });
+    slot('body').click();
+    expect(decodeAction(send.mock.calls[1][0])).toMatchObject({ action: ItemActionKind.Unequip, equipSlot: EquipSlot.Body });
+    slot('head').click();
+    slot('shield').click();
+    expect(send).toHaveBeenCalledTimes(2);
   });
 });
 

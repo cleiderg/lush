@@ -51,6 +51,11 @@ export class ItemState {
     return this.catalog.get(id);
   }
 
+  /** Every item in the catalog. */
+  catalogItems(): IterableIterator<ItemInfo> {
+    return this.catalog.values();
+  }
+
   /** NPC type by id (EntityInfo.npcType). */
   npc(typeId: number): NpcInfo | undefined {
     return this.npcs.get(typeId);

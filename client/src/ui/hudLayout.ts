@@ -12,6 +12,8 @@ export interface HudLayout {
   hud: Rect;
   toggle: Rect;
   panel: Rect;
+  /** The shop panel; it takes the inventory panel's place (only one is open at a time). */
+  shop: Rect;
 }
 
 /** Mirrors index.html: #app is at most this wide and centred. */
@@ -25,7 +27,7 @@ const HUD_H = 64;
 const TOGGLE = 52;
 
 /**
- * Where the HUD, inventory toggle and inventory panel go for a viewport of
+ * Where the HUD, inventory toggle, inventory panel and shop panel go for a viewport of
  * width × height. Everything sits over the game canvas, above the control tray.
  */
 export function hudLayout(width: number, height: number): HudLayout {
@@ -44,7 +46,7 @@ export function hudLayout(width: number, height: number): HudLayout {
     w: appW - 2 * MARGIN,
     h: Math.max(0, trayTop - MARGIN - panelTop),
   };
-  return { controls, hud, toggle, panel };
+  return { controls, hud, toggle, panel, shop: { ...panel } };
 }
 
 export function intersects(a: Rect, b: Rect): boolean {
