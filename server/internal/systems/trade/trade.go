@@ -132,8 +132,9 @@ type Sink interface {
 	TradeResult(to world.PlayerID, r Result)
 }
 
-// Committer receives a trade both players accepted on screen 2. The window
-// is already closed when it is called; the Committer saves the swap and
+// Committer receives a trade both players accepted on screen 2, on the Tick
+// after both accepted, once both players are still in the world, in reach and
+// outside the PvP zone. The window is already closed when it is called; the Committer saves the swap and
 // reports the outcome (Completed or a failure) to both players. It is called
 // on the tick goroutine and must not block.
 type Committer interface {
@@ -216,7 +217,10 @@ func (s *System) Handle(cmd world.Command, p *world.Player) {
 }
 
 // Tick settles this tick's requests, then closes every trade whose players
-// left the world, entered the PvP zone or moved too far apart.
+// left the world, entered the PvP zone or moved too far apart, then hands
+// every trade both players accepted on screen 2 to the Committer. Committing
+// here rather than in Handle means a player who left or moved since the last
+// Tick can't complete a trade.
 func (s *System) Tick(w *world.World, _ time.Duration) {
 	for _, r := range s.requests {
 		s.request(w, r.Player, r.Partner)
@@ -239,6 +243,12 @@ func (s *System) Tick(w *world.World, _ time.Duration) {
 		}
 		if bad {
 			s.close(t, r) // removes s.open[i]
+			continue
+		}
+		if t.screen == ScreenConfirm && t.sides[0].accepted && t.sides[1].accepted {
+			x, y := t.sides[0], t.sides[1]
+			s.forget(t) // removes s.open[i]
+			s.committer.CommitTrade(x.id, y.id, x.offer.clone(), y.offer.clone())
 			continue
 		}
 		i++
@@ -366,11 +376,8 @@ func (s *System) accept(p world.PlayerID, screen int) {
 		t.screen = ScreenConfirm
 		t.sides[0].accepted, t.sides[1].accepted = false, false
 		s.send(t)
-		return
 	}
-	a, b := t.sides[0], t.sides[1]
-	s.forget(t)
-	s.committer.CommitTrade(a.id, b.id, a.offer.clone(), b.offer.clone())
+	// Both accepted screen 2: Tick commits the trade.
 }
 
 // changed returns t to screen 1 with both accepts cleared and tells both

@@ -366,6 +366,37 @@ func TestAccept(t *testing.T) {
 	}
 }
 
+// TestNoCommitAfterLeaving checks that a player who left the world, entered
+// the PvP zone or moved away after accepting screen 2 (the session removes
+// players after the trade system's Tick) can't have the trade completed by
+// the partner's accept.
+func TestNoCommitAfterLeaving(t *testing.T) {
+	reach := float32(gameDataRules(t).TradeDistanceTiles) * tileSize
+	tests := []struct {
+		name string
+		act  func(f *fixture)
+		want []event
+	}{
+		{"b leaves", func(f *fixture) { f.w.RemovePlayer(b) }, results(a, b, trade.Cancelled)},
+		{"b enters pvp", func(f *fixture) { f.p[a].Pos, f.p[b].Pos = outsidePvP, pvpEdge }, results(a, b, trade.InPvpZone)},
+		{"b moves away", func(f *fixture) { f.p[b].Pos.X = f.p[a].Pos.X + reach + 0.1 }, results(a, b, trade.TooFar)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.open()
+			f.run(trade.AcceptCommand{Player: a, Screen: trade.ScreenOffer})
+			f.run(trade.AcceptCommand{Player: b, Screen: trade.ScreenOffer})
+			f.run(trade.AcceptCommand{Player: b, Screen: trade.ScreenConfirm})
+			tt.act(f)
+			check(t, f.run(trade.AcceptCommand{Player: a, Screen: trade.ScreenConfirm}), tt.want)
+			if len(f.commit.got) != 0 {
+				t.Errorf("commits = %+v", f.commit.got)
+			}
+		})
+	}
+}
+
 func TestClose(t *testing.T) {
 	reach := float32(gameDataRules(t).TradeDistanceTiles) * tileSize
 	tests := []struct {
