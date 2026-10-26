@@ -1,9 +1,15 @@
 import type { GameState } from '../state/world';
 import { toWorldMove, type Vec2 } from '../input/joystick';
+import type { WorldView } from '../render/worldView';
 
-/** Snapshot of game state for the renderer: predicted local player plus interpolated remotes. */
-export function buildWorldView(game: GameState, now: number) {
-  return { local: game.local, remotes: game.remotes(now) };
+/**
+ * Snapshot of game state for the renderer: predicted local player, interpolated remotes,
+ * ground items, and the hits received since the previous view. Drains game.hits, so each
+ * hit appears in exactly one view.
+ */
+export function buildWorldView(game: GameState, now: number): WorldView {
+  const hits = game.hits.drain().flatMap((b) => b.hits.map((h) => ({ target: h.target, damage: h.damage, died: h.died })));
+  return { local: game.local, remotes: game.remotes(now), groundItems: game.items.groundItems, hits };
 }
 
 /**
