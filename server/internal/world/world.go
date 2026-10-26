@@ -46,6 +46,14 @@ type Player struct {
 	// LastCombat is when the player last dealt or took damage; zero if never.
 	// Health regeneration waits for Rules.RegenDelay after it.
 	LastCombat time.Time
+	// AttackDelay is how many combat ticks the player's next attack waits,
+	// set by eating (Rules.EatAttackDelayTicks). A combat system reads and
+	// counts it down.
+	AttackDelay int
+
+	// outbox holds changes to the player's holdings not yet saved. Append
+	// with RecordEconomy; the session empties it with DrainEconomy.
+	outbox []EconomyEvent
 }
 
 // Command is a unit of input pushed from another goroutine and applied on the tick.

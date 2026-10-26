@@ -252,6 +252,24 @@ func (inv *Inventory) Remove(item gamedata.ItemID, qty int) ([]Change, error) {
 	return []Change{{Kind: ChangeRemove, Item: item, Qty: qty}}, nil
 }
 
+// RemoveAt takes one item out of inventory slot index. It fails, changing
+// nothing, if there is no such slot or it is empty.
+func (inv *Inventory) RemoveAt(index int) ([]Change, error) {
+	if index < 0 || index >= len(inv.Slots) {
+		return nil, fmt.Errorf("remove from slot %d: %w", index, ErrBadSlot)
+	}
+	s := &inv.Slots[index]
+	if s.Empty() {
+		return nil, fmt.Errorf("remove from slot %d: %w", index, ErrEmptySlot)
+	}
+	item := s.Item
+	s.Qty--
+	if s.Qty <= 0 {
+		*s = Stack{}
+	}
+	return []Change{{Kind: ChangeRemove, Item: item, Qty: 1}}, nil
+}
+
 // AddGold increases the gold balance by amount.
 func (inv *Inventory) AddGold(amount int) ([]Change, error) {
 	if amount <= 0 {
