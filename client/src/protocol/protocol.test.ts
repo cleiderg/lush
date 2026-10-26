@@ -6,6 +6,8 @@ import {
   ShopBuy, ShopResult, ShopResultCode, ShopSell,
   InventorySlot, InventoryState, HealthRatio, ItemCatalog, ItemDef, ItemKind, Message, Ping, PlayerStats, Pong,
   ProtocolVersion, Reload, RestartCountdown, Snapshot, Vec2, Welcome,
+  TradeAccept, TradeCancel, TradeItem, TradeOffer, TradeRemove, TradeRequest, TradeRequestNotice, TradeResult,
+  TradeResultCode, TradeSetGold, TradeState,
 } from './index.js';
 
 function finish(b: flatbuffers.Builder, type: Message, msg: flatbuffers.Offset): Uint8Array {
@@ -35,7 +37,7 @@ function buildSnapshot(n: number): Uint8Array {
 
 describe('protocol', () => {
   it('exposes the version constant', () => {
-    expect(ProtocolVersion.Current).toBe(7);
+    expect(ProtocolVersion.Current).toBe(8);
   });
 
   it('keeps a 101-entity snapshot under 1200 bytes', () => {
@@ -360,6 +362,110 @@ describe('protocol', () => {
     for (let i = 0; i < want.length; i++) {
       const d = m.npcs(i)!;
       expect([d.id(), d.name(), d.combatLevel()]).toEqual(want[i]);
+    }
+  });
+
+  it('round-trips TradeRequest', () => {
+    for (const id of [0, 300, 65535]) {
+      const b = new flatbuffers.Builder(32);
+      const buf = finish(b, Message.TradeRequest, TradeRequest.createTradeRequest(b, id));
+      expect(open(buf, Message.TradeRequest, new TradeRequest()).targetId()).toBe(id);
+    }
+  });
+
+  it('round-trips TradeOffer', () => {
+    for (const [slot, qty] of [[0, 1], [27, 5000], [255, 4294967295]]) {
+      const b = new flatbuffers.Builder(32);
+      const buf = finish(b, Message.TradeOffer, TradeOffer.createTradeOffer(b, slot, qty));
+      const m = open(buf, Message.TradeOffer, new TradeOffer());
+      expect([m.slot(), m.quantity()]).toEqual([slot, qty]);
+    }
+  });
+
+  it('round-trips TradeRemove', () => {
+    for (const idx of [0, 7, 255]) {
+      const b = new flatbuffers.Builder(32);
+      const buf = finish(b, Message.TradeRemove, TradeRemove.createTradeRemove(b, idx));
+      expect(open(buf, Message.TradeRemove, new TradeRemove()).index()).toBe(idx);
+    }
+  });
+
+  it('round-trips TradeSetGold', () => {
+    for (const gold of [0, 100, 4294967295]) {
+      const b = new flatbuffers.Builder(32);
+      const buf = finish(b, Message.TradeSetGold, TradeSetGold.createTradeSetGold(b, gold));
+      expect(open(buf, Message.TradeSetGold, new TradeSetGold()).gold()).toBe(gold);
+    }
+  });
+
+  it('round-trips TradeAccept', () => {
+    for (const screen of [1, 2]) {
+      const b = new flatbuffers.Builder(32);
+      const buf = finish(b, Message.TradeAccept, TradeAccept.createTradeAccept(b, screen));
+      expect(open(buf, Message.TradeAccept, new TradeAccept()).screen()).toBe(screen);
+    }
+  });
+
+  it('round-trips TradeCancel', () => {
+    const b = new flatbuffers.Builder(32);
+    const buf = finish(b, Message.TradeCancel, TradeCancel.createTradeCancel(b));
+    expect(open(buf, Message.TradeCancel, new TradeCancel())).toBeInstanceOf(TradeCancel);
+  });
+
+  it('round-trips TradeRequestNotice', () => {
+    for (const id of [0, 300, 65535]) {
+      const b = new flatbuffers.Builder(32);
+      const buf = finish(b, Message.TradeRequestNotice, TradeRequestNotice.createTradeRequestNotice(b, id));
+      expect(open(buf, Message.TradeRequestNotice, new TradeRequestNotice()).fromId()).toBe(id);
+    }
+  });
+
+  it('round-trips TradeState', () => {
+    type Side = [number, number][];
+    const items = (b: flatbuffers.Builder, side: Side, start: (b: flatbuffers.Builder, n: number) => void) => {
+      start(b, side.length);
+      for (let i = side.length - 1; i >= 0; i--) {
+        TradeItem.createTradeItem(b, ...side[i]);
+      }
+      return b.endVector();
+    };
+    const cases: [number, number, Side, number, Side, number, boolean, boolean][] = [
+      [300, 1, [[1, 1], [12, 250], [65535, 4294967295]], 100, [[7, 3]], 0, true, false],
+      [65535, 2, [], 4294967295, [[2, 1], [3, 2]], 55, false, true],
+      [1, 2, [[9, 9]], 0, [], 4294967295, true, true],
+    ];
+    expect(TradeItem.sizeOf()).toBe(8);
+    for (const [partner, screen, mine, myGold, theirs, partnerGold, myAcc, theirAcc] of cases) {
+      const b = new flatbuffers.Builder(256);
+      const mv = items(b, mine, TradeState.startMyItemsVector);
+      const pv = items(b, theirs, TradeState.startPartnerItemsVector);
+      const buf = finish(b, Message.TradeState,
+        TradeState.createTradeState(b, partner, screen, mv, myGold, pv, partnerGold, myAcc, theirAcc));
+      const m = open(buf, Message.TradeState, new TradeState());
+      expect([m.partnerId(), m.screen(), m.myGold(), m.partnerGold(), m.myAccepted(), m.partnerAccepted()])
+        .toEqual([partner, screen, myGold, partnerGold, myAcc, theirAcc]);
+      expect(m.myItemsLength()).toBe(mine.length);
+      mine.forEach((w, i) => {
+        const it = m.myItems(i)!;
+        expect([it.itemId(), it.quantity()]).toEqual(w);
+      });
+      expect(m.partnerItemsLength()).toBe(theirs.length);
+      theirs.forEach((w, i) => {
+        const it = m.partnerItems(i)!;
+        expect([it.itemId(), it.quantity()]).toEqual(w);
+      });
+    }
+  });
+
+  it('round-trips TradeResult', () => {
+    const codes = [
+      TradeResultCode.Completed, TradeResultCode.Cancelled, TradeResultCode.TooFar, TradeResultCode.InPvpZone,
+      TradeResultCode.PartnerBusy, TradeResultCode.OfferNotHeld, TradeResultCode.InventoryFull,
+    ];
+    for (const code of codes) {
+      const b = new flatbuffers.Builder(32);
+      const buf = finish(b, Message.TradeResult, TradeResult.createTradeResult(b, code));
+      expect(open(buf, Message.TradeResult, new TradeResult()).code()).toBe(code);
     }
   });
 });
