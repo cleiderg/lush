@@ -35,10 +35,9 @@ import (
 	"github.com/cleiderg/lush/server/internal/world"
 )
 
-// MaxGuestID is the highest session id a guest can get: one below 0xC000,
-// where the world's NPC id range (0xC000..0xFFFF, #142) starts and AddPlayer
-// refuses player ids. Replace with world.DefaultNPCIDMin-1 once #152 merges.
-const MaxGuestID = 0xC000 - 1
+// MaxGuestID is the highest session id a guest can get: one below the start
+// of the world's NPC id range (#142), where AddPlayer refuses player ids.
+const MaxGuestID = int(world.DefaultNPCIDMin) - 1
 
 // Config holds session tuning.
 type Config struct {
@@ -50,8 +49,9 @@ type Config struct {
 	// MaxMsgPerSec disconnects clients that send faster than this (0 = 120).
 	MaxMsgPerSec int
 	// MaxGuests caps session ids (0 or above MaxGuestID = MaxGuestID, so guest
-	// ids never reach the NPC id range). When every id is taken, the guest that has been offline longest loses its session id and
-	// the id is reused; that player gets a new id on its next Hello.
+	// ids never reach the NPC id range). When every id is taken, the guest that
+	// has been offline longest loses its session id and the id is reused; that
+	// player gets a new id on its next Hello.
 	MaxGuests int
 	// SaveInterval is how often live players' positions are saved
 	// (0 = DefaultSaveInterval).

@@ -9,7 +9,7 @@ import (
 )
 
 // npcIDMin is the start of the world's NPC id range (#142).
-const npcIDMin = 0xC000
+const npcIDMin = world.PlayerID(world.DefaultNPCIDMin)
 
 func newIDServer(t *testing.T, maxGuests int) *Server {
 	t.Helper()
@@ -29,7 +29,7 @@ func assign(t *testing.T, s *Server, storeID int64) *guest {
 }
 
 func TestGuestIDCapBelowNPCRange(t *testing.T) {
-	if MaxGuestID != npcIDMin-1 {
+	if MaxGuestID != int(npcIDMin)-1 {
 		t.Fatalf("MaxGuestID = %#x, want %#x", MaxGuestID, npcIDMin-1)
 	}
 	for _, mg := range []int{0, -1, 0xC000, 0xFFFF, 1 << 20} {
@@ -46,7 +46,7 @@ func TestGuestIDsStayBelowNPCRange(t *testing.T) {
 	s := newIDServer(t, 0) // default: the cap
 	var all []*guest
 	var highest world.PlayerID
-	for i := int64(1); i <= MaxGuestID; i++ {
+	for i := int64(1); i <= int64(MaxGuestID); i++ {
 		g := assign(t, s, i)
 		if g == nil {
 			t.Fatalf("guest %d refused before every id was in use", i)
