@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,7 +22,9 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/chat"
 	"github.com/cleiderg/lush/server/internal/systems/emote"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/grounditems"
 	"github.com/cleiderg/lush/server/internal/systems/items"
+	"github.com/cleiderg/lush/server/internal/systems/pvp"
 	"github.com/cleiderg/lush/server/internal/systems/regen"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
 	"github.com/cleiderg/lush/server/internal/systems/trade"
@@ -117,7 +120,7 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		return 1
 	}
 	for _, s := range systems {
-		if err := w.Register(s); err != nil {
+		if err := w.RegisterEvery(s.sys, s.every); err != nil {
 			log.Error("register system", "err", err)
 			return 2
 		}
@@ -194,22 +197,45 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 	return 0
 }
 
+// combatEvery is the combat tick period in world ticks (0.6 s at 20 Hz).
+const combatEvery = 12
+
+// scheduled is a world system and the period, in world ticks, of its Tick.
+type scheduled struct {
+	sys   world.System
+	every int
+}
+
 // gameSystems lists the world systems in registration order. Order matters:
 // movement applies inputs, emote overrides animation, chat delivers, items
 // and shop apply item actions and trades with the stall (whose results the
 // session sends at once), trade runs player trades and commits them through
-// the session's Committer, regen heals (SW1), and the session sends
-// snapshots, stats and inventory last. tileSize is the collision grid's cell
-// size in metres, the unit of the shop and trade distances.
-func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, tileSize float64, clock world.Clock, sess *session.Server) ([]world.System, error) {
+// the session's Committer, ground items expire, PvP combat swings on the
+// combat tick (its hits and drops go to the session, which spawns the drops
+// as ground items), regen heals (SW1), and the session sends snapshots,
+// combat hits, stats and inventory last. tileSize is the collision grid's
+// cell size in metres, the unit of the shop, trade, pick-up and attack
+// distances.
+func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, tileSize float64, clock world.Clock, sess *session.Server) ([]scheduled, error) {
 	heal, err := regen.New(data.Rules, clock)
 	if err != nil {
 		return nil, err
 	}
 	trades := trade.New(data, lookup, tileSize, sess, sess)
 	sess.SetTrades(trades)
-	return []world.System{mover, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess),
-		items.New(data), shop.New(data, lookup, tileSize, sess), trades, heal, sess}, nil
+	ground := grounditems.New(data, clock, tileSize)
+	sess.SetGroundItems(ground)
+	fights, err := pvp.NewCombat(data, lookup, tileSize, clock, rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())), sess, sess)
+	if err != nil {
+		return nil, err
+	}
+	sess.SetPvP(fights)
+	out := []scheduled{}
+	for _, s := range []world.System{mover, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess),
+		items.New(data), shop.New(data, lookup, tileSize, sess), trades, ground} {
+		out = append(out, scheduled{s, 1})
+	}
+	return append(out, scheduled{fights, combatEvery}, scheduled{heal, 1}, scheduled{sess, 1}), nil
 }
 
 // openDatabase connects a pool and applies pending migrations. The returned

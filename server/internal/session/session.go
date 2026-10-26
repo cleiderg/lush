@@ -29,6 +29,8 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/chat"
 	"github.com/cleiderg/lush/server/internal/systems/emote"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/grounditems"
+	"github.com/cleiderg/lush/server/internal/systems/pvp"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
 	"github.com/cleiderg/lush/server/internal/systems/trade"
 	"github.com/cleiderg/lush/server/internal/transport"
@@ -76,6 +78,15 @@ type InputCommand struct {
 
 func (c InputCommand) Target() world.PlayerID { return c.Player }
 
+// AttackCommand is a client AttackTarget naming a player id. Handle passes
+// it to the PvP combat system if Victim is a player in the world.
+type AttackCommand struct {
+	Player world.PlayerID
+	Victim world.PlayerID
+}
+
+func (c AttackCommand) Target() world.PlayerID { return c.Player }
+
 type guest struct {
 	// Guarded by Server.mu.
 	id      world.PlayerID
@@ -104,8 +115,8 @@ type op struct {
 }
 
 // Server is the session layer. It implements world.System, chat.Sink,
-// shop.Sink, trade.Sink, trade.Committer and transport.Handler (via
-// ServeConn).
+// shop.Sink, trade.Sink, trade.Committer, pvp.HitSink, pvp.DropSink and
+// transport.Handler (via ServeConn).
 type Server struct {
 	cfg   Config
 	w     *world.World
@@ -127,7 +138,11 @@ type Server struct {
 	saver *saver
 
 	// Tick-goroutine only.
-	trades   *trade.System // set by SetTrades; nil without trading
+	trades   *trade.System       // set by SetTrades; nil without trading
+	pvp      *pvp.Combat         // set by SetPvP; nil without PvP
+	ground   *grounditems.System // set by SetGroundItems; where PvP drops spawn
+	pvpHits  []pvp.Hit           // this tick's PvP swings, sent as CombatHit
+	seen     []pvp.Hit           // reused: the hits one player can see
 	live     map[world.PlayerID]*guest
 	gone     map[world.PlayerID]*guest // live players with no connection, waiting out the logout lock
 	nextSave time.Time
@@ -245,6 +260,12 @@ func (s *Server) ServeConn(c transport.Conn) {
 			}
 		case protocol.MessagePing:
 			c.Send(encodePong(m.pingToken))
+		case protocol.MessageAttackTarget:
+			// Only player ids go to PvP; 0 and NPC ids are ignored (PvE is
+			// not wired here). Handle checks that the player exists.
+			if m.target != 0 && int(m.target) <= s.cfg.MaxGuests {
+				s.w.Enqueue(AttackCommand{Player: g.id, Victim: world.PlayerID(m.target)})
+			}
 		case protocol.MessageItemAction, protocol.MessageShopBuy, protocol.MessageShopSell,
 			protocol.MessageTradeRequest, protocol.MessageTradeOffer, protocol.MessageTradeRemove,
 			protocol.MessageTradeSetGold, protocol.MessageTradeAccept, protocol.MessageTradeCancel:
@@ -419,7 +440,15 @@ func (s *Server) Name() string { return "session" }
 
 // Handle applies an InputCommand: it sets the movement target one tick of
 // full-speed travel ahead, and the movement system clamps and applies it.
+// An AttackCommand whose victim is another player in the world goes to the
+// PvP combat system; any other is ignored.
 func (s *Server) Handle(cmd world.Command, p *world.Player) {
+	if a, ok := cmd.(AttackCommand); ok {
+		if s.pvp != nil && a.Victim != p.ID && s.w.Player(a.Victim) != nil {
+			s.pvp.Handle(pvp.AttackCommand{Player: p.ID, Victim: a.Victim}, p)
+		}
+		return
+	}
 	in, ok := cmd.(InputCommand)
 	if !ok {
 		return
@@ -512,8 +541,38 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 				s.ents = append(s.ents, o)
 			}
 		}
+		s.sendCombatHits(g, w.TickCount())
 		g.conn.Send(encodeSnapshot(s.bld, w.TickCount(), g.lastSeq, s.ents))
 	}
+	clear(s.pvpHits)
+	s.pvpHits = s.pvpHits[:0]
+}
+
+// sendCombatHits sends g one CombatHit with this tick's PvP hits whose
+// attacker or target is in s.ents (the player and what they see), if any.
+func (s *Server) sendCombatHits(g *guest, tick uint64) {
+	if len(s.pvpHits) == 0 {
+		return
+	}
+	s.seen = s.seen[:0]
+	for _, h := range s.pvpHits {
+		if s.inView(h.Attacker) || s.inView(h.Target) {
+			s.seen = append(s.seen, h)
+		}
+	}
+	if len(s.seen) > 0 {
+		g.conn.Send(encodeCombatHit(s.bld, tick, s.seen))
+	}
+}
+
+// inView reports whether id is in s.ents.
+func (s *Server) inView(id world.PlayerID) bool {
+	for _, e := range s.ents {
+		if e.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) join(g *guest, c transport.Conn, token string) {
@@ -688,6 +747,38 @@ func (s *Server) SaveAll(ctx context.Context) error {
 // Close stops the saver after its current write. Call SaveAll first to keep
 // pending saves.
 func (s *Server) Close() { s.saver.close() }
+
+// ---- PvP ----
+
+// SetPvP connects the PvP combat system, so that AttackTarget naming a
+// player reaches it. Call it before the world starts ticking.
+func (s *Server) SetPvP(c *pvp.Combat) { s.pvp = c }
+
+// SetGroundItems connects the ground item system that PvP drops spawn in.
+// Call it before the world starts ticking.
+func (s *Server) SetGroundItems(g *grounditems.System) { s.ground = g }
+
+// PvPHit implements pvp.HitSink: it keeps the hit for this tick's CombatHit.
+// Called on the tick goroutine, before this Tick.
+func (s *Server) PvPHit(h pvp.Hit) { s.pvpHits = append(s.pvpHits, h) }
+
+// PvPDrop implements pvp.DropSink: it spawns each dropped stack as a ground
+// item at the death position, reserved for the killer, on the tick of the
+// death. The victim's pvp_death outbox event, which removed the same stacks,
+// is written by this Tick as one audited transaction. Called on the tick
+// goroutine.
+func (s *Server) PvPDrop(d pvp.Drop) {
+	if s.ground == nil {
+		s.log.Error("pvp drop: no ground item system", "owner", d.Owner, "stacks", len(d.Stacks))
+		return
+	}
+	now := s.clock.Now()
+	for _, st := range d.Stacks {
+		if _, err := s.ground.Spawn(st.Item, st.Qty, d.Pos, d.Owner, now); err != nil {
+			s.log.Error("pvp drop", "owner", d.Owner, "item", st.Item, "qty", st.Qty, "err", err)
+		}
+	}
+}
 
 // ---- trades ----
 
