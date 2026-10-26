@@ -153,6 +153,7 @@ func TestReclaimedSessionIdResumesUnderNewId(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatal("first guest never left")
 		}
+		r.clock.Advance(time.Second) // past the logout lock
 		r.w.Tick()
 	}
 	d := r.dial(hello(v, ""))
@@ -164,6 +165,7 @@ func TestReclaimedSessionIdResumesUnderNewId(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatal("guests never left")
 		}
+		r.clock.Advance(time.Second)
 		r.w.Tick()
 	}
 	// A's session id now belongs to someone else; A resumes the same stored player.
