@@ -115,7 +115,7 @@ type Change struct {
 // (Rules.InventorySlots), the equipment worn (which takes no slot) and a gold
 // balance that is never negative. Only the tick may mutate it.
 //
-// A locked inventory (see Lock) refuses every change: each method that would
+// A locked inventory (see SetLocked) refuses every change: each method that would
 // change items, equipment or gold returns ErrInventoryLocked instead. Clone
 // keeps the lock, so a system working on a copy is refused too.
 type Inventory struct {
@@ -126,13 +126,10 @@ type Inventory struct {
 	locked bool
 }
 
-// Lock makes every change to the inventory fail with ErrInventoryLocked until
-// Unlock. The trade system locks both players' inventories while their trade
-// is being saved.
-func (inv *Inventory) Lock() { inv.locked = true }
-
-// Unlock undoes Lock.
-func (inv *Inventory) Unlock() { inv.locked = false }
+// SetLocked locks or unlocks the inventory. While locked, every change fails
+// with ErrInventoryLocked. The trade system locks both players' inventories
+// while their trade is being saved.
+func (inv *Inventory) SetLocked(locked bool) { inv.locked = locked }
 
 // Locked reports whether the inventory is locked.
 func (inv *Inventory) Locked() bool { return inv.locked }

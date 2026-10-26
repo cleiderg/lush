@@ -2,14 +2,18 @@
 // trading): two players within Rules.TradeDistanceTiles of each other and
 // outside the PvP zone request each other, offer items and gold, and accept
 // two screens as in OSRS. Every change goes to both players through a Sink,
-// and a trade both players accepted on screen 2 is handed to a Committer.
+// and a trade both players accepted on screen 2 is committed.
 //
-// The system only reads inventories: it never moves items or gold. Moving
-// them, and re-checking the offers at that moment, is the Committer's job.
+// Committing re-checks both offers against the inventories, works out both
+// resulting inventories, locks both players' inventories and hands the swap
+// to a Committer, which saves it as one database transaction off the tick and
+// reports back through Resolve. The swap is applied to the players only when
+// the save succeeded, so items and gold can't be duplicated or lost.
 package trade
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
@@ -132,13 +136,51 @@ type Sink interface {
 	TradeResult(to world.PlayerID, r Result)
 }
 
+// ReasonTrade is the economy audit log reason for a completed trade.
+const ReasonTrade = "trade"
+
+// CommitID identifies a trade commit in flight.
+type CommitID uint64
+
+// Side is one player's half of a commit.
+type Side struct {
+	Player world.PlayerID
+	// Gave is what the player offered.
+	Gave Offer
+	// Inv is the player's inventory once the swap is applied.
+	Inv world.Inventory
+	// Changes are the per-item and gold changes the swap makes to the
+	// player's holdings, for the economy audit log: the items and gold given
+	// (ChangeRemove, negative ChangeGold), then those received (ChangeAdd,
+	// positive ChangeGold).
+	Changes []world.Change
+}
+
+// CommitRequest is a trade to save as one database transaction.
+type CommitRequest struct {
+	ID   CommitID
+	A, B Side
+}
+
 // Committer receives a trade both players accepted on screen 2, on the Tick
 // after both accepted, once both players are still in the world, in reach and
-// outside the PvP zone. The window is already closed when it is called; the
-// Committer saves the swap and reports the outcome (Completed or a failure)
-// to both players. It is called on the tick goroutine and must not block.
+// outside the PvP zone, and both offers were re-checked. The window is
+// already closed and both inventories are locked when it is called. The
+// Committer saves the swap off the tick and then calls System.Resolve with
+// req.ID. It is called on the tick goroutine and must not block.
 type Committer interface {
-	CommitTrade(a, b world.PlayerID, offerA, offerB Offer)
+	CommitTrade(req CommitRequest)
+}
+
+// inflight is a commit waiting for its result.
+type inflight struct {
+	req     CommitRequest
+	players [2]*world.Player // as they were at commit time
+}
+
+type resolution struct {
+	id CommitID
+	ok bool
 }
 
 // side is one player's half of an open trade.
@@ -165,6 +207,7 @@ func (t *session) of(p world.PlayerID) (me, other *side) {
 // position, so requests are queued by Handle and settled in Tick; every
 // other command is settled when it is handled.
 type System struct {
+	data      *gamedata.Data
 	areas     *areas.Lookup
 	reach     float64 // metres
 	sink      Sink
@@ -174,6 +217,13 @@ type System struct {
 	pending  map[world.PlayerID]world.PlayerID // requester -> partner
 	open     []*session                        // in opening order
 	byPlayer map[world.PlayerID]*session
+
+	nextID     CommitID
+	commits    map[CommitID]*inflight
+	committing map[world.PlayerID]CommitID
+
+	rmu      sync.Mutex
+	resolved []resolution // from Resolve, applied by Tick
 }
 
 // New creates the trade system. Rules.TradeDistanceTiles comes from d and the
@@ -181,12 +231,16 @@ type System struct {
 // grid's cell size).
 func New(d *gamedata.Data, l *areas.Lookup, tileSize float64, sink Sink, c Committer) *System {
 	return &System{
+		data:      d,
 		areas:     l,
 		reach:     float64(d.Rules.TradeDistanceTiles) * tileSize,
 		sink:      sink,
 		committer: c,
 		pending:   make(map[world.PlayerID]world.PlayerID),
 		byPlayer:  make(map[world.PlayerID]*session),
+
+		commits:    make(map[CommitID]*inflight),
+		committing: make(map[world.PlayerID]CommitID),
 	}
 }
 
@@ -195,8 +249,28 @@ func (s *System) Name() string { return "trade" }
 // Trading reports whether p has a trade window open.
 func (s *System) Trading(p world.PlayerID) bool { return s.byPlayer[p] != nil }
 
-// Handle applies a trade command for p.
+// Committing reports whether p's trade is being saved. Their inventory is
+// locked and their trade commands are ignored until the result is applied.
+func (s *System) Committing(p world.PlayerID) bool {
+	_, ok := s.committing[p]
+	return ok
+}
+
+// Resolve reports the outcome of commit id: ok if the database transaction
+// committed. The next Tick applies it. Safe for concurrent use; unknown or
+// repeated ids are ignored.
+func (s *System) Resolve(id CommitID, ok bool) {
+	s.rmu.Lock()
+	s.resolved = append(s.resolved, resolution{id, ok})
+	s.rmu.Unlock()
+}
+
+// Handle applies a trade command for p. Commands from a player whose trade
+// is being saved are ignored.
 func (s *System) Handle(cmd world.Command, p *world.Player) {
+	if s.Committing(p.ID) {
+		return
+	}
 	switch c := cmd.(type) {
 	case RequestCommand:
 		s.requests = append(s.requests, c)
@@ -216,12 +290,20 @@ func (s *System) Handle(cmd world.Command, p *world.Player) {
 	}
 }
 
-// Tick settles this tick's requests, then closes every trade whose players
-// left the world, entered the PvP zone or moved too far apart, then hands
-// every trade both players accepted on screen 2 to the Committer. Committing
-// here rather than in Handle means a player who left or moved since the last
-// Tick can't complete a trade.
+// Tick applies the commit results reported since the last Tick, settles
+// this tick's requests, then closes every trade whose players left the world,
+// entered the PvP zone or moved too far apart, then commits every trade both
+// players accepted on screen 2. Committing here rather than in Handle means a
+// player who left or moved since the last Tick can't complete a trade.
 func (s *System) Tick(w *world.World, _ time.Duration) {
+	s.rmu.Lock()
+	resolved := s.resolved
+	s.resolved = nil
+	s.rmu.Unlock()
+	for _, r := range resolved {
+		s.finish(w, r.id, r.ok)
+	}
+
 	for _, r := range s.requests {
 		s.request(w, r.Player, r.Partner)
 	}
@@ -246,9 +328,8 @@ func (s *System) Tick(w *world.World, _ time.Duration) {
 			continue
 		}
 		if t.screen == ScreenConfirm && t.sides[0].accepted && t.sides[1].accepted {
-			x, y := t.sides[0], t.sides[1]
 			s.forget(t) // removes s.open[i]
-			s.committer.CommitTrade(x.id, y.id, x.offer.clone(), y.offer.clone())
+			s.commit(a, b, t.sides[0].offer.clone(), t.sides[1].offer.clone())
 			continue
 		}
 		i++
@@ -286,7 +367,7 @@ func (s *System) request(w *world.World, from, to world.PlayerID) {
 		s.sink.TradeResult(from, r)
 		return
 	}
-	if s.Trading(to) {
+	if s.Trading(to) || s.Committing(to) {
 		s.sink.TradeResult(from, PartnerBusy)
 		return
 	}
@@ -419,4 +500,133 @@ func (s *System) forget(t *session) {
 			break
 		}
 	}
+}
+
+// commit re-checks both offers against x's and y's inventories and works out
+// both resulting inventories. If either side no longer holds what it offered
+// both players get OfferNotHeld; if either side has no room for what it would
+// receive both get InventoryFull; in both cases nothing is committed. If the
+// trade holds, both inventories are locked and the Committer gets it.
+func (s *System) commit(x, y *world.Player, ox, oy Offer) {
+	if !holds(&x.Inv, ox) || !holds(&y.Inv, oy) {
+		s.sink.TradeResult(x.ID, OfferNotHeld)
+		s.sink.TradeResult(y.ID, OfferNotHeld)
+		return
+	}
+	invX, chX, errX := s.swap(&x.Inv, ox, oy)
+	invY, chY, errY := s.swap(&y.Inv, oy, ox)
+	if errX != nil || errY != nil {
+		s.sink.TradeResult(x.ID, InventoryFull)
+		s.sink.TradeResult(y.ID, InventoryFull)
+		return
+	}
+	s.nextID++
+	req := CommitRequest{
+		ID: s.nextID,
+		A:  Side{Player: x.ID, Gave: ox, Inv: invX, Changes: chX},
+		B:  Side{Player: y.ID, Gave: oy, Inv: invY, Changes: chY},
+	}
+	x.Inv.SetLocked(true)
+	y.Inv.SetLocked(true)
+	s.commits[req.ID] = &inflight{req: req, players: [2]*world.Player{x, y}}
+	s.committing[x.ID], s.committing[y.ID] = req.ID, req.ID
+	// The Committer gets its own copies, so nothing it does reaches the
+	// inventories applied later.
+	reqA, reqB := req.A, req.B
+	reqA.Inv, reqB.Inv = reqA.Inv.Clone(), reqB.Inv.Clone()
+	reqA.Gave, reqB.Gave = reqA.Gave.clone(), reqB.Gave.clone()
+	reqA.Changes = append([]world.Change(nil), reqA.Changes...)
+	reqB.Changes = append([]world.Change(nil), reqB.Changes...)
+	s.committer.CommitTrade(CommitRequest{ID: req.ID, A: reqA, B: reqB})
+}
+
+// finish applies the result of commit id: on success both resulting
+// inventories, each with an economy outbox event, and Completed; on failure
+// nothing but Cancelled. Both players are unlocked either way. A player who
+// left the world since the commit is skipped.
+func (s *System) finish(w *world.World, id CommitID, ok bool) {
+	c := s.commits[id]
+	if c == nil {
+		return
+	}
+	delete(s.commits, id)
+	r := Cancelled
+	if ok {
+		r = Completed
+	}
+	for i, side := range [2]Side{c.req.A, c.req.B} {
+		p := c.players[i]
+		delete(s.committing, side.Player)
+		p.Inv.SetLocked(false)
+		if w.Player(side.Player) != p {
+			continue // left the world (and maybe came back as a new entity)
+		}
+		if ok {
+			p.Inv = side.Inv
+			p.Inv.SetLocked(false)
+			p.RecordEconomy(ReasonTrade, side.Changes)
+		}
+		s.sink.TradeResult(side.Player, r)
+	}
+}
+
+// itemTotals returns the quantity of each item in o, in first-offered order.
+func itemTotals(o Offer) []Item {
+	var out []Item
+next:
+	for _, it := range o.Items {
+		for i := range out {
+			if out[i].Item == it.Item {
+				out[i].Qty += it.Qty
+				continue next
+			}
+		}
+		out = append(out, Item{Item: it.Item, Qty: it.Qty})
+	}
+	return out
+}
+
+// holds reports whether inv still holds everything o offers.
+func holds(inv *world.Inventory, o Offer) bool {
+	if o.Gold < 0 || o.Gold > inv.Gold {
+		return false
+	}
+	for _, it := range itemTotals(o) {
+		if it.Qty <= 0 || inv.Count(it.Item) < it.Qty {
+			return false
+		}
+	}
+	return true
+}
+
+// swap returns inv with give taken out and get put in, under the slot and
+// stacking rules, and the changes that makes. inv itself is not changed.
+func (s *System) swap(inv *world.Inventory, give, get Offer) (world.Inventory, []world.Change, error) {
+	out := inv.Clone()
+	var changes []world.Change
+	do := func(ch []world.Change, err error) error {
+		changes = append(changes, ch...)
+		return err
+	}
+	for _, it := range itemTotals(give) {
+		if err := do(out.Remove(it.Item, it.Qty)); err != nil {
+			return world.Inventory{}, nil, err
+		}
+	}
+	if give.Gold > 0 {
+		if err := do(out.SpendGold(give.Gold)); err != nil {
+			return world.Inventory{}, nil, err
+		}
+	}
+	for _, it := range itemTotals(get) {
+		if err := do(out.Add(s.data, it.Item, it.Qty)); err != nil {
+			return world.Inventory{}, nil, err
+		}
+	}
+	if get.Gold > 0 {
+		if err := do(out.AddGold(get.Gold)); err != nil {
+			return world.Inventory{}, nil, err
+		}
+	}
+	return out, changes, nil
 }

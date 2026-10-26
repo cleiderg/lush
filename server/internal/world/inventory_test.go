@@ -551,7 +551,7 @@ func BenchmarkBonuses(b *testing.B) {
 
 // TestLocked checks that every method that changes items, equipment or gold
 // fails with ErrInventoryLocked on a locked inventory, or a clone of one,
-// and changes nothing, and that Unlock lets changes through again.
+// and changes nothing, and that unlocking lets changes through again.
 func TestLocked(t *testing.T) {
 	d := gameData(t)
 	acorn, dagger := itemID(t, d, "acorn"), itemID(t, d, "bronze_dagger")
@@ -576,9 +576,9 @@ func TestLocked(t *testing.T) {
 			}
 			inv.Slots[0] = world.Stack{Item: acorn, Qty: 5}
 			inv.Slots[1] = world.Stack{Item: dagger, Qty: 1}
-			inv.Lock()
+			inv.SetLocked(true)
 			if !inv.Locked() {
-				t.Fatal("not locked after Lock")
+				t.Fatal("not locked after SetLocked")
 			}
 			before := clone(inv)
 			changes, err := tt.op(&inv)
@@ -592,7 +592,7 @@ func TestLocked(t *testing.T) {
 			if _, err := tt.op(&cp); !errors.Is(err, world.ErrInventoryLocked) {
 				t.Fatalf("locked clone: err %v, want ErrInventoryLocked", err)
 			}
-			inv.Unlock()
+			inv.SetLocked(false)
 			if _, err := tt.op(&inv); err != nil {
 				t.Fatalf("unlocked: %v", err)
 			}
