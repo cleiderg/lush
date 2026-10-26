@@ -22,6 +22,52 @@ describe('buildWorldView', () => {
     expect(v.local).toMatchObject({ id: 7, x: 3, z: 4 });
     expect(v.remotes).toEqual([{ id: 9, x: 10, z: 11, heading: 1 }]);
   });
+
+  it('carries ground items as the codec gave them', () => {
+    const g = new GameState();
+    g.handle({ type: 'welcome', playerId: 7, tickRate: 20, spawn: { x: 0, z: 0 } } as never, 0);
+    const items = [
+      { id: 1, itemId: 5, quantity: 3, x: 12.5, z: -4.2 },
+      { id: 2, itemId: 9, quantity: 1, x: 0.1, z: 7 },
+    ];
+    g.handle({ type: 'groundItems', items } as never, 0);
+    expect(buildWorldView(g, 0).groundItems).toEqual(items);
+    expect(buildWorldView(g, 0).groundItems).toEqual(g.items.groundItems);
+  });
+
+  it('passes each hit batch once, flattened oldest first', () => {
+    const g = new GameState();
+    g.handle({ type: 'welcome', playerId: 7, tickRate: 20, spawn: { x: 0, z: 0 } } as never, 0);
+    g.handle(
+      {
+        type: 'combatHit',
+        tick: 4,
+        hits: [
+          { attacker: 7, target: 9, damage: 3, died: false },
+          { attacker: 9, target: 7, damage: 0, died: false },
+        ],
+      } as never,
+      0,
+    );
+    g.handle({ type: 'combatHit', tick: 5, hits: [{ attacker: 7, target: 9, damage: 2, died: true }] } as never, 0);
+    expect(buildWorldView(g, 0).hits).toEqual([
+      { target: 9, damage: 3, died: false },
+      { target: 7, damage: 0, died: false },
+      { target: 9, damage: 2, died: true },
+    ]);
+    expect(buildWorldView(g, 0).hits).toEqual([]);
+  });
+
+  it('has no ground items or hits after a Welcome', () => {
+    const g = new GameState();
+    g.handle({ type: 'welcome', playerId: 7, tickRate: 20, spawn: { x: 0, z: 0 } } as never, 0);
+    g.handle({ type: 'groundItems', items: [{ id: 1, itemId: 5, quantity: 1, x: 1, z: 1 }] } as never, 0);
+    g.handle({ type: 'combatHit', tick: 4, hits: [{ attacker: 7, target: 9, damage: 3, died: false }] } as never, 0);
+    g.handle({ type: 'welcome', playerId: 7, tickRate: 20, spawn: { x: 0, z: 0 } } as never, 0);
+    const v = buildWorldView(g, 0);
+    expect(v.groundItems).toEqual([]);
+    expect(v.hits).toEqual([]);
+  });
 });
 
 describe('camera yaw for controls', () => {
