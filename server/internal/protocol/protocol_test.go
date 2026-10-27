@@ -43,8 +43,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 8 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 8", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 9 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 9", ProtocolVersionCurrent)
 	}
 }
 
@@ -94,13 +94,16 @@ func TestRoundTripWelcome(t *testing.T) {
 	WelcomeAddGuestToken(b, tok)
 	WelcomeAddSpawn(b, CreateVec2(b, 1.5, -2.5))
 	WelcomeAddTickRate(b, 20)
+	WelcomeAddWalkSpeed(b, 4)
+	WelcomeAddRunSpeed(b, 7)
 	buf := finish(b, MessageWelcome, WelcomeEnd(b))
 
 	var m Welcome
 	tbl := open(t, buf, MessageWelcome)
 	m.Init(tbl.Bytes, tbl.Pos)
 	sp := m.Spawn(nil)
-	if m.PlayerId() != 42 || string(m.GuestToken()) != "tok" || sp.X() != 1.5 || sp.Z() != -2.5 || m.TickRate() != 20 {
+	if m.PlayerId() != 42 || string(m.GuestToken()) != "tok" || sp.X() != 1.5 || sp.Z() != -2.5 || m.TickRate() != 20 ||
+		m.WalkSpeed() != 4 || m.RunSpeed() != 7 {
 		t.Fatalf("welcome mismatch")
 	}
 }
@@ -111,7 +114,7 @@ func TestRoundTripInput(t *testing.T) {
 	InputAddSeq(b, 99)
 	InputAddMove(b, CreateVec2(b, 0.5, -1))
 	InputAddFacing(b, 3.25)
-	InputAddActions(b, uint8(ActionFlagsAttack|ActionFlagsJump))
+	InputAddActions(b, uint8(ActionFlagsAttack|ActionFlagsJump|ActionFlagsRun))
 	buf := finish(b, MessageInput, InputEnd(b))
 
 	var m Input
@@ -119,7 +122,7 @@ func TestRoundTripInput(t *testing.T) {
 	m.Init(tbl.Bytes, tbl.Pos)
 	mv := m.Move(nil)
 	if m.Seq() != 99 || mv.X() != 0.5 || mv.Z() != -1 || m.Facing() != 3.25 ||
-		ActionFlags(m.Actions()) != ActionFlagsAttack|ActionFlagsJump {
+		ActionFlags(m.Actions()) != ActionFlagsAttack|ActionFlagsJump|ActionFlagsRun {
 		t.Fatalf("input mismatch")
 	}
 }
