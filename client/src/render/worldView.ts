@@ -52,6 +52,12 @@ export interface NpcView {
   readonly heading: number;
 }
 
+/** A speaker's current overhead message. `id` is a player's entity id; the text is plain, never markup. */
+export interface ChatBubbleView {
+  readonly id: number;
+  readonly text: string;
+}
+
 export interface WorldView {
   readonly local: PlayerView;
   readonly remotes: readonly PlayerView[];
@@ -63,4 +69,6 @@ export interface WorldView {
   readonly groundItems?: readonly GroundItemView[];
   /** NPCs in view; missing means none are drawn and no NPC mesh is added. */
   readonly npcs?: readonly NpcView[];
+  /** Current overhead chat, at most one per speaker; missing or empty means no text is drawn. */
+  readonly chat?: readonly ChatBubbleView[];
 }
