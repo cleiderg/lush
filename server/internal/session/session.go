@@ -105,6 +105,15 @@ type guest struct {
 	// What the client last got in PlayerStats and InventoryState.
 	sentStats stats
 	sentInv   world.Inventory
+	// What the client last got in EntityInfo, for entities in its view; an
+	// entity leaving view is forgotten, so it gets EntityInfo again on return.
+	known map[world.PlayerID]knownEnt
+}
+
+// knownEnt is an entity's last sent EntityInfo and the tick it was last in view.
+type knownEnt struct {
+	info entityInfo
+	tick uint64
 }
 
 type op struct {
@@ -126,6 +135,7 @@ type Server struct {
 	data  *gamedata.Data
 
 	catalog  []byte                 // encoded ItemCatalog, shared by every connection
+	npcCat   []byte                 // encoded NpcCatalog, shared by every connection
 	newToken func() (string, error) // replaced by tests
 
 	mu     sync.Mutex
@@ -150,7 +160,8 @@ type Server struct {
 	econ     []econReq
 	grid     *interest.Grid
 	hits     []interest.Hit
-	ents     []*world.Player
+	ents     []snapEnt
+	npcsIn   map[world.PlayerID]uint64 // NPC ids in grid, with the last tick they were in the world
 	bld      *flatbuffers.Builder
 }
 
@@ -186,9 +197,9 @@ func New(cfg Config, w *world.World, clock world.Clock, players store.Players, l
 		data = d
 	}
 	return &Server{saver: newSaver(players, log), cfg: cfg, w: w, log: log, clock: clock, store: players,
-		data: data, catalog: encodeItemCatalog(data), newToken: newToken,
+		data: data, catalog: encodeItemCatalog(data), npcCat: encodeNpcCatalog(data), newToken: newToken,
 		guests: map[int64]*guest{}, idle: list.New(), conns: map[transport.Conn]struct{}{},
-		live: map[world.PlayerID]*guest{}, gone: map[world.PlayerID]*guest{}, grid: interest.NewGrid(), bld: flatbuffers.NewBuilder(1024)}
+		live: map[world.PlayerID]*guest{}, gone: map[world.PlayerID]*guest{}, grid: interest.NewGrid(), npcsIn: map[world.PlayerID]uint64{}, bld: flatbuffers.NewBuilder(1024)}
 }
 
 // ---- connection goroutines ----
@@ -522,8 +533,19 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		s.nextSave = now.Add(s.cfg.SaveInterval)
 	}
 
+	tick := w.TickCount()
 	for _, p := range w.Players() {
 		s.grid.Set(p.ID, p.Pos)
+	}
+	for _, n := range w.NPCs() {
+		s.grid.Set(world.PlayerID(n.ID), n.Pos)
+		s.npcsIn[world.PlayerID(n.ID)] = tick
+	}
+	for id, t := range s.npcsIn {
+		if t != tick { // removed from the world since
+			s.grid.Remove(id)
+			delete(s.npcsIn, id)
+		}
 	}
 	for id, g := range s.live {
 		if g.conn == nil {
@@ -535,14 +557,24 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		}
 		s.sendChanged(g, p)
 		s.hits = s.grid.Query(p.Pos, interest.ViewRadius, interest.MaxVisible, id, s.hits[:0])
-		s.ents = append(s.ents[:0], p)
+		s.ents = append(s.ents[:0], playerEnt(p))
+		s.sendEntityInfo(g, id, s.playerInfo(p), tick)
 		for _, h := range s.hits {
 			if o := w.Player(h.ID); o != nil {
-				s.ents = append(s.ents, o)
+				s.ents = append(s.ents, playerEnt(o))
+				s.sendEntityInfo(g, h.ID, s.playerInfo(o), tick)
+			} else if n := w.NPC(world.NPCID(h.ID)); n != nil {
+				s.ents = append(s.ents, npcEnt(n))
+				s.sendEntityInfo(g, h.ID, s.npcInfo(n), tick)
 			}
 		}
-		s.sendCombatHits(g, w.TickCount())
-		g.conn.Send(encodeSnapshot(s.bld, w.TickCount(), g.lastSeq, s.ents))
+		for eid, k := range g.known {
+			if k.tick != tick {
+				delete(g.known, eid) // left view
+			}
+		}
+		s.sendCombatHits(g, tick)
+		g.conn.Send(encodeSnapshot(s.bld, tick, g.lastSeq, s.ents))
 	}
 	clear(s.pvpHits)
 	s.pvpHits = s.pvpHits[:0]
@@ -565,10 +597,30 @@ func (s *Server) sendCombatHits(g *guest, tick uint64) {
 	}
 }
 
+// sendEntityInfo sends g an EntityInfo for entity id if the client has not
+// had one since it entered view, or in has changed, and marks id in view.
+func (s *Server) sendEntityInfo(g *guest, id world.PlayerID, in entityInfo, tick uint64) {
+	if k, ok := g.known[id]; !ok || k.info != in {
+		g.conn.Send(encodeEntityInfo(s.bld, id, in))
+	}
+	g.known[id] = knownEnt{info: in, tick: tick}
+}
+
+// playerInfo is p's EntityInfo: combat level and worn equipment.
+func (s *Server) playerInfo(p *world.Player) entityInfo {
+	return entityInfo{kind: protocol.EntityKindPlayer, level: p.CombatLevel(s.data.Rules), equip: p.Inv.Equipment}
+}
+
+// npcInfo is n's EntityInfo: NPC type and the type's combat level.
+func (s *Server) npcInfo(n *world.NPC) entityInfo {
+	t, _ := s.data.NPC(gamedata.NPCTypeID(n.Type))
+	return entityInfo{kind: protocol.EntityKindNpc, npcType: uint16(n.Type), level: t.Level}
+}
+
 // inView reports whether id is in s.ents.
 func (s *Server) inView(id world.PlayerID) bool {
 	for _, e := range s.ents {
-		if e.ID == id {
+		if e.id == id {
 			return true
 		}
 	}
@@ -580,7 +632,8 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 		go g.conn.Close() // same token reconnected: replace the old connection
 	}
 	g.conn = c
-	g.lastSeq = 0 // input sequence numbers are per connection
+	g.lastSeq = 0                           // input sequence numbers are per connection
+	g.known = map[world.PlayerID]knownEnt{} // the new connection has no EntityInfo yet
 	if p := s.w.Player(g.id); p != nil && s.live[g.id] == g {
 		// Still in the world from the previous connection, or waiting out
 		// the logout lock after it ended: take over the same player.
@@ -605,10 +658,11 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 	s.log.Info("player joined", "player", g.id, "transport", "websocket")
 }
 
-// sendInitial sends a newly connected client the item catalog, then the
-// player's stats and inventory.
+// sendInitial sends a newly connected client the item catalog and NPC
+// catalog, then the player's stats and inventory.
 func (s *Server) sendInitial(g *guest, p *world.Player) {
 	g.conn.Send(s.catalog)
+	g.conn.Send(s.npcCat)
 	g.sentStats = statsOf(s.data.Rules, p)
 	g.conn.Send(encodePlayerStats(s.bld, g.sentStats))
 	g.sentInv = cloneInventory(p.Inv)
