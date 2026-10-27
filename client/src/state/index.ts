@@ -1,3 +1,4 @@
+export * from './chat';
 export * from './collision';
 export * from './combat';
 export * from './interact';
