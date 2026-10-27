@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 8
+  Current = 9
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -25,7 +25,8 @@ struct Vec2 {
 enum ActionFlags : ubyte (bit_flags) {
   Interact,
   Attack,
-  Jump
+  Jump,
+  Run    // held while the player is running (D-044)
 }
 
 // Entity.animation values, shared by server and client.
@@ -126,6 +127,8 @@ table Welcome {
   guest_token: string;
   spawn: Vec2;
   tick_rate: ubyte; // server ticks per second
+  walk_speed: float; // metres per second (D-044)
+  run_speed: float;  // metres per second (D-044)
 }
 
 // Client -> server, one per client tick.

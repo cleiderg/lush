@@ -34,13 +34,24 @@ func TestLoadConfig(t *testing.T) {
 		want Config
 		err  bool
 	}{
-		{"defaults", nil, Config{":8080", 20, "", "development", 5 * time.Second, 4, -22, -76, nil, 5 * time.Second, ""}, false},
-		{"production default countdown", map[string]string{"LUSH_ENV": "production"}, Config{":8080", 20, "", "production", 60 * time.Second, 4, -22, -76, nil, 5 * time.Second, ""}, false},
+		{"defaults", nil, Config{":8080", 20, "", "development", 5 * time.Second, 4, 7, -22, -76, nil, 5 * time.Second, ""}, false},
+		{"production default countdown", map[string]string{"LUSH_ENV": "production"}, Config{":8080", 20, "", "production", 60 * time.Second, 4, 7, -22, -76, nil, 5 * time.Second, ""}, false},
 		{"overrides", map[string]string{"LUSH_LISTEN_ADDR": ":9", "LUSH_TICK_RATE": "10", "LUSH_DATABASE_URL": "x", "LUSH_ENV": "production", "LUSH_SHUTDOWN_COUNTDOWN": "7s"},
-			Config{":9", 10, "x", "production", 7 * time.Second, 4, -22, -76, nil, 5 * time.Second, ""}, false},
+			Config{":9", 10, "x", "production", 7 * time.Second, 4, 7, -22, -76, nil, 5 * time.Second, ""}, false},
 		{"ws origins", map[string]string{"LUSH_WS_ORIGINS": " play.example.com, ,localhost:*"},
-			Config{":8080", 20, "", "development", 5 * time.Second, 4, -22, -76, []string{"play.example.com", "localhost:*"}, 5 * time.Second, ""}, false},
+			Config{":8080", 20, "", "development", 5 * time.Second, 4, 7, -22, -76, []string{"play.example.com", "localhost:*"}, 5 * time.Second, ""}, false},
 		{"bad tick", map[string]string{"LUSH_TICK_RATE": "0"}, Config{}, true},
+		{"run speed", map[string]string{"LUSH_MOVE_SPEED": "3", "LUSH_RUN_SPEED": "6.5"},
+			Config{":8080", 20, "", "development", 5 * time.Second, 3, 6.5, -22, -76, nil, 5 * time.Second, ""}, false},
+		{"run equals walk", map[string]string{"LUSH_MOVE_SPEED": "5", "LUSH_RUN_SPEED": "5"},
+			Config{":8080", 20, "", "development", 5 * time.Second, 5, 5, -22, -76, nil, 5 * time.Second, ""}, false},
+		{"run below walk", map[string]string{"LUSH_RUN_SPEED": "3"}, Config{}, true},
+		{"run below raised walk", map[string]string{"LUSH_MOVE_SPEED": "8"}, Config{}, true},
+		{"run zero", map[string]string{"LUSH_RUN_SPEED": "0"}, Config{}, true},
+		{"run negative", map[string]string{"LUSH_RUN_SPEED": "-7"}, Config{}, true},
+		{"run NaN", map[string]string{"LUSH_RUN_SPEED": "NaN"}, Config{}, true},
+		{"run Inf", map[string]string{"LUSH_RUN_SPEED": "+Inf"}, Config{}, true},
+		{"run not a number", map[string]string{"LUSH_RUN_SPEED": "fast"}, Config{}, true},
 		{"bad countdown", map[string]string{"LUSH_SHUTDOWN_COUNTDOWN": "soon"}, Config{}, true},
 	}
 	for _, tc := range tests {

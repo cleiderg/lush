@@ -118,7 +118,7 @@ export interface TradeView {
 }
 
 export type ServerMessage =
-  | { type: 'welcome'; playerId: number; guestToken: string; spawn: { x: number; z: number }; tickRate: number }
+  | { type: 'welcome'; playerId: number; guestToken: string; spawn: { x: number; z: number }; tickRate: number; walkSpeed?: number; runSpeed?: number }
   | { type: 'snapshot'; tick: number; lastInputSeq: number; entities: EntityState[] }
   | { type: 'chat'; speakerId: number; text: string }
   | { type: 'pong'; token: number }
@@ -260,6 +260,8 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
         guestToken: m.guestToken() ?? '',
         spawn: { x: s?.x() ?? 0, z: s?.z() ?? 0 },
         tickRate: m.tickRate(),
+        walkSpeed: m.walkSpeed(),
+        runSpeed: m.runSpeed(),
       };
     }
     case Message.Snapshot: {

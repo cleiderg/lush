@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { Animation } from '../protocol';
 import { GameState } from './world';
 import { Interpolator } from './interpolation';
-import { MOVE_SPEED, Prediction } from './prediction';
+import { WALK_SPEED, Prediction } from './prediction';
 
 describe('Prediction', () => {
   it('applies inputs immediately and numbers them', () => {
     const p = new Prediction();
     expect(p.applyInput(1, 0, 0.05).seq).toBe(1);
     expect(p.applyInput(1, 0, 0.05).seq).toBe(2);
-    expect(p.pos.x).toBeCloseTo(MOVE_SPEED * 0.1);
+    expect(p.pos.x).toBeCloseTo(WALK_SPEED * 0.1);
   });
 
   it('corrects position after a server correction with 3 inputs in flight', () => {
@@ -18,7 +18,7 @@ describe('Prediction', () => {
     // Server processed inputs 1-2 but was pushed back (e.g. collision): at x=0.1.
     p.reconcile({ x: 0.1, z: 0 }, 2);
     expect(p.pendingCount).toBe(3);
-    expect(p.pos.x).toBeCloseTo(0.1 + 3 * MOVE_SPEED * 0.05);
+    expect(p.pos.x).toBeCloseTo(0.1 + 3 * WALK_SPEED * 0.05);
     expect(p.pos.z).toBeCloseTo(0);
     // Everything acknowledged: position is exactly the server's.
     p.reconcile({ x: 2, z: 1 }, 5);
@@ -29,7 +29,7 @@ describe('Prediction', () => {
   it('clamps diagonal speed', () => {
     const p = new Prediction();
     p.applyInput(1, 1, 1);
-    expect(Math.hypot(p.pos.x, p.pos.z)).toBeCloseTo(MOVE_SPEED);
+    expect(Math.hypot(p.pos.x, p.pos.z)).toBeCloseTo(WALK_SPEED);
   });
 });
 

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CollisionGrid, slide, type Vec } from './collision';
-import { MOVE_SPEED, Prediction } from './prediction';
+import { WALK_SPEED, Prediction } from './prediction';
 import { GameState } from './world';
 
 /** Builds a collision.bin like the server's gridRows test helper: 1 m cells, origin (0,0), '#' blocked. */
@@ -153,7 +153,7 @@ describe('prediction with collision (AC2, AC3)', () => {
   it('moves freely without a grid', () => {
     const p = new Prediction({ x: 2.5, z: 1.5 });
     for (let i = 0; i < 20; i++) p.applyInput(1, 0, 0.05);
-    expect(p.pos.x).toBeCloseTo(2.5 + MOVE_SPEED);
+    expect(p.pos.x).toBeCloseTo(2.5 + WALK_SPEED);
   });
 
   it('GameState hands its grid to prediction, before and after Welcome', () => {

@@ -20,7 +20,7 @@ func TestGameSystemsRegisterItemsShopTradeRegenBeforeSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mover, grid, err := newMover(5)
+	mover, grid, err := newMover(5, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
