@@ -2,9 +2,9 @@ import { AudioManager } from './audio';
 import { initErrorReporting } from './core/errorReporting';
 import { interact } from './core/interact';
 import { GameLoop } from './core/loop';
+import { sendMove } from './core/move';
 import { buildWorldView, controlYaw } from './core/view';
 import { sendWave } from './core/wave';
-import { encodeInput } from './net/codec';
 import { localTokenStore, Session } from './net/session';
 import { WebSocketTransport } from './net/transport';
 import { createRenderer } from './render/renderer';
@@ -87,8 +87,7 @@ new GameLoop({
     const m = controls.worldMove();
     // Inputs the server will never see would pile up unacknowledged; Welcome resets prediction anyway.
     if (!session.connected) return;
-    const input = game.prediction.applyInput(m.x, m.y, stepMs / 1000);
-    session.send(encodeInput(input.seq, m.x, m.y, game.heading));
+    sendMove(game, session, m.x, m.y, stepMs / 1000, controls.isRunning);
   },
   render: () => renderer.render(buildWorldView(game, performance.now())),
 }).start();
