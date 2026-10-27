@@ -34,6 +34,9 @@ type Player struct {
 	// system's Handle and consumed (clamped) in its Tick.
 	Desired    Vec2
 	HasDesired bool
+	// Running is whether the player's current move is at run speed; set by
+	// the movement system's Handle with each move (D-044).
+	Running bool
 
 	// Inv is the player's items, equipment and gold. Build it with
 	// NewStartingInventory or NewInventory.
