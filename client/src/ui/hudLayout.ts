@@ -20,6 +20,8 @@ export interface HudLayout {
   tradePrompt: Rect;
   /** The PvP warning banner / in-zone indicator, a strip just above the control tray and below the panels. */
   pvp: Rect;
+  /** The chat log, a strip at the bottom of the panel area just above the PvP strip; hidden while a panel is open. */
+  chat: Rect;
 }
 
 /** Mirrors index.html: #app is at most this wide and centred. */
@@ -33,6 +35,7 @@ const HUD_H = 64;
 const TOGGLE = 52;
 const PROMPT_H = 88;
 const PVP_H = 36;
+const CHAT_H = 120;
 
 /**
  * Where the HUD, inventory toggle, inventory panel, shop panel and trade window go for a viewport of
@@ -57,7 +60,9 @@ export function hudLayout(width: number, height: number): HudLayout {
     h: Math.max(0, pvp.y - MARGIN - panelTop),
   };
   const tradePrompt = { ...panel, h: Math.min(PROMPT_H, panel.h) };
-  return { controls, hud, toggle, panel, shop: { ...panel }, trade: { ...panel }, tradePrompt, pvp };
+  const chatH = Math.min(CHAT_H, panel.h);
+  const chat = { x: panel.x, y: panel.y + panel.h - chatH, w: panel.w, h: chatH };
+  return { controls, hud, toggle, panel, shop: { ...panel }, trade: { ...panel }, tradePrompt, pvp, chat };
 }
 
 export function intersects(a: Rect, b: Rect): boolean {
