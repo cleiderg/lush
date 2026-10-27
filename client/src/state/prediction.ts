@@ -1,17 +1,19 @@
 import { type CollisionGrid, slide } from './collision';
 
 /**
- * Walk speed in metres per second, decided in PRD D-044 (walk 4 m/s, run 7 m/s).
- * The server is the source of truth: this must match the server's LUSH_MOVE_SPEED default,
- * and will be replaced by the value the server sends in Welcome.
+ * Default walk and run speeds in metres per second, decided in PRD D-044.
+ * The server is the source of truth: GameState replaces these with the values Welcome sends.
  */
-export const MOVE_SPEED = 4;
+export const WALK_SPEED = 4;
+export const RUN_SPEED = 7;
 
 export interface PendingInput {
   seq: number;
   moveX: number;
   moveZ: number;
   dt: number;
+  /** Metres per second this input was sent with, so replays match what the server applied. */
+  speed: number;
 }
 
 export interface Pos {
@@ -23,7 +25,7 @@ export interface Pos {
 function step(p: Pos, i: PendingInput, grid: CollisionGrid | null): void {
   const len = Math.hypot(i.moveX, i.moveZ);
   const k = len > 1 ? 1 / len : 1;
-  const to = { x: p.x + i.moveX * k * MOVE_SPEED * i.dt, z: p.z + i.moveZ * k * MOVE_SPEED * i.dt };
+  const to = { x: p.x + i.moveX * k * i.speed * i.dt, z: p.z + i.moveZ * k * i.speed * i.dt };
   const next = grid ? slide(grid, p, to) : to;
   p.x = next.x;
   p.z = next.z;
@@ -45,8 +47,8 @@ export class Prediction {
   }
 
   /** Numbers and applies an input immediately. Returns it so the caller can send it. */
-  applyInput(moveX: number, moveZ: number, dt: number): PendingInput {
-    const input = { seq: this.nextSeq++, moveX, moveZ, dt };
+  applyInput(moveX: number, moveZ: number, dt: number, speed = WALK_SPEED): PendingInput {
+    const input = { seq: this.nextSeq++, moveX, moveZ, dt, speed };
     this.pending.push(input);
     step(this.pos, input, this.grid);
     return input;
