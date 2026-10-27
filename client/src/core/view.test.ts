@@ -1,9 +1,53 @@
 import { describe, expect, it } from 'vitest';
 import { EntityKind } from '../protocol';
+import { OVERHEAD_CHAT_MS } from '../state/chat';
 import { GameState } from '../state/world';
 import { buildWorldView, controlYaw, moveForRigYaw } from './view';
 
 describe('buildWorldView', () => {
+  function withRemote(): GameState {
+    const g = new GameState();
+    g.handle({ type: 'welcome', playerId: 7, tickRate: 20, spawn: { x: 3, z: 4 } } as never, 0);
+    g.handle(
+      {
+        type: 'snapshot',
+        tick: 1,
+        lastInputSeq: 0,
+        entities: [
+          { id: 7, x: 3, z: 4, heading: 0 },
+          { id: 9, x: 10, z: 11, heading: 1 },
+        ],
+      } as never,
+      0,
+    );
+    return g;
+  }
+
+  it('passes the current overhead chat of the local player and remotes', () => {
+    const g = withRemote();
+    g.handle({ type: 'chat', speakerId: 7, text: 'hi' } as never, 1000);
+    g.handle({ type: 'chat', speakerId: 9, text: 'yo' } as never, 1000);
+    const chat = buildWorldView(g, 1000).chat ?? [];
+    expect([...chat].sort((a, b) => a.id - b.id)).toEqual([
+      { id: 7, text: 'hi' },
+      { id: 9, text: 'yo' },
+    ]);
+  });
+
+  it('leaves out messages older than OVERHEAD_CHAT_MS', () => {
+    const g = withRemote();
+    g.handle({ type: 'chat', speakerId: 9, text: 'old' } as never, 1000);
+    g.handle({ type: 'chat', speakerId: 7, text: 'new' } as never, 1000 + OVERHEAD_CHAT_MS);
+    expect(buildWorldView(g, 1000 + OVERHEAD_CHAT_MS).chat).toEqual([{ id: 7, text: 'new' }]);
+  });
+
+  it('leaves out speakers that are neither local nor in view', () => {
+    const g = withRemote();
+    g.handle({ type: 'chat', speakerId: 42, text: 'far away' } as never, 1000);
+    g.handle({ type: 'chat', speakerId: 9, text: 'near' } as never, 1000);
+    expect(buildWorldView(g, 1000).chat).toEqual([{ id: 9, text: 'near' }]);
+  });
+
   it('uses the predicted local player and interpolated remotes', () => {
     const g = new GameState();
     g.handle({ type: 'welcome', playerId: 7, tickRate: 20, spawn: { x: 3, z: 4 } } as never, 0);
