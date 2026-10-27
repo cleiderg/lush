@@ -12,6 +12,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/session"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/transport"
 	"github.com/cleiderg/lush/server/internal/world"
 )
 
@@ -331,4 +332,35 @@ func TestEntityInfoOnEnterAndChange(t *testing.T) {
 	r.expectWelcome(c2)
 	firstSight(c2)
 	quiet(c2, "after reconnect")
+}
+
+// A crowd entering view at once, with the production send queue, still gets
+// every tick's Snapshot and, within a few ticks, exactly one EntityInfo per
+// entity: none are lost to a full queue.
+func TestEntityInfoForCrowdFitsSendQueue(t *testing.T) {
+	r := newRig(t, transport.DefaultSendQueue)
+	c := r.dial(hello(uint16(protocol.ProtocolVersionCurrent), ""))
+	r.expectWelcome(c)
+	r.step(c)
+	for k := 0; k < interest.MaxVisible; k++ {
+		addNPC(t, r.w, 1, world.Vec2{X: 0.15 * float32(k+1)})
+	}
+	seen := map[uint16]int{}
+	var s protocol.Snapshot
+	for i := 0; i < 10; i++ {
+		var infos []protocol.EntityInfo
+		s, infos = r.step(c) // fails if this tick's Snapshot was dropped
+		for _, e := range infos {
+			seen[e.Id()]++
+		}
+	}
+	ids := snapshotIDs(s)
+	if len(ids) != interest.MaxVisible+1 {
+		t.Fatalf("snapshot has %d entities, want %d", len(ids), interest.MaxVisible+1)
+	}
+	for id := range ids {
+		if n := seen[id]; n != 1 && !(n == 0 && int(id) <= session.MaxGuestID) { // self's came on the first step
+			t.Fatalf("entity %d got %d EntityInfo, want 1", id, n)
+		}
+	}
 }

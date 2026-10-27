@@ -41,6 +41,11 @@ import (
 // of the world's NPC id range (#142), where AddPlayer refuses player ids.
 const MaxGuestID = int(world.DefaultNPCIDMin) - 1
 
+// maxInfoPerTick caps the EntityInfo frames sent to one client per tick, so a
+// crowd entering view (up to interest.MaxVisible at once) leaves room in the
+// send queue for the Snapshot; the rest go on the following ticks.
+const maxInfoPerTick = transport.DefaultSendQueue / 2
+
 // Config holds session tuning.
 type Config struct {
 	TickRate     int
@@ -162,6 +167,7 @@ type Server struct {
 	hits     []interest.Hit
 	ents     []snapEnt
 	npcsIn   map[world.PlayerID]uint64 // NPC ids in grid, with the last tick they were in the world
+	infoLeft int                       // EntityInfo frames the current client may still get this tick
 	bld      *flatbuffers.Builder
 }
 
@@ -558,6 +564,7 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		s.sendChanged(g, p)
 		s.hits = s.grid.Query(p.Pos, interest.ViewRadius, interest.MaxVisible, id, s.hits[:0])
 		s.ents = append(s.ents[:0], playerEnt(p))
+		s.infoLeft = maxInfoPerTick
 		s.sendEntityInfo(g, id, s.playerInfo(p), tick)
 		for _, h := range s.hits {
 			if o := w.Player(h.ID); o != nil {
@@ -599,9 +606,19 @@ func (s *Server) sendCombatHits(g *guest, tick uint64) {
 
 // sendEntityInfo sends g an EntityInfo for entity id if the client has not
 // had one since it entered view, or in has changed, and marks id in view.
+// Past this tick's budget, or when the send queue is full, the EntityInfo is
+// not recorded as sent, so it goes out on a later tick.
 func (s *Server) sendEntityInfo(g *guest, id world.PlayerID, in entityInfo, tick uint64) {
-	if k, ok := g.known[id]; !ok || k.info != in {
-		g.conn.Send(encodeEntityInfo(s.bld, id, in))
+	k, ok := g.known[id]
+	if !ok || k.info != in {
+		if s.infoLeft <= 0 || !g.conn.Send(encodeEntityInfo(s.bld, id, in)) {
+			s.infoLeft = 0
+			if ok {
+				g.known[id] = knownEnt{info: k.info, tick: tick}
+			}
+			return
+		}
+		s.infoLeft--
 	}
 	g.known[id] = knownEnt{info: in, tick: tick}
 }
