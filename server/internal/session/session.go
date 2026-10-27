@@ -47,6 +47,7 @@ type Config struct {
 	Spawn        world.Vec2    // where new guests appear
 	Collision    *world.Grid   // if set, a saved position on a blocked cell rejoins at Spawn
 	MoveSpeed    float32       // world units per second at full stick; must match the movement system
+	RunSpeed     float32       // the same while the Input's Run flag is set (0 = MoveSpeed); both go out in Welcome (D-044)
 	HelloTimeout time.Duration // how long a connection may stay silent before Hello
 	// MaxMsgPerSec disconnects clients that send faster than this (0 = 120).
 	MaxMsgPerSec int
@@ -72,6 +73,7 @@ type InputCommand struct {
 	Seq          uint32
 	MoveX, MoveZ float32
 	Facing       float32
+	Run          bool // the Run action flag: move at RunSpeed
 
 	conn transport.Conn // inputs from a replaced connection are ignored
 }
@@ -171,6 +173,9 @@ func New(cfg Config, w *world.World, clock world.Clock, players store.Players, l
 	if cfg.SaveInterval <= 0 {
 		cfg.SaveInterval = DefaultSaveInterval
 	}
+	if cfg.RunSpeed <= 0 {
+		cfg.RunSpeed = cfg.MoveSpeed
+	}
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
@@ -250,7 +255,7 @@ func (s *Server) ServeConn(c transport.Conn) {
 		switch m.typ {
 		case protocol.MessageInput:
 			s.w.Enqueue(InputCommand{Player: g.id, Seq: m.seq,
-				MoveX: m.moveX, MoveZ: m.moveZ, Facing: m.facing, conn: c})
+				MoveX: m.moveX, MoveZ: m.moveZ, Facing: m.facing, Run: m.run, conn: c})
 		case protocol.MessageChatSend:
 			s.w.Enqueue(chat.SendCommand{Player: g.id, Text: m.chatText})
 		case protocol.MessageEmoteSend:
@@ -439,7 +444,8 @@ func (s *Server) BroadcastRestartCountdown(remaining time.Duration) {
 func (s *Server) Name() string { return "session" }
 
 // Handle applies an InputCommand: it sets the movement target one tick of
-// full-speed travel ahead, and the movement system clamps and applies it.
+// full-speed travel ahead (at RunSpeed when the Run flag is set, else
+// MoveSpeed), and the movement system clamps and applies it.
 // An AttackCommand whose victim is another player in the world goes to the
 // PvP combat system; any other is ignored.
 func (s *Server) Handle(cmd world.Command, p *world.Player) {
@@ -466,6 +472,7 @@ func (s *Server) Handle(cmd world.Command, p *world.Player) {
 	if l := math.Hypot(mx, mz); l > 1 {
 		mx, mz = mx/l, mz/l
 	}
+	p.Running = in.Run
 	if mx == 0 && mz == 0 {
 		p.HasDesired = false
 		if f := float64(in.Facing); !math.IsNaN(f) && !math.IsInf(f, 0) {
@@ -473,7 +480,11 @@ func (s *Server) Handle(cmd world.Command, p *world.Player) {
 		}
 		return
 	}
-	reach := float64(s.cfg.MoveSpeed) * s.w.TickInterval().Seconds()
+	speed := s.cfg.MoveSpeed
+	if in.Run {
+		speed = s.cfg.RunSpeed
+	}
+	reach := float64(speed) * s.w.TickInterval().Seconds()
 	p.Desired = world.Vec2{X: p.Pos.X + float32(mx*reach), Y: p.Pos.Y + float32(mz*reach)}
 	p.HasDesired = true
 }
@@ -585,7 +596,7 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 		// Still in the world from the previous connection, or waiting out
 		// the logout lock after it ended: take over the same player.
 		delete(s.gone, g.id)
-		c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate))
+		c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate, s.cfg.MoveSpeed, s.cfg.RunSpeed))
 		s.sendInitial(g, p)
 		return
 	}
@@ -600,7 +611,7 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 		return
 	}
 	s.live[g.id] = g
-	c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate))
+	c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate, s.cfg.MoveSpeed, s.cfg.RunSpeed))
 	s.sendInitial(g, p)
 	s.log.Info("player joined", "player", g.id, "transport", "websocket")
 }

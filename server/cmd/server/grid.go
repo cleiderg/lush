@@ -16,13 +16,14 @@ import (
 var collisionData []byte
 
 // newMover parses the embedded collision grid and builds the movement system
-// that enforces it. The grid is returned for other systems that need it.
-func newMover(maxSpeed float32) (*movement.System, *world.Grid, error) {
+// that enforces it, with the walk and run speeds (D-044). The grid is
+// returned for other systems that need it.
+func newMover(walkSpeed, runSpeed float32) (*movement.System, *world.Grid, error) {
 	grid, err := world.ParseGrid(collisionData)
 	if err != nil {
 		return nil, nil, fmt.Errorf("embedded collision grid: %w", err)
 	}
-	mover, err := movement.New(movement.Config{MaxSpeed: maxSpeed, Collision: grid})
+	mover, err := movement.New(movement.Config{MaxSpeed: walkSpeed, RunSpeed: runSpeed, Collision: grid})
 	if err != nil {
 		return nil, nil, err
 	}
