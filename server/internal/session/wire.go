@@ -9,7 +9,6 @@ import (
 	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/items"
-	"github.com/cleiderg/lush/server/internal/systems/pvp"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
 	"github.com/cleiderg/lush/server/internal/systems/trade"
 	"github.com/cleiderg/lush/server/internal/world"
@@ -216,14 +215,22 @@ func encodeEntityHealth(b *flatbuffers.Builder, hs []healthEnt) []byte {
 	return finish(b, protocol.MessageEntityHealth, protocol.EntityHealthEnd(b))
 }
 
+// hit is one PvP or PvE swing as CombatHit carries it: attacker and target
+// are entity ids (NPC ids sit above guest ids, as in snapEnt).
+type hit struct {
+	attacker, target world.PlayerID
+	damage           int
+	died             bool
+}
+
 // encodeCombatHit builds a CombatHit of hits for world tick tick. b is reused
 // across calls.
-func encodeCombatHit(b *flatbuffers.Builder, tick uint64, hits []pvp.Hit) []byte {
+func encodeCombatHit(b *flatbuffers.Builder, tick uint64, hits []hit) []byte {
 	b.Reset()
 	protocol.CombatHitStartHitsVector(b, len(hits))
 	for i := len(hits) - 1; i >= 0; i-- {
 		h := hits[i]
-		protocol.CreateHit(b, uint16(h.Attacker), uint16(h.Target), clampU8(h.Damage), h.Died)
+		protocol.CreateHit(b, uint16(h.attacker), uint16(h.target), clampU8(h.damage), h.died)
 	}
 	vec := b.EndVector(len(hits))
 	protocol.CombatHitStart(b)

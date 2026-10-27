@@ -17,6 +17,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/session"
 	"github.com/cleiderg/lush/server/internal/store"
+	pvecombat "github.com/cleiderg/lush/server/internal/systems/combat"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/grounditems"
 	"github.com/cleiderg/lush/server/internal/systems/movement"
@@ -26,8 +27,11 @@ import (
 	"github.com/cleiderg/lush/server/internal/world/areas"
 )
 
-// pvpEverywhere is a map that is all PvP zone, respawning at spawn.
+// pvpEverywhere is a map that is all PvP zone, with no safe circle,
+// respawning at spawn.
 type pvpEverywhere struct{ spawn world.Vec2 }
+
+func (pvpEverywhere) InSafeCircle(world.Vec2) bool { return false }
 
 func (pvpEverywhere) AreaAt(world.Vec2) areas.Area { return areas.PvPZone }
 func (z pvpEverywhere) Spawn() world.Vec2          { return z.spawn }
@@ -91,12 +95,13 @@ type pvpRig struct {
 	*rig
 	data   *gamedata.Data
 	combat *pvp.Combat
+	pve    *pvecombat.System
 	ground *grounditems.System
 	store  *econSpy
 }
 
-// newPvPRig is a rig with ground items and PvP combat wired as in main.go:
-// combat on every 12th tick, hits and drops going to the session. New guests
+// newPvPRig is a rig with ground items, PvP and PvE combat wired as in
+// main.go: combat on every 12th tick, hits and drops going to the session. New guests
 // spawn at the origin, and everywhere is the PvP zone.
 func newPvPRig(t *testing.T, r pvpRand) *pvpRig {
 	t.Helper()
@@ -117,10 +122,15 @@ func newPvPRig(t *testing.T, r pvpRand) *pvpRig {
 		t.Fatal(err)
 	}
 	sess.SetPvP(combat)
+	pve, err := pvecombat.New(d, pvpEverywhere{}, tileSize, clock, r, sess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess.SetPvE(pve)
 	for _, s := range []struct {
 		sys   world.System
 		every int
-	}{{mv, 1}, {ground, 1}, {combat, 12}, {sess, 1}} {
+	}{{mv, 1}, {ground, 1}, {combat, 12}, {pve, 12}, {sess, 1}} {
 		if err := w.RegisterEvery(s.sys, s.every); err != nil {
 			t.Fatal(err)
 		}
@@ -130,7 +140,7 @@ func newPvPRig(t *testing.T, r pvpRand) *pvpRig {
 	t.Cleanup(srv.Close)
 	return &pvpRig{
 		rig:  &rig{t: t, w: w, clock: clock, sess: sess, url: "ws" + strings.TrimPrefix(srv.URL, "http"), stats: st},
-		data: d, combat: combat, ground: ground, store: spy,
+		data: d, combat: combat, pve: pve, ground: ground, store: spy,
 	}
 }
 

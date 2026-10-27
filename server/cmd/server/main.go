@@ -20,13 +20,16 @@ import (
 	"github.com/cleiderg/lush/server/internal/session"
 	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
+	"github.com/cleiderg/lush/server/internal/systems/combat"
 	"github.com/cleiderg/lush/server/internal/systems/emote"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/grounditems"
 	"github.com/cleiderg/lush/server/internal/systems/items"
+	"github.com/cleiderg/lush/server/internal/systems/npc"
 	"github.com/cleiderg/lush/server/internal/systems/pvp"
 	"github.com/cleiderg/lush/server/internal/systems/regen"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
+	"github.com/cleiderg/lush/server/internal/systems/spawner"
 	"github.com/cleiderg/lush/server/internal/systems/trade"
 	"github.com/cleiderg/lush/server/internal/transport"
 	"github.com/cleiderg/lush/server/internal/world"
@@ -106,7 +109,7 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		log.Error("areas", "err", err)
 		return 1
 	}
-	systems, err := gameSystems(mover, data, lookup, grid.CellSize(), clock, sess)
+	systems, err := gameSystems(mover, data, lookup, grid, cfg.MoveSpeed, clock, sess)
 	if err != nil {
 		log.Error("system setup failed", "err", err)
 		return 1
@@ -199,17 +202,34 @@ type scheduled struct {
 }
 
 // gameSystems lists the world systems in registration order. Order matters:
-// movement applies inputs, emote overrides animation, chat delivers, items
-// and shop apply item actions and trades with the stall (whose results the
-// session sends at once), trade runs player trades and commits them through
-// the session's Committer, ground items expire, PvP combat swings on the
-// combat tick (its hits and drops go to the session, which spawns the drops
-// as ground items), regen heals (SW1), and the session sends snapshots,
-// combat hits, stats and inventory last. tileSize is the collision grid's
-// cell size in metres, the unit of the shop, trade, pick-up and attack
-// distances.
-func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, tileSize float64, clock world.Clock, sess *session.Server) ([]scheduled, error) {
+// movement applies inputs, the NPC system walks NPCs toward their goals,
+// emote overrides animation, chat delivers, items and shop apply item
+// actions and trades with the stall (whose results the session sends at
+// once), trade runs player trades and commits them through the session's
+// Committer, ground items expire, PvP and then PvE combat swing on the combat
+// tick (PvE after NPC movement; hits go to the session, PvP drops become
+// ground items), the spawner replaces killed NPCs after combat so a kill
+// starts its respawn timer on the tick it happens, regen heals (SW1), and the
+// session sends snapshots, combat hits, stats and inventory last. The
+// collision grid's cell size is the tile, the unit of the shop, trade,
+// pick-up, attack and leash distances; walkSpeed is the NPC walk speed in
+// metres per second (the player walk speed, D-044).
+func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, grid *world.Grid, walkSpeed float32, clock world.Clock, sess *session.Server) ([]scheduled, error) {
+	tileSize := grid.CellSize()
 	heal, err := regen.New(data.Rules, clock)
+	if err != nil {
+		return nil, err
+	}
+	npcs, err := npc.New(npc.Config{WalkSpeed: walkSpeed, LeashTiles: data.Rules.LeashTiles, TileSize: tileSize, Collision: grid, Areas: lookup})
+	if err != nil {
+		return nil, err
+	}
+	pve, err := combat.New(data, lookup, tileSize, clock, rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())), sess)
+	if err != nil {
+		return nil, err
+	}
+	sess.SetPvE(pve)
+	spawns, err := spawner.New(spawner.Config{Data: data, Areas: lookup, Collision: grid, Clock: clock, Rand: rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64()))})
 	if err != nil {
 		return nil, err
 	}
@@ -223,11 +243,12 @@ func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, 
 	}
 	sess.SetPvP(fights)
 	out := []scheduled{}
-	for _, s := range []world.System{mover, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess),
+	for _, s := range []world.System{mover, npcs, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess),
 		items.New(data), shop.New(data, lookup, tileSize, sess), trades, ground} {
 		out = append(out, scheduled{s, 1})
 	}
-	return append(out, scheduled{fights, combatEvery}, scheduled{heal, 1}, scheduled{sess, 1}), nil
+	return append(out, scheduled{fights, combatEvery}, scheduled{pve, combatEvery}, scheduled{spawns, 1},
+		scheduled{heal, 1}, scheduled{sess, 1}), nil
 }
 
 // openDatabase connects a pool and applies pending migrations. The returned
