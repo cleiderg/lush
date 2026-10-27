@@ -125,6 +125,15 @@ type guest struct {
 	// What the client last got in EntityInfo, for entities in its view; an
 	// entity leaving view is forgotten, so it gets EntityInfo again on return.
 	known map[world.PlayerID]knownEnt
+	// The health ratio the client last got in EntityHealth, for entities in
+	// its view; absent means full. An entity leaving view is forgotten.
+	health map[world.PlayerID]knownHealth
+}
+
+// knownHealth is an entity's last sent health ratio and the tick it was last in view.
+type knownHealth struct {
+	ratio uint8
+	tick  uint64
 }
 
 // knownEnt is an entity's last sent EntityInfo and the tick it was last in view.
@@ -181,6 +190,7 @@ type Server struct {
 	ents     []snapEnt
 	npcsIn   map[world.PlayerID]uint64 // NPC ids in grid, with the last tick they were in the world
 	infoLeft int                       // EntityInfo frames the current client may still get this tick
+	healths  []healthEnt               // reused: this tick's EntityHealth entries for one client
 	bld      *flatbuffers.Builder
 }
 
@@ -603,14 +613,18 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		s.hits = s.grid.Query(p.Pos, interest.ViewRadius, interest.MaxVisible, id, s.hits[:0])
 		s.ents = append(s.ents[:0], playerEnt(p))
 		s.infoLeft = maxInfoPerTick
+		s.healths = s.healths[:0]
 		s.sendEntityInfo(g, id, s.playerInfo(p), tick)
+		s.noteHealth(g, id, s.playerRatio(p), tick)
 		for _, h := range s.hits {
 			if o := w.Player(h.ID); o != nil {
 				s.ents = append(s.ents, playerEnt(o))
 				s.sendEntityInfo(g, h.ID, s.playerInfo(o), tick)
+				s.noteHealth(g, h.ID, s.playerRatio(o), tick)
 			} else if n := w.NPC(world.NPCID(h.ID)); n != nil {
 				s.ents = append(s.ents, npcEnt(n))
 				s.sendEntityInfo(g, h.ID, s.npcInfo(n), tick)
+				s.noteHealth(g, h.ID, s.npcRatio(n), tick)
 			}
 		}
 		for eid, k := range g.known {
@@ -618,6 +632,7 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 				delete(g.known, eid) // left view
 			}
 		}
+		s.sendEntityHealth(g, tick)
 		s.sendCombatHits(g, tick)
 		g.conn.Send(encodeSnapshot(s.bld, tick, g.lastSeq, s.ents))
 	}
@@ -661,6 +676,49 @@ func (s *Server) sendEntityInfo(g *guest, id world.PlayerID, in entityInfo, tick
 	g.known[id] = knownEnt{info: in, tick: tick}
 }
 
+// noteHealth marks id in view with health ratio and queues it for this
+// tick's EntityHealth if it differs from what the client last got (full
+// when it has had none since id entered view).
+func (s *Server) noteHealth(g *guest, id world.PlayerID, ratio uint8, tick uint64) {
+	k, ok := g.health[id]
+	if !ok {
+		k.ratio = fullHealth
+	}
+	if k.ratio != ratio {
+		s.healths = append(s.healths, healthEnt{id: id, ratio: ratio})
+	}
+	g.health[id] = knownHealth{ratio: k.ratio, tick: tick}
+}
+
+// sendEntityHealth sends g one EntityHealth with the entries noteHealth
+// queued this tick, if any, records them as sent, and forgets entities that
+// left view. When the send queue is full nothing is recorded, so the
+// changes go out on a later tick.
+func (s *Server) sendEntityHealth(g *guest, tick uint64) {
+	if len(s.healths) > 0 && g.conn.Send(encodeEntityHealth(s.bld, s.healths)) {
+		for _, h := range s.healths {
+			g.health[h.id] = knownHealth{ratio: h.ratio, tick: tick}
+		}
+	}
+	for id, k := range g.health {
+		if k.tick != tick {
+			delete(g.health, id) // left view
+		}
+	}
+}
+
+// playerRatio is p's health ratio as EntityHealth carries it.
+func (s *Server) playerRatio(p *world.Player) uint8 {
+	return healthRatio(p.HP, p.MaxHP(s.data.Rules))
+}
+
+// npcRatio is n's health ratio as EntityHealth carries it; its maximum HP
+// is its type's HP.
+func (s *Server) npcRatio(n *world.NPC) uint8 {
+	t, _ := s.data.NPC(gamedata.NPCTypeID(n.Type))
+	return healthRatio(n.HP, t.HP)
+}
+
 // playerInfo is p's EntityInfo: combat level and worn equipment.
 func (s *Server) playerInfo(p *world.Player) entityInfo {
 	return entityInfo{kind: protocol.EntityKindPlayer, level: p.CombatLevel(s.data.Rules), equip: p.Inv.Equipment}
@@ -689,6 +747,7 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 	g.conn = c
 	g.lastSeq = 0                           // input sequence numbers are per connection
 	g.known = map[world.PlayerID]knownEnt{} // the new connection has no EntityInfo yet
+	g.health = map[world.PlayerID]knownHealth{}
 	if p := s.w.Player(g.id); p != nil && s.live[g.id] == g {
 		// Still in the world from the previous connection, or waiting out
 		// the logout lock after it ended: take over the same player.

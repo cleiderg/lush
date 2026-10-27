@@ -181,6 +181,40 @@ func encodeEntityInfo(b *flatbuffers.Builder, id world.PlayerID, in entityInfo) 
 	return finish(b, protocol.MessageEntityInfo, protocol.EntityInfoEnd(b))
 }
 
+// fullHealth is the HealthRatio of an entity at full health.
+const fullHealth = 255
+
+// healthRatio is hp / maxHP scaled to 0..255, rounded down: 0 only when dead
+// and 255 only at full health.
+func healthRatio(hp, maxHP int) uint8 {
+	switch {
+	case hp <= 0 || maxHP <= 0:
+		return 0
+	case hp >= maxHP:
+		return fullHealth
+	}
+	return uint8(max(1, hp*fullHealth/maxHP))
+}
+
+// healthEnt is one entry of EntityHealth.
+type healthEnt struct {
+	id    world.PlayerID
+	ratio uint8
+}
+
+// encodeEntityHealth builds an EntityHealth of hs. b is reused across calls.
+func encodeEntityHealth(b *flatbuffers.Builder, hs []healthEnt) []byte {
+	b.Reset()
+	protocol.EntityHealthStartEntriesVector(b, len(hs))
+	for i := len(hs) - 1; i >= 0; i-- {
+		protocol.CreateHealthRatio(b, uint16(hs[i].id), hs[i].ratio)
+	}
+	vec := b.EndVector(len(hs))
+	protocol.EntityHealthStart(b)
+	protocol.EntityHealthAddEntries(b, vec)
+	return finish(b, protocol.MessageEntityHealth, protocol.EntityHealthEnd(b))
+}
+
 // hit is one PvP or PvE swing as CombatHit carries it: attacker and target
 // are entity ids (NPC ids sit above guest ids, as in snapEnt).
 type hit struct {
