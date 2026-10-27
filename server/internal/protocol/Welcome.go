@@ -78,8 +78,32 @@ func (rcv *Welcome) MutateTickRate(n byte) bool {
 	return rcv._tab.MutateByteSlot(10, n)
 }
 
+func (rcv *Welcome) WalkSpeed() float32 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
+	if o != 0 {
+		return rcv._tab.GetFloat32(o + rcv._tab.Pos)
+	}
+	return 0.0
+}
+
+func (rcv *Welcome) MutateWalkSpeed(n float32) bool {
+	return rcv._tab.MutateFloat32Slot(12, n)
+}
+
+func (rcv *Welcome) RunSpeed() float32 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(14))
+	if o != 0 {
+		return rcv._tab.GetFloat32(o + rcv._tab.Pos)
+	}
+	return 0.0
+}
+
+func (rcv *Welcome) MutateRunSpeed(n float32) bool {
+	return rcv._tab.MutateFloat32Slot(14, n)
+}
+
 func WelcomeStart(builder *flatbuffers.Builder) {
-	builder.StartObject(4)
+	builder.StartObject(6)
 }
 func WelcomeAddPlayerId(builder *flatbuffers.Builder, playerId uint16) {
 	builder.PrependUint16Slot(0, playerId, 0)
@@ -92,6 +116,12 @@ func WelcomeAddSpawn(builder *flatbuffers.Builder, spawn flatbuffers.UOffsetT) {
 }
 func WelcomeAddTickRate(builder *flatbuffers.Builder, tickRate byte) {
 	builder.PrependByteSlot(3, tickRate, 0)
+}
+func WelcomeAddWalkSpeed(builder *flatbuffers.Builder, walkSpeed float32) {
+	builder.PrependFloat32Slot(4, walkSpeed, 0.0)
+}
+func WelcomeAddRunSpeed(builder *flatbuffers.Builder, runSpeed float32) {
+	builder.PrependFloat32Slot(5, runSpeed, 0.0)
 }
 func WelcomeEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

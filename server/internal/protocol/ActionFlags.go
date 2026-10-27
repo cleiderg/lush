@@ -10,18 +10,21 @@ const (
 	ActionFlagsInteract ActionFlags = 1
 	ActionFlagsAttack   ActionFlags = 2
 	ActionFlagsJump     ActionFlags = 4
+	ActionFlagsRun      ActionFlags = 8
 )
 
 var EnumNamesActionFlags = map[ActionFlags]string{
 	ActionFlagsInteract: "Interact",
 	ActionFlagsAttack:   "Attack",
 	ActionFlagsJump:     "Jump",
+	ActionFlagsRun:      "Run",
 }
 
 var EnumValuesActionFlags = map[string]ActionFlags{
 	"Interact": ActionFlagsInteract,
 	"Attack":   ActionFlagsAttack,
 	"Jump":     ActionFlagsJump,
+	"Run":      ActionFlagsRun,
 }
 
 func (v ActionFlags) String() string {
