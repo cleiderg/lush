@@ -3,7 +3,7 @@ import type { CollisionGrid } from './collision';
 import { HitQueue } from './combat';
 import { Interpolator } from './interpolation';
 import { ItemState } from './items';
-import { Prediction } from './prediction';
+import { type PendingInput, Prediction, RUN_SPEED, WALK_SPEED } from './prediction';
 import { TradeStore } from './trade';
 
 export interface PlayerView {
@@ -19,6 +19,9 @@ export interface PlayerView {
 export class GameState {
   playerId = -1;
   tickRate = 20;
+  /** Metres per second; D-044 defaults until Welcome sends the server's values. */
+  walkSpeed = WALK_SPEED;
+  runSpeed = RUN_SPEED;
   heading = 0;
   /** Local player's animation id from the latest snapshot. */
   animation = 0;
@@ -45,6 +48,9 @@ export class GameState {
     if (msg.type === 'welcome') {
       this.playerId = msg.playerId;
       this.tickRate = msg.tickRate;
+      // A missing or zero speed (older server) keeps the current value.
+      if (msg.walkSpeed) this.walkSpeed = msg.walkSpeed;
+      if (msg.runSpeed) this.runSpeed = msg.runSpeed;
       this.prediction = new Prediction(msg.spawn, this.collision);
       this.interp.clear();
       this.animation = 0;
@@ -87,6 +93,11 @@ export class GameState {
     } else if (msg.type === 'combatHit') {
       this.hits.push(msg.tick, msg.hits);
     }
+  }
+
+  /** Predicts one local input at the walk or run speed; the caller sends it with the matching Run flag. */
+  applyMove(moveX: number, moveZ: number, dt: number, running: boolean): PendingInput {
+    return this.prediction.applyInput(moveX, moveZ, dt, running ? this.runSpeed : this.walkSpeed);
   }
 
   get local(): PlayerView {

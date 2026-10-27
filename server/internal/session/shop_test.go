@@ -58,11 +58,12 @@ func shopBuy(item gamedata.ItemID, qty uint32) []byte {
 	})
 }
 
-// nextNonSnapshot reads the next message that is not a Snapshot.
+// nextNonSnapshot reads the next message that is not a Snapshot or EntityInfo
+// (both sent by the tick as entities move and change).
 func (r *rig) nextNonSnapshot(c *client) (protocol.Message, flatbuffers.Table) {
 	r.t.Helper()
 	for i := 0; i < 1000; i++ {
-		if typ, tbl := r.next(c); typ != protocol.MessageSnapshot {
+		if typ, tbl := r.next(c); typ != protocol.MessageSnapshot && typ != protocol.MessageEntityInfo {
 			return typ, tbl
 		}
 	}

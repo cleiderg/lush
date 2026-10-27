@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { PARTS, makePartGeometry, makePartMaterial, poseRoll, swingAngle, WALK_SPEED_RAD_PER_UNIT } from './character';
-import type { PlayerView } from './worldView';
+import { SLOTS, equipmentMaterial, itemColor, slotGeometry } from './equipment';
+import type { EntityLookup, PlayerView } from './worldView';
 
 export const MAX_REMOTE_PLAYERS = 100;
 
@@ -14,8 +15,15 @@ interface Track {
 export class RemotePlayers {
   readonly group = new THREE.Group();
   private readonly meshes: THREE.InstancedMesh[];
+  /**
+   * One InstancedMesh per (slot, item colour), made on first use and kept, so equipment costs one
+   * draw call per distinct worn item no matter how many players wear it.
+   */
+  readonly equipment = new Map<string, THREE.InstancedMesh>();
+  private readonly capacity: number;
+  private readonly partMatrices = PARTS.map(() => new THREE.Matrix4());
+  private readonly slotParts = SLOTS.map((def) => PARTS.findIndex((p) => p.name === def.part));
   private readonly tracks = new Map<number, Track>();
-  private readonly m = new THREE.Matrix4();
   private readonly q = new THREE.Quaternion();
   private readonly qs = new THREE.Quaternion();
   private readonly pos = new THREE.Vector3();
@@ -25,6 +33,7 @@ export class RemotePlayers {
   private readonly axisY = new THREE.Vector3(0, 1, 0);
 
   constructor(capacity = MAX_REMOTE_PLAYERS) {
+    this.capacity = capacity;
     this.meshes = PARTS.map((part) => {
       const mesh = new THREE.InstancedMesh(makePartGeometry(part), makePartMaterial(part), capacity);
       mesh.count = 0;
@@ -34,7 +43,22 @@ export class RemotePlayers {
     });
   }
 
-  update(players: readonly PlayerView[]): void {
+  private equipmentMesh(slot: number, color: number): THREE.InstancedMesh {
+    const key = `${SLOTS[slot].slot}:${color}`;
+    let mesh = this.equipment.get(key);
+    if (!mesh) {
+      mesh = new THREE.InstancedMesh(slotGeometry(SLOTS[slot]), equipmentMaterial(color), this.capacity);
+      mesh.name = `equip:${key}`;
+      mesh.count = 0;
+      mesh.frustumCulled = false;
+      this.group.add(mesh);
+      this.equipment.set(key, mesh);
+    }
+    return mesh;
+  }
+
+  update(players: readonly PlayerView[], lookup?: EntityLookup): void {
+    for (const mesh of this.equipment.values()) mesh.count = 0;
     const capacity = this.meshes[0].instanceMatrix.count;
     const n = Math.min(players.length, capacity);
     const seen = new Set<number>();
@@ -63,8 +87,17 @@ export class RemotePlayers {
         this.pos.x += p.x;
         this.pos.z += p.z;
         const rot = this.qs.premultiply(this.q);
-        this.m.compose(this.pos, rot, this.one);
-        this.meshes[k].setMatrixAt(i, this.m);
+        this.partMatrices[k].compose(this.pos, rot, this.one);
+        this.meshes[k].setMatrixAt(i, this.partMatrices[k]);
+      }
+      const eq = lookup?.entityInfo(p.id)?.equipment;
+      if (eq) {
+        for (let s = 0; s < SLOTS.length; s++) {
+          const itemId = eq[SLOTS[s].slot];
+          if (itemId === 0) continue;
+          const mesh = this.equipmentMesh(s, itemColor(itemId, lookup));
+          mesh.setMatrixAt(mesh.count++, this.partMatrices[this.slotParts[s]]);
+        }
       }
     }
     for (const id of this.tracks.keys()) if (!seen.has(id)) this.tracks.delete(id);
@@ -72,5 +105,6 @@ export class RemotePlayers {
       mesh.count = n;
       mesh.instanceMatrix.needsUpdate = true;
     }
+    for (const mesh of this.equipment.values()) mesh.instanceMatrix.needsUpdate = true;
   }
 }

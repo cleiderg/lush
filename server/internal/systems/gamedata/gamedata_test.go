@@ -109,18 +109,19 @@ func TestNPCsMatchSpec(t *testing.T) {
 		goldMin, goldMax int
 		drops            []drop
 		maxAlive         int
+		population       int
 	}{
-		{"Rabbit", gamedata.AreaAldrichPark, 1, 3, 0, 0, 0, 4, gamedata.Passive, 15 * time.Second, 1, 3, nil, 0},
+		{"Rabbit", gamedata.AreaAldrichPark, 1, 3, 0, 0, 0, 4, gamedata.Passive, 15 * time.Second, 1, 3, nil, 0, 12},
 		{"Squirrel", gamedata.AreaAldrichPark, 2, 5, 2, 0, 2, 4, gamedata.Passive, 20 * time.Second, 2, 6,
-			[]drop{{"Acorn", 2, 1}}, 0},
+			[]drop{{"Acorn", 2, 1}}, 0, 10},
 		{"Crow", gamedata.AreaAldrichPark, 4, 8, 5, 3, 3, 4, gamedata.Passive, 30 * time.Second, 3, 10,
-			[]drop{{"Shiny trinket", 8, 1}}, 0},
+			[]drop{{"Shiny trinket", 8, 1}}, 0, 8},
 		{"Coyote", gamedata.AreaSouthFields, 9, 20, 12, 10, 8, 4, gamedata.Aggressive, 45 * time.Second, 8, 25,
-			[]drop{{"Coyote pelt", 2, 1}, {"Leather cap", 20, 1}}, 0},
+			[]drop{{"Coyote pelt", 2, 1}, {"Leather cap", 20, 1}}, 0, 8},
 		{"Rogue delivery robot", gamedata.AreaSouthFields, 15, 35, 20, 18, 25, 5, gamedata.Aggressive, 60 * time.Second, 20, 50,
-			[]drop{{"Scrap metal", 2, 1}, {"Bike lock", 32, 1}, {"Robot plating", 64, 1}}, 0},
+			[]drop{{"Scrap metal", 2, 1}, {"Bike lock", 32, 1}, {"Robot plating", 64, 1}}, 0, 5},
 		{"Coyote alpha", gamedata.AreaSouthFields, 20, 50, 28, 26, 22, 4, gamedata.Aggressive, 3 * time.Minute, 40, 100,
-			[]drop{{"Coyote pelt", 1, 3}, {"Bike helmet", 8, 1}}, 1},
+			[]drop{{"Coyote pelt", 1, 3}, {"Bike helmet", 8, 1}}, 1, 1},
 	}
 	if len(d.NPCs) != len(tests) {
 		t.Fatalf("got %d NPC types, spec has %d", len(d.NPCs), len(tests))
@@ -147,6 +148,9 @@ func TestNPCsMatchSpec(t *testing.T) {
 			}
 			if n.GoldMin != tt.goldMin || n.GoldMax != tt.goldMax {
 				t.Errorf("gold = %d to %d, want %d to %d", n.GoldMin, n.GoldMax, tt.goldMin, tt.goldMax)
+			}
+			if n.Population != tt.population {
+				t.Errorf("population = %d, want %d", n.Population, tt.population)
 			}
 			if n.MaxAlive != tt.maxAlive {
 				t.Errorf("max alive = %d, want %d", n.MaxAlive, tt.maxAlive)
@@ -227,6 +231,8 @@ func TestRulesMatchSpec(t *testing.T) {
 		{"PvP items kept", r.PvPItemsKept, 3},
 		{"drop reservation", r.DropReservation(), 60 * time.Second},
 		{"drop despawn", r.DropDespawn(), 3 * time.Minute},
+		{"pickup range tiles", r.PickupRangeTiles, 1},
+		{"pickup range includes diagonals", r.PickupRangeDiagonal, true},
 		{"logout combat lock", r.LogoutCombatLock(), 10 * time.Second},
 		{"eat attack delay combat ticks", r.EatAttackDelayTicks, 1},
 	}

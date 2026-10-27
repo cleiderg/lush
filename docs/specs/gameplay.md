@@ -35,16 +35,16 @@
 
 ## NPCs
 
-| NPC | Area | Level | HP | Accuracy / strength / defence | Attack speed | Behaviour | Respawn | Drops |
-|---|---|---|---|---|---|---|---|---|
-| Rabbit | Aldrich Park | 1 | 3 | 0 / 0 / 0 | 4 | Passive | 15 s | 1–3 gold |
-| Squirrel | Aldrich Park | 2 | 5 | 2 / 0 / 2 | 4 | Passive | 20 s | 2–6 gold; Acorn (1 in 2) |
-| Crow | Aldrich Park | 4 | 8 | 5 / 3 / 3 | 4 | Passive | 30 s | 3–10 gold; Shiny trinket (1 in 8) |
-| Coyote | South fields | 9 | 20 | 12 / 10 / 8 | 4 | Aggressive | 45 s | 8–25 gold; Coyote pelt (1 in 2); Leather cap (1 in 20) |
-| Rogue delivery robot | South fields | 15 | 35 | 20 / 18 / 25 | 5 | Aggressive | 60 s | 20–50 gold; Scrap metal (1 in 2); Bike lock (1 in 32); Robot plating (1 in 64) |
-| Coyote alpha | South fields (one at a time) | 20 | 50 | 28 / 26 / 22 | 4 | Aggressive | 3 min | 40–100 gold; 3 Coyote pelts; Bike helmet (1 in 8) |
+| NPC | Area | Population | Level | HP | Accuracy / strength / defence | Attack speed | Behaviour | Respawn | Drops |
+|---|---|---|---|---|---|---|---|---|---|
+| Rabbit | Aldrich Park | 12 | 1 | 3 | 0 / 0 / 0 | 4 | Passive | 15 s | 1–3 gold |
+| Squirrel | Aldrich Park | 10 | 2 | 5 | 2 / 0 / 2 | 4 | Passive | 20 s | 2–6 gold; Acorn (1 in 2) |
+| Crow | Aldrich Park | 8 | 4 | 8 | 5 / 3 / 3 | 4 | Passive | 30 s | 3–10 gold; Shiny trinket (1 in 8) |
+| Coyote | South fields | 8 | 9 | 20 | 12 / 10 / 8 | 4 | Aggressive | 45 s | 8–25 gold; Coyote pelt (1 in 2); Leather cap (1 in 20) |
+| Rogue delivery robot | South fields | 5 | 15 | 35 | 20 / 18 / 25 | 5 | Aggressive | 60 s | 20–50 gold; Scrap metal (1 in 2); Bike lock (1 in 32); Robot plating (1 in 64) |
+| Coyote alpha | South fields | 1 | 20 | 50 | 28 / 26 / 22 | 4 | Aggressive | 3 min | 40–100 gold; 3 Coyote pelts; Bike helmet (1 in 8) |
 
-Every kill drops the gold; each item rolls separately. Drops appear on the ground where the NPC died and follow the same rules as PvP drops below, with the killer as owner.
+Every kill credits the gold straight to the killer's balance; each item rolls separately. Item drops appear on the ground where the NPC died and follow the same rules as PvP drops below, with the killer as owner.
 
 ## Items
 
@@ -54,6 +54,7 @@ Every kill drops the gold; each item rolls separately. Drops appear on the groun
 - **Inventory:** 28 slots. Equipped items don't take a slot. Gold is a separate balance, not an item, and never takes a slot.
 - **Equipment slots:** weapon, head, body, shield.
 - **Stacking:** loot stacks without limit in one slot; equipment and food don't stack.
+- **Picking up:** a player within 1 tile of a ground item, including diagonals, can pick it up (subject to the drop reservation below).
 - **Starting kit:** Wooden stick and Hoodie (both equipped) and 3 Boba.
 
 | Item | Kind | Slot | Accuracy / strength / defence | Attack speed | Level to equip | Shop buys for | Shop sells for | Comes from |
@@ -91,6 +92,10 @@ Sources in Phase 1:
 ## Emotes
 
 - **Wave:** shows for 2 s (40 world ticks at 20 Hz). A new wave is ignored while one is showing, and starting to walk ends it. Nearby players see it.
+
+## Interact button
+
+- Interact picks, in order: the shop stall within shop distance; the nearest NPC within attack range (attack); the nearest player within trade distance (a trade request outside the PvP zone, an attack inside it). With no target it does nothing.
 
 ## Player trading
 

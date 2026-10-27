@@ -18,6 +18,8 @@ export interface HudLayout {
   trade: Rect;
   /** The trade request prompt (Accept / Decline), a strip at the top of the panel area. */
   tradePrompt: Rect;
+  /** The PvP warning banner / in-zone indicator, a strip just above the control tray and below the panels. */
+  pvp: Rect;
 }
 
 /** Mirrors index.html: #app is at most this wide and centred. */
@@ -30,6 +32,7 @@ const HUD_W = 150;
 const HUD_H = 64;
 const TOGGLE = 52;
 const PROMPT_H = 88;
+const PVP_H = 36;
 
 /**
  * Where the HUD, inventory toggle, inventory panel, shop panel and trade window go for a viewport of
@@ -45,14 +48,16 @@ export function hudLayout(width: number, height: number): HudLayout {
   const hud = { x: left + MARGIN, y: MARGIN, w: Math.min(HUD_W, appW - TOGGLE - 3 * MARGIN), h: HUD_H };
   const toggle = { x: left + appW - MARGIN - TOGGLE, y: MARGIN, w: TOGGLE, h: TOGGLE };
   const panelTop = MARGIN + HUD_H + MARGIN;
+  // The PvP strip sits just above the tray and the panels end above it, so it never hides panel content.
+  const pvp = { x: left + MARGIN, y: trayTop - MARGIN - PVP_H, w: appW - 2 * MARGIN, h: PVP_H };
   const panel = {
     x: left + MARGIN,
     y: panelTop,
     w: appW - 2 * MARGIN,
-    h: Math.max(0, trayTop - MARGIN - panelTop),
+    h: Math.max(0, pvp.y - MARGIN - panelTop),
   };
   const tradePrompt = { ...panel, h: Math.min(PROMPT_H, panel.h) };
-  return { controls, hud, toggle, panel, shop: { ...panel }, trade: { ...panel }, tradePrompt };
+  return { controls, hud, toggle, panel, shop: { ...panel }, trade: { ...panel }, tradePrompt, pvp };
 }
 
 export function intersects(a: Rect, b: Rect): boolean {

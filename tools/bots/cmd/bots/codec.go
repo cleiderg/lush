@@ -47,6 +47,22 @@ func encodePing(b *flatbuffers.Builder, tok uint32) []byte {
 	return finish(b, protocol.MessagePing, protocol.PingEnd(b))
 }
 
+func encodeWave(b *flatbuffers.Builder) []byte {
+	b.Reset()
+	protocol.EmoteSendStart(b)
+	protocol.EmoteSendAddEmote(b, protocol.EmoteWave)
+	return finish(b, protocol.MessageEmoteSend, protocol.EmoteSendEnd(b))
+}
+
+func encodeItemAction(b *flatbuffers.Builder, a itemAction) []byte {
+	b.Reset()
+	protocol.ItemActionStart(b)
+	protocol.ItemActionAddAction(b, a.kind)
+	protocol.ItemActionAddSlot(b, a.slot)
+	protocol.ItemActionAddEquipSlot(b, a.equipSlot)
+	return finish(b, protocol.MessageItemAction, protocol.ItemActionEnd(b))
+}
+
 // inbound is a decoded server message; only the fields for typ are set.
 type inbound struct {
 	typ          protocol.Message
@@ -54,8 +70,9 @@ type inbound struct {
 	spawn        [2]float64 // Welcome, metres
 	token        uint32
 	text         string
-	hasSelf      bool  // Snapshot contains the entity self
-	selfX, selfZ int16 // its position in decimetres
+	hasSelf      bool      // Snapshot contains the entity self
+	selfX, selfZ int16     // its position in decimetres
+	inv          inventory // InventoryState
 }
 
 // decode parses a server frame; self is this bot's player id, looked up in
@@ -89,6 +106,16 @@ func decode(buf []byte, self uint16) (m inbound, ok bool) {
 			if s.Entities(&e, i) && e.Id() == self {
 				m.hasSelf, m.selfX, m.selfZ = true, e.X(), e.Z()
 				break
+			}
+		}
+	case protocol.MessageInventoryState:
+		var is protocol.InventoryState
+		is.Init(tbl.Bytes, tbl.Pos)
+		m.inv = inventory{known: true, weapon: is.Weapon(), slots: make([]uint16, is.SlotsLength())}
+		var sl protocol.InventorySlot
+		for i := range m.inv.slots {
+			if is.Slots(&sl, i) {
+				m.inv.slots[i] = sl.ItemId()
 			}
 		}
 	case protocol.MessagePong:

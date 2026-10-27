@@ -3,13 +3,15 @@
 // and how a player who dies in the PvP zone splits their holdings into kept
 // and dropped items.
 //
-// Both rules take plain values and read their numbers from gamedata. They
-// never see or change a World or Player; the combat system (#144) and the
-// drop spawner (#162) apply the results.
+// Both rules take plain values and read their numbers from gamedata and
+// never see a World or Player. ApplyDeath applies a death split to one
+// inventory. Combat (combat.go) is the system that applies them on the
+// combat tick: player attacks, hits, XP, and death with respawn.
 package pvp
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -143,6 +145,48 @@ func SplitOnDeath(d *gamedata.Data, inv world.Inventory) DeathSplit {
 		}
 	}
 	return split
+}
+
+// ReasonPvPDeath is the economy audit reason for the changes ApplyDeath makes.
+const ReasonPvPDeath = "pvp_death"
+
+// ApplyDeath applies SplitOnDeath to inv: every dropped piece is removed, worn
+// ones straight from their equipment slot (ChangeRemoveWorn) and carried ones
+// from their inventory slot (ChangeRemove), one change per piece. The kept
+// items stay where they are and the gold balance is untouched, so it never
+// needs a free slot.
+//
+// It returns the dropped stacks, one per dropped piece in Dropped order, for
+// the caller to spawn as ground items on the same tick, and the changes to
+// record under ReasonPvPDeath. On error, including a locked inventory
+// (world.ErrInventoryLocked), inv is unchanged and nothing is returned.
+func ApplyDeath(d *gamedata.Data, inv *world.Inventory) ([]world.Stack, []world.Change, error) {
+	if inv.Locked() {
+		return nil, nil, fmt.Errorf("pvp death: %w", world.ErrInventoryLocked)
+	}
+	split := SplitOnDeath(d, *inv)
+	work := inv.Clone()
+	dropped := make([]world.Stack, 0, len(split.Dropped))
+	changes := make([]world.Change, 0, len(split.Dropped))
+	for _, p := range split.Dropped {
+		var ch []world.Change
+		var err error
+		if p.Worn != gamedata.SlotNone {
+			ch, err = work.RemoveWorn(p.Worn)
+		} else {
+			ch, err = work.RemoveFromSlot(p.Slot, p.Qty)
+		}
+		if err == nil && (len(ch) != 1 || ch[0].Item != p.Item || ch[0].Qty != p.Qty) {
+			err = errors.New("removal does not match the dropped piece")
+		}
+		if err != nil {
+			return nil, nil, fmt.Errorf("pvp death: drop %d × item %d: %w", p.Qty, p.Item, err)
+		}
+		dropped = append(dropped, world.Stack{Item: p.Item, Qty: p.Qty})
+		changes = append(changes, ch...)
+	}
+	*inv = work
+	return dropped, changes, nil
 }
 
 func value(d *gamedata.Data, id gamedata.ItemID) int {

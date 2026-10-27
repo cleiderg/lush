@@ -1,6 +1,7 @@
 package session
 
 import (
+	"math"
 	"reflect"
 	"testing"
 
@@ -116,4 +117,29 @@ func TestEncodeShopResult(t *testing.T) {
 			t.Fatalf("%v: code %v, want %v", r, sr.Code(), want)
 		}
 	}
+}
+
+// AC4: a Snapshot with 100 entities, players and NPCs, fits the networking
+// spec's ~1,200 byte datagram budget.
+func TestSnapshotOf100EntitiesUnderBudget(t *testing.T) {
+	ents := make([]snapEnt, 0, 100)
+	for i := 0; i < 50; i++ {
+		ents = append(ents, playerEnt(&world.Player{ID: world.PlayerID(i + 1), Pos: world.Vec2{X: -3000, Y: 3000}, Facing: 3, Anim: world.AnimWalk}))
+		ents = append(ents, npcEnt(&world.NPC{ID: world.DefaultNPCIDMax - world.NPCID(i), Pos: world.Vec2{X: 3000, Y: -3000}, Facing: 1, Anim: world.AnimWalk}))
+	}
+	b := flatbuffers.NewBuilder(1024)
+	buf := encodeSnapshot(b, math.MaxUint32, math.MaxUint32, ents)
+	if len(buf) >= 1200 {
+		t.Fatalf("snapshot of %d entities is %d bytes, want under 1200", len(ents), len(buf))
+	}
+	env := protocol.GetRootAsEnvelope(buf, 0)
+	var tbl flatbuffers.Table
+	env.Msg(&tbl)
+	var s protocol.Snapshot
+	s.Init(tbl.Bytes, tbl.Pos)
+	var e protocol.Entity
+	if s.EntitiesLength() != 100 || !s.Entities(&e, 1) || e.Id() != uint16(world.DefaultNPCIDMax) {
+		t.Fatalf("decoded %d entities, second id %d", s.EntitiesLength(), e.Id())
+	}
+	t.Logf("snapshot of 100 entities: %d bytes", len(buf))
 }

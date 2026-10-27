@@ -37,7 +37,7 @@ function buildSnapshot(n: number): Uint8Array {
 
 describe('protocol', () => {
   it('exposes the version constant', () => {
-    expect(ProtocolVersion.Current).toBe(8);
+    expect(ProtocolVersion.Current).toBe(9);
   });
 
   it('keeps a 101-entity snapshot under 1200 bytes', () => {
@@ -67,6 +67,8 @@ describe('protocol', () => {
     Welcome.addGuestToken(b, tok);
     Welcome.addSpawn(b, Vec2.createVec2(b, 1.5, -2.5));
     Welcome.addTickRate(b, 20);
+    Welcome.addWalkSpeed(b, 4);
+    Welcome.addRunSpeed(b, 7);
     const buf = finish(b, Message.Welcome, Welcome.endWelcome(b));
     const m = open(buf, Message.Welcome, new Welcome());
     expect(m.playerId()).toBe(42);
@@ -74,6 +76,8 @@ describe('protocol', () => {
     expect(m.spawn()!.x()).toBe(1.5);
     expect(m.spawn()!.z()).toBe(-2.5);
     expect(m.tickRate()).toBe(20);
+    expect(m.walkSpeed()).toBe(4);
+    expect(m.runSpeed()).toBe(7);
   });
 
   it('round-trips Input', () => {
@@ -82,14 +86,15 @@ describe('protocol', () => {
     Input.addSeq(b, 99);
     Input.addMove(b, Vec2.createVec2(b, 0.5, -1));
     Input.addFacing(b, 3.25);
-    Input.addActions(b, ActionFlags.Attack | ActionFlags.Jump);
+    Input.addActions(b, ActionFlags.Attack | ActionFlags.Jump | ActionFlags.Run);
     const buf = finish(b, Message.Input, Input.endInput(b));
     const m = open(buf, Message.Input, new Input());
     expect(m.seq()).toBe(99);
     expect(m.move()!.x()).toBe(0.5);
     expect(m.move()!.z()).toBe(-1);
     expect(m.facing()).toBe(3.25);
-    expect(m.actions()).toBe(ActionFlags.Attack | ActionFlags.Jump);
+    expect(m.actions()).toBe(ActionFlags.Attack | ActionFlags.Jump | ActionFlags.Run);
+    expect(m.actions() & ActionFlags.Run).toBe(ActionFlags.Run);
   });
 
   it('round-trips Snapshot', () => {

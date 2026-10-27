@@ -29,6 +29,7 @@ const (
 //	LUSH_ENV              "development" or "production" (default "development")
 //	LUSH_SENTRY_DSN       Sentry DSN; empty disables error reporting (a secret: never logged)
 //	LUSH_MOVE_SPEED       walk speed, world units/s (default 4, PRD decision D-044)
+//	LUSH_RUN_SPEED        run speed, world units/s, >= the walk speed (default 7, D-044)
 //	LUSH_SPAWN_X, LUSH_SPAWN_Z  guest spawn position (default -22, -76: the map spec's safe
 //	                      spawn point in the centre of Aldrich Park, docs/specs/map.md)
 //	LUSH_SHUTDOWN_COUNTDOWN  restart countdown, Go duration (default 60s in production, 5s otherwise)
@@ -44,6 +45,7 @@ type Config struct {
 	Env               string
 	ShutdownCountdown time.Duration
 	MoveSpeed         float32
+	RunSpeed          float32
 	SpawnX, SpawnZ    float32
 	WSOrigins         []string
 	SaveInterval      time.Duration
@@ -53,8 +55,8 @@ type Config struct {
 // String is the loggable form of the config; it omits secrets (the Sentry DSN
 // and the database URL, which may carry a password).
 func (c Config) String() string {
-	return fmt.Sprintf("Config{ListenAddr:%s TickRate:%d Env:%s ShutdownCountdown:%s MoveSpeed:%v Spawn:(%v,%v) WSOrigins:%v SaveInterval:%s SentryDSN:%s DatabaseURL:%s}",
-		c.ListenAddr, c.TickRate, c.Env, c.ShutdownCountdown, c.MoveSpeed, c.SpawnX, c.SpawnZ, c.WSOrigins, c.SaveInterval,
+	return fmt.Sprintf("Config{ListenAddr:%s TickRate:%d Env:%s ShutdownCountdown:%s MoveSpeed:%v RunSpeed:%v Spawn:(%v,%v) WSOrigins:%v SaveInterval:%s SentryDSN:%s DatabaseURL:%s}",
+		c.ListenAddr, c.TickRate, c.Env, c.ShutdownCountdown, c.MoveSpeed, c.RunSpeed, c.SpawnX, c.SpawnZ, c.WSOrigins, c.SaveInterval,
 		redact(c.SentryDSN), redact(c.DatabaseURL))
 }
 
@@ -84,13 +86,13 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		}
 		c.TickRate = n
 	}
-	c.MoveSpeed = 4
+	c.MoveSpeed, c.RunSpeed = 4, 7
 	c.SpawnX, c.SpawnZ = DefaultSpawnX, DefaultSpawnZ
 	for _, f := range []struct {
 		key string
 		dst *float32
 		pos bool
-	}{{"LUSH_MOVE_SPEED", &c.MoveSpeed, true}, {"LUSH_SPAWN_X", &c.SpawnX, false}, {"LUSH_SPAWN_Z", &c.SpawnZ, false}} {
+	}{{"LUSH_MOVE_SPEED", &c.MoveSpeed, true}, {"LUSH_RUN_SPEED", &c.RunSpeed, true}, {"LUSH_SPAWN_X", &c.SpawnX, false}, {"LUSH_SPAWN_Z", &c.SpawnZ, false}} {
 		if v := getenv(f.key); v != "" {
 			n, err := strconv.ParseFloat(v, 32)
 			if err != nil || math.IsNaN(n) || math.IsInf(n, 0) || (f.pos && n <= 0) {
@@ -98,6 +100,9 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 			}
 			*f.dst = float32(n)
 		}
+	}
+	if c.RunSpeed < c.MoveSpeed {
+		return c, fmt.Errorf("LUSH_RUN_SPEED %v: must be at least the walk speed LUSH_MOVE_SPEED %v", c.RunSpeed, c.MoveSpeed)
 	}
 	for _, o := range strings.Split(getenv("LUSH_WS_ORIGINS"), ",") {
 		if o = strings.TrimSpace(o); o != "" {

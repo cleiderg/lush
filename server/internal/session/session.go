@@ -27,13 +27,25 @@ import (
 	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
+	"github.com/cleiderg/lush/server/internal/systems/combat"
 	"github.com/cleiderg/lush/server/internal/systems/emote"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/grounditems"
+	"github.com/cleiderg/lush/server/internal/systems/pvp"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
 	"github.com/cleiderg/lush/server/internal/systems/trade"
 	"github.com/cleiderg/lush/server/internal/transport"
 	"github.com/cleiderg/lush/server/internal/world"
 )
+
+// MaxGuestID is the highest session id a guest can get: one below the start
+// of the world's NPC id range (#142), where AddPlayer refuses player ids.
+const MaxGuestID = int(world.DefaultNPCIDMin) - 1
+
+// maxInfoPerTick caps the EntityInfo frames sent to one client per tick, so a
+// crowd entering view (up to interest.MaxVisible at once) leaves room in the
+// send queue for the Snapshot; the rest go on the following ticks.
+const maxInfoPerTick = transport.DefaultSendQueue / 2
 
 // Config holds session tuning.
 type Config struct {
@@ -41,12 +53,14 @@ type Config struct {
 	Spawn        world.Vec2    // where new guests appear
 	Collision    *world.Grid   // if set, a saved position on a blocked cell rejoins at Spawn
 	MoveSpeed    float32       // world units per second at full stick; must match the movement system
+	RunSpeed     float32       // the same while the Input's Run flag is set (0 = MoveSpeed); both go out in Welcome (D-044)
 	HelloTimeout time.Duration // how long a connection may stay silent before Hello
 	// MaxMsgPerSec disconnects clients that send faster than this (0 = 120).
 	MaxMsgPerSec int
-	// MaxGuests caps session ids (0 = 65535, the wire limit). When every id is
-	// taken, the guest that has been offline longest loses its session id and
-	// the id is reused; that player gets a new id on its next Hello.
+	// MaxGuests caps session ids (0 or above MaxGuestID = MaxGuestID, so guest
+	// ids never reach the NPC id range). When every id is taken, the guest that
+	// has been offline longest loses its session id and the id is reused; that
+	// player gets a new id on its next Hello.
 	MaxGuests int
 	// SaveInterval is how often live players' positions are saved
 	// (0 = DefaultSaveInterval).
@@ -65,11 +79,30 @@ type InputCommand struct {
 	Seq          uint32
 	MoveX, MoveZ float32
 	Facing       float32
+	Run          bool // the Run action flag: move at RunSpeed
 
 	conn transport.Conn // inputs from a replaced connection are ignored
 }
 
 func (c InputCommand) Target() world.PlayerID { return c.Player }
+
+// AttackCommand is a client AttackTarget naming a player id. Handle passes
+// it to the PvP combat system if Victim is a player in the world.
+type AttackCommand struct {
+	Player world.PlayerID
+	Victim world.PlayerID
+}
+
+func (c AttackCommand) Target() world.PlayerID { return c.Player }
+
+// AttackNPCCommand is a client AttackTarget naming an NPC id. Handle passes
+// it to the PvE combat system if the NPC is in the world.
+type AttackNPCCommand struct {
+	Player world.PlayerID
+	NPC    world.NPCID
+}
+
+func (c AttackNPCCommand) Target() world.PlayerID { return c.Player }
 
 type guest struct {
 	// Guarded by Server.mu.
@@ -89,6 +122,24 @@ type guest struct {
 	// What the client last got in PlayerStats and InventoryState.
 	sentStats stats
 	sentInv   world.Inventory
+	// What the client last got in EntityInfo, for entities in its view; an
+	// entity leaving view is forgotten, so it gets EntityInfo again on return.
+	known map[world.PlayerID]knownEnt
+	// The health ratio the client last got in EntityHealth, for entities in
+	// its view; absent means full. An entity leaving view is forgotten.
+	health map[world.PlayerID]knownHealth
+}
+
+// knownHealth is an entity's last sent health ratio and the tick it was last in view.
+type knownHealth struct {
+	ratio uint8
+	tick  uint64
+}
+
+// knownEnt is an entity's last sent EntityInfo and the tick it was last in view.
+type knownEnt struct {
+	info entityInfo
+	tick uint64
 }
 
 type op struct {
@@ -99,8 +150,8 @@ type op struct {
 }
 
 // Server is the session layer. It implements world.System, chat.Sink,
-// shop.Sink, trade.Sink, trade.Committer and transport.Handler (via
-// ServeConn).
+// shop.Sink, trade.Sink, trade.Committer, pvp.HitSink, pvp.DropSink,
+// combat.EventSink and transport.Handler (via ServeConn).
 type Server struct {
 	cfg   Config
 	w     *world.World
@@ -110,6 +161,7 @@ type Server struct {
 	data  *gamedata.Data
 
 	catalog  []byte                 // encoded ItemCatalog, shared by every connection
+	npcCat   []byte                 // encoded NpcCatalog, shared by every connection
 	newToken func() (string, error) // replaced by tests
 
 	mu     sync.Mutex
@@ -122,7 +174,12 @@ type Server struct {
 	saver *saver
 
 	// Tick-goroutine only.
-	trades   *trade.System // set by SetTrades; nil without trading
+	trades   *trade.System       // set by SetTrades; nil without trading
+	pvp      *pvp.Combat         // set by SetPvP; nil without PvP
+	pve      *combat.System      // set by SetPvE; nil without PvE
+	ground   *grounditems.System // set by SetGroundItems; where PvP drops spawn
+	tickHits []hit               // this tick's PvP and PvE swings, sent as CombatHit
+	seen     []hit               // reused: the hits one player can see
 	live     map[world.PlayerID]*guest
 	gone     map[world.PlayerID]*guest // live players with no connection, waiting out the logout lock
 	nextSave time.Time
@@ -130,7 +187,10 @@ type Server struct {
 	econ     []econReq
 	grid     *interest.Grid
 	hits     []interest.Hit
-	ents     []*world.Player
+	ents     []snapEnt
+	npcsIn   map[world.PlayerID]uint64 // NPC ids in grid, with the last tick they were in the world
+	infoLeft int                       // EntityInfo frames the current client may still get this tick
+	healths  []healthEnt               // reused: this tick's EntityHealth entries for one client
 	bld      *flatbuffers.Builder
 }
 
@@ -142,14 +202,17 @@ func New(cfg Config, w *world.World, clock world.Clock, players store.Players, l
 	if cfg.MaxMsgPerSec <= 0 {
 		cfg.MaxMsgPerSec = 120
 	}
-	if cfg.MaxGuests <= 0 || cfg.MaxGuests > math.MaxUint16 {
-		cfg.MaxGuests = math.MaxUint16
+	if cfg.MaxGuests <= 0 || cfg.MaxGuests > MaxGuestID {
+		cfg.MaxGuests = MaxGuestID
 	}
 	if cfg.TickRate <= 0 {
 		cfg.TickRate = int(time.Second / w.TickInterval())
 	}
 	if cfg.SaveInterval <= 0 {
 		cfg.SaveInterval = DefaultSaveInterval
+	}
+	if cfg.RunSpeed <= 0 {
+		cfg.RunSpeed = cfg.MoveSpeed
 	}
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -166,9 +229,9 @@ func New(cfg Config, w *world.World, clock world.Clock, players store.Players, l
 		data = d
 	}
 	return &Server{saver: newSaver(players, log), cfg: cfg, w: w, log: log, clock: clock, store: players,
-		data: data, catalog: encodeItemCatalog(data), newToken: newToken,
+		data: data, catalog: encodeItemCatalog(data), npcCat: encodeNpcCatalog(data), newToken: newToken,
 		guests: map[int64]*guest{}, idle: list.New(), conns: map[transport.Conn]struct{}{},
-		live: map[world.PlayerID]*guest{}, gone: map[world.PlayerID]*guest{}, grid: interest.NewGrid(), bld: flatbuffers.NewBuilder(1024)}
+		live: map[world.PlayerID]*guest{}, gone: map[world.PlayerID]*guest{}, grid: interest.NewGrid(), npcsIn: map[world.PlayerID]uint64{}, bld: flatbuffers.NewBuilder(1024)}
 }
 
 // ---- connection goroutines ----
@@ -230,7 +293,7 @@ func (s *Server) ServeConn(c transport.Conn) {
 		switch m.typ {
 		case protocol.MessageInput:
 			s.w.Enqueue(InputCommand{Player: g.id, Seq: m.seq,
-				MoveX: m.moveX, MoveZ: m.moveZ, Facing: m.facing, conn: c})
+				MoveX: m.moveX, MoveZ: m.moveZ, Facing: m.facing, Run: m.run, conn: c})
 		case protocol.MessageChatSend:
 			s.w.Enqueue(chat.SendCommand{Player: g.id, Text: m.chatText})
 		case protocol.MessageEmoteSend:
@@ -240,6 +303,14 @@ func (s *Server) ServeConn(c transport.Conn) {
 			}
 		case protocol.MessagePing:
 			c.Send(encodePong(m.pingToken))
+		case protocol.MessageAttackTarget:
+			// Player ids go to PvP and any other non-zero id to PvE; 0 is
+			// ignored. Handle checks that the player or NPC exists.
+			if m.target != 0 && int(m.target) <= s.cfg.MaxGuests {
+				s.w.Enqueue(AttackCommand{Player: g.id, Victim: world.PlayerID(m.target)})
+			} else if int(m.target) > MaxGuestID {
+				s.w.Enqueue(AttackNPCCommand{Player: g.id, NPC: world.NPCID(m.target)})
+			}
 		case protocol.MessageItemAction, protocol.MessageShopBuy, protocol.MessageShopSell,
 			protocol.MessageTradeRequest, protocol.MessageTradeOffer, protocol.MessageTradeRemove,
 			protocol.MessageTradeSetGold, protocol.MessageTradeAccept, protocol.MessageTradeCancel:
@@ -413,8 +484,31 @@ func (s *Server) BroadcastRestartCountdown(remaining time.Duration) {
 func (s *Server) Name() string { return "session" }
 
 // Handle applies an InputCommand: it sets the movement target one tick of
-// full-speed travel ahead, and the movement system clamps and applies it.
+// full-speed travel ahead (at RunSpeed when the Run flag is set, else
+// MoveSpeed), and the movement system clamps and applies it.
+// An AttackCommand whose victim is another player in the world goes to the
+// PvP combat system, and an AttackNPCCommand whose NPC is in the world to the
+// PvE combat system; any other is ignored. A player has one target, so
+// either one clears the target the other system had.
 func (s *Server) Handle(cmd world.Command, p *world.Player) {
+	switch a := cmd.(type) {
+	case AttackCommand:
+		if s.pvp != nil && a.Victim != p.ID && s.w.Player(a.Victim) != nil {
+			if s.pve != nil {
+				s.pve.ClearTarget(p.ID)
+			}
+			s.pvp.Handle(pvp.AttackCommand{Player: p.ID, Victim: a.Victim}, p)
+		}
+		return
+	case AttackNPCCommand:
+		if s.pve != nil && s.w.NPC(a.NPC) != nil {
+			if s.pvp != nil {
+				s.pvp.ClearTarget(p.ID)
+			}
+			s.pve.Handle(combat.AttackCommand{Player: p.ID, NPC: a.NPC}, p)
+		}
+		return
+	}
 	in, ok := cmd.(InputCommand)
 	if !ok {
 		return
@@ -432,6 +526,7 @@ func (s *Server) Handle(cmd world.Command, p *world.Player) {
 	if l := math.Hypot(mx, mz); l > 1 {
 		mx, mz = mx/l, mz/l
 	}
+	p.Running = in.Run
 	if mx == 0 && mz == 0 {
 		p.HasDesired = false
 		if f := float64(in.Facing); !math.IsNaN(f) && !math.IsInf(f, 0) {
@@ -439,7 +534,11 @@ func (s *Server) Handle(cmd world.Command, p *world.Player) {
 		}
 		return
 	}
-	reach := float64(s.cfg.MoveSpeed) * s.w.TickInterval().Seconds()
+	speed := s.cfg.MoveSpeed
+	if in.Run {
+		speed = s.cfg.RunSpeed
+	}
+	reach := float64(speed) * s.w.TickInterval().Seconds()
 	p.Desired = world.Vec2{X: p.Pos.X + float32(mx*reach), Y: p.Pos.Y + float32(mz*reach)}
 	p.HasDesired = true
 }
@@ -488,8 +587,19 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		s.nextSave = now.Add(s.cfg.SaveInterval)
 	}
 
+	tick := w.TickCount()
 	for _, p := range w.Players() {
 		s.grid.Set(p.ID, p.Pos)
+	}
+	for _, n := range w.NPCs() {
+		s.grid.Set(world.PlayerID(n.ID), n.Pos)
+		s.npcsIn[world.PlayerID(n.ID)] = tick
+	}
+	for id, t := range s.npcsIn {
+		if t != tick { // removed from the world since
+			s.grid.Remove(id)
+			delete(s.npcsIn, id)
+		}
 	}
 	for id, g := range s.live {
 		if g.conn == nil {
@@ -501,14 +611,133 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		}
 		s.sendChanged(g, p)
 		s.hits = s.grid.Query(p.Pos, interest.ViewRadius, interest.MaxVisible, id, s.hits[:0])
-		s.ents = append(s.ents[:0], p)
+		s.ents = append(s.ents[:0], playerEnt(p))
+		s.infoLeft = maxInfoPerTick
+		s.healths = s.healths[:0]
+		s.sendEntityInfo(g, id, s.playerInfo(p), tick)
+		s.noteHealth(g, id, s.playerRatio(p), tick)
 		for _, h := range s.hits {
 			if o := w.Player(h.ID); o != nil {
-				s.ents = append(s.ents, o)
+				s.ents = append(s.ents, playerEnt(o))
+				s.sendEntityInfo(g, h.ID, s.playerInfo(o), tick)
+				s.noteHealth(g, h.ID, s.playerRatio(o), tick)
+			} else if n := w.NPC(world.NPCID(h.ID)); n != nil {
+				s.ents = append(s.ents, npcEnt(n))
+				s.sendEntityInfo(g, h.ID, s.npcInfo(n), tick)
+				s.noteHealth(g, h.ID, s.npcRatio(n), tick)
 			}
 		}
-		g.conn.Send(encodeSnapshot(s.bld, w.TickCount(), g.lastSeq, s.ents))
+		for eid, k := range g.known {
+			if k.tick != tick {
+				delete(g.known, eid) // left view
+			}
+		}
+		s.sendEntityHealth(g, tick)
+		s.sendCombatHits(g, tick)
+		g.conn.Send(encodeSnapshot(s.bld, tick, g.lastSeq, s.ents))
 	}
+	s.tickHits = s.tickHits[:0]
+}
+
+// sendCombatHits sends g one CombatHit with this tick's PvP and PvE hits
+// whose attacker or target is in s.ents (the player and what they see), if
+// any.
+func (s *Server) sendCombatHits(g *guest, tick uint64) {
+	if len(s.tickHits) == 0 {
+		return
+	}
+	s.seen = s.seen[:0]
+	for _, h := range s.tickHits {
+		if s.inView(h.attacker) || s.inView(h.target) {
+			s.seen = append(s.seen, h)
+		}
+	}
+	if len(s.seen) > 0 {
+		g.conn.Send(encodeCombatHit(s.bld, tick, s.seen))
+	}
+}
+
+// sendEntityInfo sends g an EntityInfo for entity id if the client has not
+// had one since it entered view, or in has changed, and marks id in view.
+// Past this tick's budget, or when the send queue is full, the EntityInfo is
+// not recorded as sent, so it goes out on a later tick.
+func (s *Server) sendEntityInfo(g *guest, id world.PlayerID, in entityInfo, tick uint64) {
+	k, ok := g.known[id]
+	if !ok || k.info != in {
+		if s.infoLeft <= 0 || !g.conn.Send(encodeEntityInfo(s.bld, id, in)) {
+			s.infoLeft = 0
+			if ok {
+				g.known[id] = knownEnt{info: k.info, tick: tick}
+			}
+			return
+		}
+		s.infoLeft--
+	}
+	g.known[id] = knownEnt{info: in, tick: tick}
+}
+
+// noteHealth marks id in view with health ratio and queues it for this
+// tick's EntityHealth if it differs from what the client last got (full
+// when it has had none since id entered view).
+func (s *Server) noteHealth(g *guest, id world.PlayerID, ratio uint8, tick uint64) {
+	k, ok := g.health[id]
+	if !ok {
+		k.ratio = fullHealth
+	}
+	if k.ratio != ratio {
+		s.healths = append(s.healths, healthEnt{id: id, ratio: ratio})
+	}
+	g.health[id] = knownHealth{ratio: k.ratio, tick: tick}
+}
+
+// sendEntityHealth sends g one EntityHealth with the entries noteHealth
+// queued this tick, if any, records them as sent, and forgets entities that
+// left view. When the send queue is full nothing is recorded, so the
+// changes go out on a later tick.
+func (s *Server) sendEntityHealth(g *guest, tick uint64) {
+	if len(s.healths) > 0 && g.conn.Send(encodeEntityHealth(s.bld, s.healths)) {
+		for _, h := range s.healths {
+			g.health[h.id] = knownHealth{ratio: h.ratio, tick: tick}
+		}
+	}
+	for id, k := range g.health {
+		if k.tick != tick {
+			delete(g.health, id) // left view
+		}
+	}
+}
+
+// playerRatio is p's health ratio as EntityHealth carries it.
+func (s *Server) playerRatio(p *world.Player) uint8 {
+	return healthRatio(p.HP, p.MaxHP(s.data.Rules))
+}
+
+// npcRatio is n's health ratio as EntityHealth carries it; its maximum HP
+// is its type's HP.
+func (s *Server) npcRatio(n *world.NPC) uint8 {
+	t, _ := s.data.NPC(gamedata.NPCTypeID(n.Type))
+	return healthRatio(n.HP, t.HP)
+}
+
+// playerInfo is p's EntityInfo: combat level and worn equipment.
+func (s *Server) playerInfo(p *world.Player) entityInfo {
+	return entityInfo{kind: protocol.EntityKindPlayer, level: p.CombatLevel(s.data.Rules), equip: p.Inv.Equipment}
+}
+
+// npcInfo is n's EntityInfo: NPC type and the type's combat level.
+func (s *Server) npcInfo(n *world.NPC) entityInfo {
+	t, _ := s.data.NPC(gamedata.NPCTypeID(n.Type))
+	return entityInfo{kind: protocol.EntityKindNpc, npcType: uint16(n.Type), level: t.Level}
+}
+
+// inView reports whether id is in s.ents.
+func (s *Server) inView(id world.PlayerID) bool {
+	for _, e := range s.ents {
+		if e.id == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) join(g *guest, c transport.Conn, token string) {
@@ -516,12 +745,14 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 		go g.conn.Close() // same token reconnected: replace the old connection
 	}
 	g.conn = c
-	g.lastSeq = 0 // input sequence numbers are per connection
+	g.lastSeq = 0                           // input sequence numbers are per connection
+	g.known = map[world.PlayerID]knownEnt{} // the new connection has no EntityInfo yet
+	g.health = map[world.PlayerID]knownHealth{}
 	if p := s.w.Player(g.id); p != nil && s.live[g.id] == g {
 		// Still in the world from the previous connection, or waiting out
 		// the logout lock after it ended: take over the same player.
 		delete(s.gone, g.id)
-		c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate))
+		c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate, s.cfg.MoveSpeed, s.cfg.RunSpeed))
 		s.sendInitial(g, p)
 		return
 	}
@@ -536,15 +767,16 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 		return
 	}
 	s.live[g.id] = g
-	c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate))
+	c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate, s.cfg.MoveSpeed, s.cfg.RunSpeed))
 	s.sendInitial(g, p)
 	s.log.Info("player joined", "player", g.id, "transport", "websocket")
 }
 
-// sendInitial sends a newly connected client the item catalog, then the
-// player's stats and inventory.
+// sendInitial sends a newly connected client the item catalog and NPC
+// catalog, then the player's stats and inventory.
 func (s *Server) sendInitial(g *guest, p *world.Player) {
 	g.conn.Send(s.catalog)
+	g.conn.Send(s.npcCat)
 	g.sentStats = statsOf(s.data.Rules, p)
 	g.conn.Send(encodePlayerStats(s.bld, g.sentStats))
 	g.sentInv = cloneInventory(p.Inv)
@@ -683,6 +915,64 @@ func (s *Server) SaveAll(ctx context.Context) error {
 // Close stops the saver after its current write. Call SaveAll first to keep
 // pending saves.
 func (s *Server) Close() { s.saver.close() }
+
+// ---- PvP ----
+
+// SetPvP connects the PvP combat system, so that AttackTarget naming a
+// player reaches it. Call it before the world starts ticking.
+func (s *Server) SetPvP(c *pvp.Combat) { s.pvp = c }
+
+// SetPvE connects the PvE combat system, so that AttackTarget naming an NPC
+// reaches it. Call it before the world starts ticking.
+func (s *Server) SetPvE(c *combat.System) { s.pve = c }
+
+// SetGroundItems connects the ground item system that PvP drops spawn in.
+// Call it before the world starts ticking.
+func (s *Server) SetGroundItems(g *grounditems.System) { s.ground = g }
+
+// PvPHit implements pvp.HitSink: it keeps the hit for this tick's CombatHit.
+// Called on the tick goroutine, before this Tick.
+func (s *Server) PvPHit(h pvp.Hit) {
+	s.tickHits = append(s.tickHits, hit{attacker: h.Attacker, target: h.Target, damage: h.Damage, died: h.Died})
+}
+
+// Hit implements combat.EventSink: it keeps the PvE hit for this tick's
+// CombatHit, with the side that swung as the attacker. Called on the tick
+// goroutine, before this Tick.
+func (s *Server) Hit(h combat.Hit) {
+	e := hit{attacker: h.Player, target: world.PlayerID(h.NPC), damage: h.Damage, died: h.Died}
+	if h.ByNPC {
+		e.attacker, e.target = e.target, e.attacker
+	}
+	s.tickHits = append(s.tickHits, e)
+}
+
+// NPCKilled implements combat.EventSink. The kill already reached clients
+// as a Died hit and the NPC leaves the next Snapshot; NPC drops are not
+// wired yet (#200).
+func (s *Server) NPCKilled(combat.Kill) {}
+
+// PlayerDied implements combat.EventSink. A PvE death costs nothing and the
+// player has already respawned, so the next Snapshot says all there is.
+func (s *Server) PlayerDied(combat.Death) {}
+
+// PvPDrop implements pvp.DropSink: it spawns each dropped stack as a ground
+// item at the death position, reserved for the killer, on the tick of the
+// death. The victim's pvp_death outbox event, which removed the same stacks,
+// is written by this Tick as one audited transaction. Called on the tick
+// goroutine.
+func (s *Server) PvPDrop(d pvp.Drop) {
+	if s.ground == nil {
+		s.log.Error("pvp drop: no ground item system", "owner", d.Owner, "stacks", len(d.Stacks))
+		return
+	}
+	now := s.clock.Now()
+	for _, st := range d.Stacks {
+		if _, err := s.ground.Spawn(st.Item, st.Qty, d.Pos, d.Owner, now); err != nil {
+			s.log.Error("pvp drop", "owner", d.Owner, "item", st.Item, "qty", st.Qty, "err", err)
+		}
+	}
+}
 
 // ---- trades ----
 
