@@ -1,4 +1,5 @@
 import type { ServerMessage } from '../net/codec';
+import { ChatStore } from './chat';
 import type { CollisionGrid } from './collision';
 import { HitQueue } from './combat';
 import { Interpolator } from './interpolation';
@@ -37,6 +38,8 @@ export class GameState {
   readonly hits = new HitQueue();
   /** Pending trade request, open trade window and last trade result; subscribe for changes. */
   readonly trade = new TradeStore();
+  /** Chat log and overhead messages from the server's ChatMessages. */
+  readonly chat = new ChatStore();
 
   /** Gives prediction the collision grid; it applies now and after every Welcome. */
   setCollision(grid: CollisionGrid | null): void {
@@ -58,6 +61,7 @@ export class GameState {
       this.items.resetEntities();
       this.hits.clear();
       this.trade.clear();
+      this.chat.clearOverheads();
     } else if (msg.type === 'restartCountdown') {
       this.restartSeconds = msg.seconds;
     } else if (msg.type === 'snapshot') {
@@ -92,6 +96,8 @@ export class GameState {
       this.trade.setResult(msg.code);
     } else if (msg.type === 'combatHit') {
       this.hits.push(msg.tick, msg.hits);
+    } else if (msg.type === 'chat') {
+      this.chat.push(msg.speakerId, msg.text, now);
     }
   }
 

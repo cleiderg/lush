@@ -1,6 +1,6 @@
 import type { EquipSlot, ItemActionKind } from '../protocol';
 import {
-  decode, encodeAttackTarget, encodeHello, encodeItemAction, encodePickUp, encodeShopBuy, encodeShopSell,
+  decode, encodeAttackTarget, encodeChat, encodeHello, encodeItemAction, encodePickUp, encodeShopBuy, encodeShopSell,
   encodeTradeAccept, encodeTradeCancel, encodeTradeOffer, encodeTradeRemove, encodeTradeRequest, encodeTradeSetGold,
   type ServerMessage,
 } from './codec';
@@ -125,6 +125,12 @@ export class Session {
 
   sendTradeCancel(): void {
     this.send(encodeTradeCancel());
+  }
+
+  /** Sends a chat line; blank text is not sent. The server's echo puts it in the chat log. */
+  sendChat(text: string): void {
+    if (text.trim() === '') return;
+    this.send(encodeChat(text));
   }
 
   private connect(): void {
