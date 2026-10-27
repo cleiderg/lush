@@ -29,6 +29,7 @@ window.addEventListener('resize', () => renderer.resize());
 
 const controls = new Controls({
   onWave: () => sendWave(session),
+  onChatSubmit: (text) => session.sendChat(text),
   tray: document.getElementById('control-tray') as HTMLElement,
   getCameraYaw: () => controlYaw(renderer.world.rig.yaw),
   onInteract: () =>
