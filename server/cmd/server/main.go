@@ -90,7 +90,7 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 	metrics := ops.NewMetrics(version)
 	w := world.New(world.Config{TickRate: cfg.TickRate})
 
-	mover, grid, err := newMover(cfg.MoveSpeed)
+	mover, grid, err := newMover(cfg.MoveSpeed, cfg.RunSpeed)
 	if err != nil {
 		log.Error("movement setup failed", "err", err)
 		return 1
@@ -100,15 +100,7 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		log.Error("game data", "err", err)
 		return 1
 	}
-	sess := session.New(session.Config{
-		TickRate:     cfg.TickRate,
-		Spawn:        world.Vec2{X: cfg.SpawnX, Y: cfg.SpawnZ},
-		Collision:    grid,
-		MoveSpeed:    cfg.MoveSpeed,
-		SaveInterval: cfg.SaveInterval,
-		Data:         data,
-		OnPanic:      reporter.Recovered,
-	}, w, clock, players, log)
+	sess := session.New(sessionConfig(cfg, grid, data, reporter.Recovered), w, clock, players, log)
 	lookup, err := areas.Load()
 	if err != nil {
 		log.Error("areas", "err", err)
@@ -278,3 +270,19 @@ func (realClock) NewTicker(d time.Duration) world.Ticker {
 type realTicker struct{ *time.Ticker }
 
 func (t realTicker) C() <-chan time.Time { return t.Ticker.C }
+
+// sessionConfig is the session tuning from the server config. The walk and
+// run speeds are the same ones newMover gets, so Welcome tells clients the
+// speeds the server enforces (D-044).
+func sessionConfig(cfg ops.Config, grid *world.Grid, data *gamedata.Data, onPanic func(any)) session.Config {
+	return session.Config{
+		TickRate:     cfg.TickRate,
+		Spawn:        world.Vec2{X: cfg.SpawnX, Y: cfg.SpawnZ},
+		Collision:    grid,
+		MoveSpeed:    cfg.MoveSpeed,
+		RunSpeed:     cfg.RunSpeed,
+		SaveInterval: cfg.SaveInterval,
+		Data:         data,
+		OnPanic:      onPanic,
+	}
+}

@@ -54,7 +54,7 @@ func TestDefaultSpawnWalkable(t *testing.T) {
 // east of a walkable one, nearest the spawn, using the mover run wires up.
 func TestMoverBlocksEmbeddedGrid(t *testing.T) {
 	g := embeddedGrid(t)
-	mover, grid, err := newMover(4)
+	mover, grid, err := newMover(4, 7)
 	if err != nil {
 		t.Fatal(err)
 	}
