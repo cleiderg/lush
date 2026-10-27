@@ -9,6 +9,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/items"
+	"github.com/cleiderg/lush/server/internal/systems/pvp"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
 	"github.com/cleiderg/lush/server/internal/systems/trade"
 	"github.com/cleiderg/lush/server/internal/world"
@@ -141,6 +142,22 @@ func encodeSnapshot(b *flatbuffers.Builder, tick uint64, lastSeq uint32, ents []
 	return finish(b, protocol.MessageSnapshot, protocol.SnapshotEnd(b))
 }
 
+// encodeCombatHit builds a CombatHit of hits for world tick tick. b is reused
+// across calls.
+func encodeCombatHit(b *flatbuffers.Builder, tick uint64, hits []pvp.Hit) []byte {
+	b.Reset()
+	protocol.CombatHitStartHitsVector(b, len(hits))
+	for i := len(hits) - 1; i >= 0; i-- {
+		h := hits[i]
+		protocol.CreateHit(b, uint16(h.Attacker), uint16(h.Target), clampU8(h.Damage), h.Died)
+	}
+	vec := b.EndVector(len(hits))
+	protocol.CombatHitStart(b)
+	protocol.CombatHitAddTick(b, uint32(tick))
+	protocol.CombatHitAddHits(b, vec)
+	return finish(b, protocol.MessageCombatHit, protocol.CombatHitEnd(b))
+}
+
 // message is a decoded inbound envelope; only the field for typ is set.
 type message struct {
 	typ       protocol.Message
@@ -164,6 +181,7 @@ type message struct {
 	index   int    // TradeRemove offer index
 	gold    uint32 // TradeSetGold
 	screen  uint8  // TradeAccept
+	target  uint16 // AttackTarget entity id
 }
 
 // gameSlots maps wire equipment slots to game data slots. EquipSlotNone is
@@ -293,6 +311,10 @@ func decode(buf []byte) (m message, err error) {
 		m.screen = ta.Screen()
 	case protocol.MessageTradeCancel:
 		// No fields.
+	case protocol.MessageAttackTarget:
+		var at protocol.AttackTarget
+		at.Init(tbl.Bytes, tbl.Pos)
+		m.target = at.TargetId()
 	}
 	return m, nil
 }
