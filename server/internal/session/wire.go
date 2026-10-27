@@ -24,7 +24,7 @@ func finish(b *flatbuffers.Builder, typ protocol.Message, msg flatbuffers.UOffse
 	return append([]byte(nil), b.FinishedBytes()...)
 }
 
-func encodeWelcome(id world.PlayerID, token string, spawn world.Vec2, tickRate int) []byte {
+func encodeWelcome(id world.PlayerID, token string, spawn world.Vec2, tickRate int, walkSpeed, runSpeed float32) []byte {
 	b := flatbuffers.NewBuilder(128)
 	tok := b.CreateString(token)
 	protocol.WelcomeStart(b)
@@ -32,6 +32,8 @@ func encodeWelcome(id world.PlayerID, token string, spawn world.Vec2, tickRate i
 	protocol.WelcomeAddGuestToken(b, tok)
 	protocol.WelcomeAddSpawn(b, protocol.CreateVec2(b, spawn.X, spawn.Y))
 	protocol.WelcomeAddTickRate(b, byte(min(tickRate, 255)))
+	protocol.WelcomeAddWalkSpeed(b, walkSpeed)
+	protocol.WelcomeAddRunSpeed(b, runSpeed)
 	return finish(b, protocol.MessageWelcome, protocol.WelcomeEnd(b))
 }
 
@@ -167,6 +169,7 @@ type message struct {
 	moveX     float32
 	moveZ     float32
 	facing    float32
+	run       bool // Input's Run action flag
 	chatText  string
 	emote     protocol.Emote
 	pingToken uint32
@@ -262,6 +265,7 @@ func decode(buf []byte) (m message, err error) {
 		var in protocol.Input
 		in.Init(tbl.Bytes, tbl.Pos)
 		m.seq, m.facing = in.Seq(), in.Facing()
+		m.run = protocol.ActionFlags(in.Actions())&protocol.ActionFlagsRun != 0
 		if v := in.Move(nil); v != nil {
 			m.moveX, m.moveZ = v.X(), v.Z()
 		}
