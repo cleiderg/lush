@@ -126,9 +126,25 @@ describe('card table state', () => {
 describe('cardTableResultText', () => {
   it('maps every CardTableResultCode to a non-empty, distinct message', () => {
     const codes = Object.values(CardTableResultCode).filter((v): v is CardTableResultCode => typeof v === 'number');
-    expect(codes.length).toBe(6);
     const texts = codes.map(cardTableResultText);
     for (const t of texts) expect(t.trim()).not.toBe('');
     expect(new Set(texts).size).toBe(codes.length);
+  });
+
+  it('maps codes 0 to 10 to distinct messages and unknown codes to the fallback', () => {
+    const texts = Array.from({ length: 11 }, (_, i) => cardTableResultText(i as CardTableResultCode));
+    for (const t of texts) {
+      expect(t.trim()).not.toBe('');
+      expect(t).not.toBe('Card table action failed');
+    }
+    expect(new Set(texts).size).toBe(11);
+    expect(texts.slice(6)).toEqual([
+      'It is not your turn',
+      'That move is not allowed',
+      'No game is in progress',
+      'You do not have enough gold for the stake',
+      'You are too far from the table',
+    ]);
+    expect(cardTableResultText(99 as CardTableResultCode)).toBe('Card table action failed');
   });
 });
