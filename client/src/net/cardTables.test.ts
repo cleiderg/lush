@@ -12,6 +12,26 @@ function finish(b: flatbuffers.Builder, type: Message, msg: flatbuffers.Offset):
   return b.asUint8Array().slice();
 }
 
+interface StateFields {
+  tableId: number; seats: number[]; inProgress: boolean; turnSeat: number; reversed: boolean;
+  turnTicksLeft: number; hasWinner: boolean; winnerSeat: number;
+}
+
+// Builds field by field so the test compiles whether or not CardTableState has later fields.
+function buildState(b: flatbuffers.Builder, f: StateFields): flatbuffers.Offset {
+  const seats = CardTableState.createSeatsVector(b, f.seats);
+  CardTableState.startCardTableState(b);
+  CardTableState.addTableId(b, f.tableId);
+  CardTableState.addSeats(b, seats);
+  CardTableState.addInProgress(b, f.inProgress);
+  CardTableState.addTurnSeat(b, f.turnSeat);
+  CardTableState.addReversed(b, f.reversed);
+  CardTableState.addTurnTicksLeft(b, f.turnTicksLeft);
+  CardTableState.addHasWinner(b, f.hasWinner);
+  CardTableState.addWinnerSeat(b, f.winnerSeat);
+  return CardTableState.endCardTableState(b);
+}
+
 function envelope(bytes: Uint8Array, type: Message): Envelope {
   const env = Envelope.getRootAsEnvelope(new flatbuffers.ByteBuffer(bytes));
   expect(env.msgType()).toBe(type);
@@ -32,8 +52,10 @@ describe('encode card table messages', () => {
 describe('decode card table messages', () => {
   it('decodes a CardTableState in progress with a winner', () => {
     const b = new flatbuffers.Builder(64);
-    const seats = CardTableState.createSeatsVector(b, [12, 0, 65535, 7]);
-    const msg = CardTableState.createCardTableState(b, 3, seats, true, 2, true, 70000, true, 3);
+    const msg = buildState(b, {
+      tableId: 3, seats: [12, 0, 65535, 7], inProgress: true, turnSeat: 2, reversed: true, turnTicksLeft: 70000,
+      hasWinner: true, winnerSeat: 3,
+    });
     expect(decode(finish(b, Message.CardTableState, msg))).toEqual({
       type: 'cardTableState', tableId: 3, seats: [12, 0, 65535, 7], inProgress: true, turnSeat: 2, reversed: true,
       turnTicksLeft: 70000, winnerSeat: 3,
@@ -42,8 +64,10 @@ describe('decode card table messages', () => {
 
   it('decodes an idle CardTableState with no turn and no winner', () => {
     const b = new flatbuffers.Builder(64);
-    const seats = CardTableState.createSeatsVector(b, [0, 0]);
-    const msg = CardTableState.createCardTableState(b, 1, seats, false, 1, false, 0, false, 1);
+    const msg = buildState(b, {
+      tableId: 1, seats: [0, 0], inProgress: false, turnSeat: 1, reversed: false, turnTicksLeft: 0,
+      hasWinner: false, winnerSeat: 1,
+    });
     expect(decode(finish(b, Message.CardTableState, msg))).toEqual({
       type: 'cardTableState', tableId: 1, seats: [0, 0], inProgress: false, turnSeat: null, reversed: false,
       turnTicksLeft: 0, winnerSeat: null,

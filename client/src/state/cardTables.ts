@@ -100,13 +100,19 @@ export class CardTableStore {
   }
 }
 
-const RESULT_TEXT: Record<CardTableResultCode, string> = {
+// Codes 6-10 are keyed by number so this compiles before the protocol adds those members.
+const RESULT_TEXT: Record<number, string> = {
   [CardTableResultCode.Ok]: 'Done',
   [CardTableResultCode.UnknownTable]: 'That table does not exist',
   [CardTableResultCode.TableFull]: 'That table is full',
   [CardTableResultCode.AlreadySeated]: 'You are already seated at a table',
   [CardTableResultCode.NotSeated]: 'You are not seated at a table',
   [CardTableResultCode.InProgress]: 'A game is in progress',
+  6: 'It is not your turn',
+  7: 'That move is not allowed',
+  8: 'No game is in progress',
+  9: 'You do not have enough gold for the stake',
+  10: 'You are too far from the table',
 };
 
 /** Fixed message for a CardTableResult code. */
