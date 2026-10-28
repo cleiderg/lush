@@ -268,9 +268,11 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 
 **Card tables** ([[card-tables]], stretch)
 - Table size, turn timer, disconnect mid-game, house cut as a gold sink.
+- Table stake amounts (placeholders in server data), tuned after playtests.
 
 **Client and art** ([[architecture]])
 - glTF model budgets per model type (placeholders from #82, enforced by the CI check in #86): `characters/` 1,500 triangles / 150 KB, `props/` 1,000 / 100 KB, `buildings/` 8,000 / 500 KB, anything else 3,000 / 200 KB. Tune after profiling on an iPhone 13.
+- Chat display placeholders, tuned after playtests: chat log length `CHAT_LOG_LINES` 50 lines, overhead message duration `OVERHEAD_CHAT_MS` 5000 ms.
 
 **Housing** ([[housing]], Phase 2)
 - Auction starting bid, and what happens if nobody bids.
