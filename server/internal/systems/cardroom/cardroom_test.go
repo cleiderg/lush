@@ -27,6 +27,7 @@ func (r *stubRules) Over() (cardtable.Seat, bool)     { return r.winner, r.over 
 func (r *stubRules) Move(cardtable.Seat, any) (cardtable.Outcome, error) {
 	return cardtable.Outcome{}, nil
 }
+func (r *stubRules) Forfeit(cardtable.Seat) {}
 func (r *stubRules) Timeout(s cardtable.Seat) cardtable.Outcome {
 	r.timeouts = append(r.timeouts, s)
 	return cardtable.Outcome{}
@@ -240,12 +241,6 @@ func TestRejectedCommands(t *testing.T) {
 			want:  InProgress,
 		},
 		{
-			name:  "leave table in progress",
-			setup: startOnTable1,
-			cmd:   LeaveCommand{Player: 1},
-			want:  InProgress,
-		},
-		{
 			name:  "leave while not seated",
 			setup: func(t *testing.T, f *fixture) { f.sit(t, 1, 2) },
 			cmd:   LeaveCommand{Player: 5},
@@ -299,13 +294,38 @@ func (f *fakeSink) lastTo() world.PlayerID {
 }
 
 // startOnTable1 seats players 1 and 2 at table 1 and starts a game directly
-// on the table at the world's current tick.
+// on the table, by setting both ready, at the world's current tick.
 func startOnTable1(t *testing.T, f *fixture) {
 	t.Helper()
 	f.sit(t, 1, 1)
 	f.sit(t, 2, 1)
-	if err := f.tables[1].Start(f.world.TickCount()); err != nil {
-		t.Fatal(err)
+	for _, p := range []world.PlayerID{1, 2} {
+		if err := f.tables[1].SetReady(p, true, f.world.TickCount()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !f.tables[1].InProgress() {
+		t.Fatal("game did not start")
+	}
+}
+
+func TestLeaveMidGameForfeits(t *testing.T) {
+	f := newFixture(t, spec{id: 1, seats: 2, timeout: 5})
+	startOnTable1(t, f)
+	f.sink.reset()
+	f.do(LeaveCommand{Player: 1})
+	if want := []leaveResult{{1, 1, OK}}; !reflect.DeepEqual(f.sink.leaves, want) {
+		t.Fatalf("leave results %v, want %v", f.sink.leaves, want)
+	}
+	if len(f.sink.changes) != 1 {
+		t.Fatalf("got %d table changes, want 1", len(f.sink.changes))
+	}
+	snap := f.sink.changes[0].snap
+	if snap.InProgress || !snap.HasWinner || snap.Winner != 1 {
+		t.Errorf("snapshot %+v, want game over with winner seat 1", snap)
+	}
+	if !reflect.DeepEqual(snap.Seats, []SeatInfo{{}, {true, 2}}) {
+		t.Errorf("seats %v, want only player 2 seated", snap.Seats)
 	}
 }
 
@@ -481,8 +501,10 @@ func BenchmarkTick(b *testing.B) {
 				b.Fatal(err)
 			}
 		}
-		if err := tb.Start(0); err != nil {
-			b.Fatal(err)
+		for p := 0; p < 4; p++ {
+			if err := tb.SetReady(world.PlayerID(i*4+p+1), true, 0); err != nil {
+				b.Fatal(err)
+			}
 		}
 		entries = append(entries, Entry{ID: TableID(i), Table: tb})
 	}

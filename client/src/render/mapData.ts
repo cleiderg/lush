@@ -79,3 +79,18 @@ export function parseAreas(json: string): AreasData {
   if (d.version !== 1) throw new Error(`unsupported areas.json version ${d.version}`);
   return d;
 }
+
+export interface CardTable { id: number; x: number; z: number }
+/** cardtables.json: the card table plaza and its tables. Integer decimetres like areas.json. */
+export interface CardTablesData {
+  version: number;
+  units: string;
+  plaza: number[];
+  tables: CardTable[];
+}
+
+export function parseCardTables(json: string): CardTablesData {
+  const d = JSON.parse(json) as CardTablesData;
+  if (d.version !== 1) throw new Error(`unsupported cardtables.json version ${d.version}`);
+  return d;
+}
