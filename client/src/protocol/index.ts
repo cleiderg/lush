@@ -4,6 +4,11 @@
 export { ActionFlags } from './action-flags';
 export { Animation } from './animation';
 export { AttackTarget } from './attack-target';
+export { CardTableLeave } from './card-table-leave';
+export { CardTableResultCode } from './card-table-result-code';
+export { CardTableResult } from './card-table-result';
+export { CardTableSit } from './card-table-sit';
+export { CardTableState } from './card-table-state';
 export { ChatMessage } from './chat-message';
 export { ChatSend } from './chat-send';
 export { CombatHit } from './combat-hit';
