@@ -9,6 +9,11 @@ import { nearShop, TILE_METRES, type Point } from './shop';
  */
 export const ATTACK_RANGE_TILES = 1;
 /**
+ * Pick-up range in tiles, counting diagonals (Chebyshev), as the server's ground item range check.
+ * Must equal pickup_range_tiles in rules.json; a test fails if they differ.
+ */
+export const PICKUP_RANGE_TILES = 1;
+/**
  * How close (in tiles, straight-line) another player must be to send a trade request.
  * Must equal trade_distance_tiles in rules.json; a test fails if they differ.
  */
@@ -49,17 +54,30 @@ export interface InteractEntity {
   kind: EntityKind | undefined;
 }
 
+/** A ground item: its ground item id and position in metres. */
+export interface InteractGroundItem {
+  id: number;
+  x: number;
+  z: number;
+}
+
 export interface InteractInput {
   /** The local player's position in metres. */
   pos: Point;
   stall: Point;
   /** Other entities (never the local player). */
   entities: readonly InteractEntity[];
+  /**
+   * Ground items in view. The server hides drops reserved for someone else (gameplay spec),
+   * so every listed item is one the player may take.
+   */
+  groundItems?: readonly InteractGroundItem[];
   pvpZones?: readonly Polygon[];
 }
 
 export type InteractTarget =
   | { type: 'shop' }
+  | { type: 'pickUp'; id: number }
   | { type: 'attack'; id: number }
   | { type: 'trade'; id: number };
 
@@ -70,8 +88,18 @@ function tileDistance(a: Point, b: Point): number {
   return Math.max(Math.abs(tile(a.x) - tile(b.x)), Math.abs(tile(a.z) - tile(b.z)));
 }
 
-function nearest(pos: Point, list: readonly InteractEntity[]): InteractEntity | null {
-  let best: InteractEntity | null = null;
+/** Whether a ground item at item is within pick-up range of pos, by the server's tile rule. */
+export function inPickUpRange(pos: Point, item: Point): boolean {
+  return tileDistance(pos, item) <= PICKUP_RANGE_TILES;
+}
+
+/** The nearest ground item within pick-up range of pos, ties to the lower id; null if none. */
+export function nearestPickUp(pos: Point, items: readonly InteractGroundItem[]): InteractGroundItem | null {
+  return nearest(pos, items.filter((g) => inPickUpRange(pos, g)));
+}
+
+function nearest<T extends { id: number; x: number; z: number }>(pos: Point, list: readonly T[]): T | null {
+  let best: T | null = null;
   let bestD = Infinity;
   for (const e of list) {
     const d = (e.x - pos.x) ** 2 + (e.z - pos.z) ** 2;
@@ -85,12 +113,14 @@ function nearest(pos: Point, list: readonly InteractEntity[]): InteractEntity | 
 
 /**
  * What the Interact button does (gameplay spec, Interact button): the shop stall within shop
- * distance; else the nearest NPC within attack range (attack); else the nearest player within
+ * distance; else the nearest ground item within pick-up range (pick up); else the nearest NPC within attack range (attack); else the nearest player within
  * trade distance (a trade request outside the PvP zone, an attack inside it). Null: nothing.
  */
 export function pickInteractTarget(input: InteractInput): InteractTarget | null {
   const { pos } = input;
   if (nearShop(pos, input.stall)) return { type: 'shop' };
+  const item = nearestPickUp(pos, input.groundItems ?? []);
+  if (item) return { type: 'pickUp', id: item.id };
   const npc = nearest(
     pos,
     input.entities.filter((e) => e.kind === EntityKind.Npc && tileDistance(pos, e) <= ATTACK_RANGE_TILES),

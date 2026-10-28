@@ -3,8 +3,8 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { EntityKind } from '../protocol';
 import {
-  ATTACK_RANGE_TILES, inPolygon, inPvpZone, pickInteractTarget, PVP_ZONES, TRADE_DISTANCE_TILES,
-  type InteractEntity, type Polygon,
+  ATTACK_RANGE_TILES, inPickUpRange, inPolygon, inPvpZone, nearestPickUp, pickInteractTarget, PICKUP_RANGE_TILES, PVP_ZONES,
+  TRADE_DISTANCE_TILES, type InteractEntity, type InteractGroundItem, type Polygon,
 } from './interact';
 
 const repo = resolve(__dirname, '../../..');
@@ -15,6 +15,7 @@ const STALL = { x: 0, z: 0 };
 const FAR = { x: 100.5, z: 100.5 };
 const npc = (id: number, x: number, z: number): InteractEntity => ({ id, x, z, kind: EntityKind.Npc });
 const player = (id: number, x: number, z: number): InteractEntity => ({ id, x, z, kind: EntityKind.Player });
+const ground = (id: number, x: number, z: number): InteractGroundItem => ({ id, x, z });
 const SQUARE: Polygon = [[90, 90], [110, 90], [110, 110], [90, 110]];
 
 describe('interact distances match the server rules (AC1)', () => {
@@ -22,6 +23,11 @@ describe('interact distances match the server rules (AC1)', () => {
     expect(ATTACK_RANGE_TILES).toBe(rules.attack_range_tiles);
     // The picker counts diagonals; the server must too.
     expect(rules.attack_range_diagonal).toBe(true);
+  });
+
+  it('PICKUP_RANGE_TILES equals pickup_range_tiles, diagonals included', () => {
+    expect(PICKUP_RANGE_TILES).toBe(rules.pickup_range_tiles);
+    expect(rules.pickup_range_diagonal).toBe(true);
   });
 
   it('TRADE_DISTANCE_TILES equals trade_distance_tiles', () => {
@@ -65,6 +71,74 @@ describe('pickInteractTarget (AC1)', () => {
     expect(pickInteractTarget({ pos: FAR, stall: STALL, entities: [] })).toBeNull();
     expect(pickInteractTarget({ pos: FAR, stall: STALL, entities: [player(8, 104, 100.5)] })).toBeNull();
     expect(pickInteractTarget({ pos: FAR, stall: STALL, entities: [{ id: 3, x: 100.5, z: 100.5, kind: undefined }] })).toBeNull();
+  });
+});
+
+describe('pick-up range follows the server tile rule (#243 AC2)', () => {
+  // FAR is in tile (100, 100); range is by tile, not by metres.
+  it('an item on the same tile is in range', () => {
+    expect(inPickUpRange(FAR, { x: 100.0, z: 100.99 })).toBe(true);
+  });
+
+  it('an item on any adjacent tile, diagonals included, is in range', () => {
+    for (const dx of [-1, 0, 1]) {
+      for (const dz of [-1, 0, 1]) expect(inPickUpRange(FAR, { x: 100.5 + dx, z: 100.5 + dz })).toBe(true);
+    }
+    // Far corner of the diagonal tile: almost 2 m away in a straight line, still one tile.
+    expect(inPickUpRange({ x: 100.01, z: 100.01 }, { x: 101.99, z: 101.99 })).toBe(true);
+  });
+
+  it('an item two tiles away on either axis is not in range', () => {
+    expect(inPickUpRange(FAR, { x: 102.5, z: 100.5 })).toBe(false);
+    expect(inPickUpRange(FAR, { x: 98.5, z: 100.5 })).toBe(false);
+    expect(inPickUpRange(FAR, { x: 100.5, z: 102.5 })).toBe(false);
+    expect(inPickUpRange(FAR, { x: 100.5, z: 98.5 })).toBe(false);
+    expect(inPickUpRange(FAR, { x: 101.5, z: 102.5 })).toBe(false);
+    // Only 1.02 m apart in a straight line, but two tiles over.
+    expect(inPickUpRange({ x: 100.99, z: 100.5 }, { x: 102.01, z: 100.5 })).toBe(false);
+  });
+
+  it('nearestPickUp picks the nearest item in range (ties to the lower id) and null when none is', () => {
+    expect(nearestPickUp(FAR, [ground(4, 101.5, 101.5), ground(3, 100.9, 100.5), ground(2, 102.5, 100.5)])?.id).toBe(3);
+    expect(nearestPickUp(FAR, [ground(8, 101.5, 100.5), ground(7, 99.5, 100.5)])?.id).toBe(7);
+    expect(nearestPickUp(FAR, [ground(2, 102.5, 100.5), ground(5, 100.5, 98.5)])).toBeNull();
+    expect(nearestPickUp(FAR, [])).toBeNull();
+  });
+});
+
+describe('the full Interact order from the gameplay spec (#243 AC3)', () => {
+  // Shop, then ground item (pick up), then NPC (attack), then player (trade, or attack in the PvP zone), then nothing.
+  const items = [ground(20, 101.5, 100.5)];
+  const npcs = [npc(30, 101.5, 100.5)];
+  const players = [player(40, 102, 100.5)];
+
+  it('1. the shop wins over a ground item, NPC and player in range', () => {
+    const pos = { x: 0.5, z: 0.5 };
+    const groundItems = [ground(20, 0.5, 0.5)];
+    expect(pickInteractTarget({ pos, stall: STALL, entities: [npc(30, 1, 1), player(40, 1, 1)], groundItems }))
+      .toEqual({ type: 'shop' });
+  });
+
+  it('2. a ground item in pick-up range wins over an NPC and a player', () => {
+    expect(pickInteractTarget({ pos: FAR, stall: STALL, entities: [...npcs, ...players], groundItems: items, pvpZones: [] }))
+      .toEqual({ type: 'pickUp', id: 20 });
+  });
+
+  it('3. an NPC in attack range when no ground item is in pick-up range', () => {
+    const groundItems = [ground(21, 102.5, 100.5)];
+    expect(pickInteractTarget({ pos: FAR, stall: STALL, entities: [...npcs, ...players], groundItems, pvpZones: [] }))
+      .toEqual({ type: 'attack', id: 30 });
+  });
+
+  it('4. a player in trade distance when there is no item or NPC: trade outside the PvP zone, attack inside', () => {
+    expect(pickInteractTarget({ pos: FAR, stall: STALL, entities: players, groundItems: [], pvpZones: [] }))
+      .toEqual({ type: 'trade', id: 40 });
+    expect(pickInteractTarget({ pos: FAR, stall: STALL, entities: players, groundItems: [], pvpZones: [SQUARE] }))
+      .toEqual({ type: 'attack', id: 40 });
+  });
+
+  it('5. nothing with no target', () => {
+    expect(pickInteractTarget({ pos: FAR, stall: STALL, entities: [], groundItems: [] })).toBeNull();
   });
 });
 
