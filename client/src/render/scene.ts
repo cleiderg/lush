@@ -7,6 +7,7 @@ import { Hitsplats } from './hitsplats';
 import { CampusMap, loadCampus } from './campusMap';
 import { GroundItems } from './groundItems';
 import { Npcs } from './npcs';
+import { ChatText } from './chatText';
 import { AreaMarkers, loadAreas } from './gameAreas';
 import type { CampusData } from './mapData';
 import type { WorldView } from './worldView';
@@ -39,6 +40,7 @@ export class WorldScene {
   readonly healthBars = new HealthBars();
   private readonly bars: { x: number; z: number; ratio: number }[] = [];
   readonly hitsplats = new Hitsplats();
+  readonly chat = new ChatText();
   /** Created on the first view that carries groundItems, so views without it leave the scene as before. */
   private groundItems: GroundItems | null = null;
   /** Created on the first view that carries npcs, like groundItems. */
@@ -88,6 +90,9 @@ export class WorldScene {
     if (view.hits?.length && !this.hitsplats.group.parent) this.scene.add(this.hitsplats.group);
     if (this.hitsplats.group.parent) this.hitsplats.update(view, this.now(), this.rig.camera.quaternion);
     this.healthBars.update(this.barEntries(view), this.rig.camera.quaternion);
+    // Chat joins the scene with the first message, like hitsplats; it needs the DOM only from then on.
+    if (view.chat?.length && !this.chat.group.parent) this.scene.add(this.chat.group);
+    if (this.chat.group.parent) this.chat.update(view);
   }
 
   /** Bar entries for every drawn player and NPC, reusing the same objects each frame. */

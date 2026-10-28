@@ -11,6 +11,7 @@ import { createRenderer } from './render/renderer';
 import collisionUrl from '../../shared/map/collision.bin?url';
 import { CollisionGrid } from './state/collision';
 import { GameState } from './state/world';
+import { ChatLog, anyOpen } from './ui/chatLog';
 import { Controls } from './ui/controls';
 import { Hud } from './ui/hud';
 import { PvpWarning } from './ui/pvpWarning';
@@ -29,6 +30,7 @@ window.addEventListener('resize', () => renderer.resize());
 
 const controls = new Controls({
   onWave: () => sendWave(session),
+  onChatSubmit: (text) => session.sendChat(text),
   tray: document.getElementById('control-tray') as HTMLElement,
   getCameraYaw: () => controlYaw(renderer.world.rig.yaw),
   onInteract: () =>
@@ -59,7 +61,7 @@ const shop = new ShopPanel({
   onOpen: () => hud.setOpen(false),
 });
 const pvpWarning = new PvpWarning({ parent: document.body, position: () => game.prediction.pos });
-new TradePanel({
+const trade = new TradePanel({
   parent: document.body,
   trade: game.trade,
   items: game.items,
@@ -68,6 +70,12 @@ new TradePanel({
     hud.setOpen(false);
     shop.close();
   },
+});
+const chatLog = new ChatLog({
+  parent: document.body,
+  lines: () => game.chat.log,
+  playerId: () => game.playerId,
+  covered: () => anyOpen([hud, shop, trade]),
 });
 const session = new Session({
   factory: () => new WebSocketTransport(),
@@ -89,5 +97,8 @@ new GameLoop({
     if (!session.connected) return;
     sendMove(game, session, m.x, m.y, stepMs / 1000, controls.isRunning);
   },
-  render: () => renderer.render(buildWorldView(game, performance.now())),
+  render: () => {
+    chatLog.update();
+    renderer.render(buildWorldView(game, performance.now()));
+  },
 }).start();
