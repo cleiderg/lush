@@ -13,6 +13,10 @@
 
 Central campus only: Aldrich Park and the ring of buildings around it (D-023).
 
+## Landmarks
+
+Phase 1 has three hand-made landmarks near Aldrich Park: Langson Library (OSM ways 171169252 and 1374185239), Aldrich Hall (62646030) and the Student Center (157979894). Each is built in code by client-render from low-poly, flat-colour primitives on its OSM building footprint in shared/map/campus.json, within the buildings/ budget (8,000 triangles), and replaces that building's generic extrusion. Landmarks are visual only: collision and map data still come from the OSM footprints. No UCI logos or mascot (PRD 9).
+
 ## Gameplay areas
 
 Decided in #100. Coordinates are approximate, in metres from the world origin in `shared/map/config.mjs` (x = east, z = south; `campus.json` stores decimetres, so multiply by 10). Agents keep each place where it is listed, snap it to walkable cells, and keep spawn and shop clear of buildings and paths through doors. Don't move a place to a different part of campus without an owner decision.

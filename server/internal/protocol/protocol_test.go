@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"reflect"
 	"testing"
 
 	flatbuffers "github.com/google/flatbuffers/go"
@@ -43,8 +44,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 9 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 9", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 10 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 10", ProtocolVersionCurrent)
 	}
 }
 
@@ -947,6 +948,105 @@ func TestRoundTripTradeResult(t *testing.T) {
 
 		var m TradeResult
 		tbl := open(t, buf, MessageTradeResult)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.Code() != code {
+			t.Fatalf("code = %v, want %v", m.Code(), code)
+		}
+	}
+}
+
+func TestRoundTripCardTableSit(t *testing.T) {
+	for _, id := range []uint16{0, 3, 65535} {
+		b := flatbuffers.NewBuilder(32)
+		CardTableSitStart(b)
+		CardTableSitAddTableId(b, id)
+		buf := finish(b, MessageCardTableSit, CardTableSitEnd(b))
+
+		var m CardTableSit
+		tbl := open(t, buf, MessageCardTableSit)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.TableId() != id {
+			t.Fatalf("table id = %d, want %d", m.TableId(), id)
+		}
+	}
+}
+
+func TestRoundTripCardTableLeave(t *testing.T) {
+	b := flatbuffers.NewBuilder(32)
+	CardTableLeaveStart(b)
+	buf := finish(b, MessageCardTableLeave, CardTableLeaveEnd(b))
+
+	var m CardTableLeave
+	tbl := open(t, buf, MessageCardTableLeave)
+	m.Init(tbl.Bytes, tbl.Pos)
+}
+
+type cardTableState struct {
+	tableID    uint16
+	seats      []uint16
+	inProgress bool
+	turnSeat   uint8
+	reversed   bool
+	ticksLeft  uint32
+	hasWinner  bool
+	winnerSeat uint8
+}
+
+func TestRoundTripCardTableState(t *testing.T) {
+	cases := []cardTableState{
+		// 4 seats, one empty, game over with a winner.
+		{7, []uint16{300, 0, 12, 65535}, false, 3, true, 0, true, 2},
+		{65535, []uint16{1, 2, 3, 4}, true, 1, false, 4294967295, false, 0},
+		{0, []uint16{0, 0}, false, 0, false, 0, false, 0},
+	}
+	for ci, w := range cases {
+		b := flatbuffers.NewBuilder(64)
+		CardTableStateStartSeatsVector(b, len(w.seats))
+		for i := len(w.seats) - 1; i >= 0; i-- {
+			b.PrependUint16(w.seats[i])
+		}
+		seats := b.EndVector(len(w.seats))
+		CardTableStateStart(b)
+		CardTableStateAddTableId(b, w.tableID)
+		CardTableStateAddSeats(b, seats)
+		CardTableStateAddInProgress(b, w.inProgress)
+		CardTableStateAddTurnSeat(b, w.turnSeat)
+		CardTableStateAddReversed(b, w.reversed)
+		CardTableStateAddTurnTicksLeft(b, w.ticksLeft)
+		CardTableStateAddHasWinner(b, w.hasWinner)
+		CardTableStateAddWinnerSeat(b, w.winnerSeat)
+		buf := finish(b, MessageCardTableState, CardTableStateEnd(b))
+
+		var m CardTableState
+		tbl := open(t, buf, MessageCardTableState)
+		m.Init(tbl.Bytes, tbl.Pos)
+		got := cardTableState{m.TableId(), nil, m.InProgress(), m.TurnSeat(), m.Reversed(),
+			m.TurnTicksLeft(), m.HasWinner(), m.WinnerSeat()}
+		for i := 0; i < m.SeatsLength(); i++ {
+			got.seats = append(got.seats, m.Seats(i))
+		}
+		if !reflect.DeepEqual(got, w) {
+			t.Fatalf("case %d: got %+v, want %+v", ci, got, w)
+		}
+	}
+}
+
+func TestRoundTripCardTableResult(t *testing.T) {
+	codes := []CardTableResultCode{
+		CardTableResultCodeOk, CardTableResultCodeUnknownTable, CardTableResultCodeTableFull,
+		CardTableResultCodeAlreadySeated, CardTableResultCodeNotSeated, CardTableResultCodeInProgress,
+	}
+	if len(codes) != len(EnumNamesCardTableResultCode) {
+		t.Fatalf("CardTableResultCode has %d values, want %d", len(EnumNamesCardTableResultCode), len(codes))
+	}
+	for _, code := range codes {
+		b := flatbuffers.NewBuilder(32)
+		CardTableResultStart(b)
+		CardTableResultAddCode(b, code)
+		buf := finish(b, MessageCardTableResult, CardTableResultEnd(b))
+
+		var m CardTableResult
+		tbl := open(t, buf, MessageCardTableResult)
 		m.Init(tbl.Bytes, tbl.Pos)
 		if m.Code() != code {
 			t.Fatalf("code = %v, want %v", m.Code(), code)

@@ -186,6 +186,19 @@ func (r *econRig) saveAll() error {
 	return r.s.SaveAll(ctx)
 }
 
+// waitSaverFailed waits until the saver has recorded a failed economy write
+// naming store id sid and finished its drain, so the next submit re-queues it.
+// The store's failure counter moves before the saver records the failure.
+func (r *econRig) waitSaverFailed(what string, sid int64) {
+	r.t.Helper()
+	sv := r.s.saver
+	waitUntil(r.t, what, func() bool {
+		sv.mu.Lock()
+		defer sv.mu.Unlock()
+		return sv.econFail[sid] && !sv.inflight && len(sv.pending) == 0 && !sv.econReadyLocked()
+	})
+}
+
 func waitUntil(t *testing.T, what string, cond func() bool) {
 	t.Helper()
 	for deadline := time.Now().Add(5 * time.Second); !cond(); time.Sleep(time.Millisecond) {
