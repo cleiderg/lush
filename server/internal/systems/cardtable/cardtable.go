@@ -21,9 +21,13 @@ var (
 	ErrNotSeated     = errors.New("cardtable: player not seated")
 	ErrInProgress    = errors.New("cardtable: game in progress")
 	ErrNoGame        = errors.New("cardtable: no game in progress")
-	ErrTooFewPlayers = errors.New("cardtable: too few players to start")
 	ErrNotYourTurn   = errors.New("cardtable: not this seat's turn")
 )
+
+// MissedTurnLimit is how many missed turns in a row (timeouts, including
+// those run straight away for a disconnected seat) make a seat forfeit. It is
+// the placeholder from docs/specs/card-tables.md, to be tuned after playtests.
+const MissedTurnLimit = 3
 
 // Outcome is what a rules module reports after a move or timeout, telling the
 // table how to pass the turn.
@@ -45,8 +49,14 @@ type Rules interface {
 	// Move applies a move from the seat whose turn it is. On error the move
 	// is rejected and the rules module must leave its state unchanged.
 	Move(seat Seat, move any) (Outcome, error)
-	// Timeout handles the current seat running out of time.
+	// Timeout handles the current seat running out of time, or having its
+	// turn while disconnected.
 	Timeout(seat Seat) Outcome
+	// Forfeit removes a seat from the game, after 3 missed turns in a row or
+	// when its player leaves mid-game. The table skips the seat in turn order
+	// from then on. If only one seat is left in the game and Over does not
+	// report a winner, the table makes that seat the winner.
+	Forfeit(seat Seat)
 	// PublicView is the table state every viewer may see.
 	PublicView() any
 	// PrivateView is the data only the given seat may see (for example its
@@ -67,8 +77,11 @@ type View struct {
 }
 
 type seatState struct {
-	player   world.PlayerID
-	occupied bool
+	player       world.PlayerID
+	occupied     bool
+	ready        bool
+	disconnected bool
+	missed       int // missed turns in a row in the current game
 }
 
 // Table is one card table. Only the world tick may call its methods.
@@ -126,6 +139,25 @@ func (t *Table) Occupant(s Seat) (world.PlayerID, bool) {
 	return t.seats[s].player, true
 }
 
+// Ready reports whether the player in a seat has pressed Ready.
+func (t *Table) Ready(s Seat) bool {
+	return s >= 0 && int(s) < len(t.seats) && t.seats[s].ready
+}
+
+// Missed returns how many turns in a row a seat has missed in the current
+// game.
+func (t *Table) Missed(s Seat) int {
+	if s < 0 || int(s) >= len(t.seats) {
+		return 0
+	}
+	return t.seats[s].missed
+}
+
+// Disconnected reports whether a seat is marked disconnected.
+func (t *Table) Disconnected(s Seat) bool {
+	return s >= 0 && int(s) < len(t.seats) && t.seats[s].disconnected
+}
+
 // Sit puts a player in the lowest free seat. It is rejected while a game is
 // in progress.
 func (t *Table) Sit(p world.PlayerID) (Seat, error) {
@@ -144,9 +176,33 @@ func (t *Table) Sit(p world.PlayerID) (Seat, error) {
 	return 0, ErrTableFull
 }
 
-// Leave frees a player's seat. It is rejected while a game is in progress
-// (mid-game leave behaviour waits on PRD 13 Q1).
-func (t *Table) Leave(p world.PlayerID) error {
+// Leave frees a player's seat at tick now. Mid-game, the seat forfeits.
+// Between games, every seated player's Ready flag clears, since the group
+// they agreed to play with has changed.
+func (t *Table) Leave(p world.PlayerID, now uint64) error {
+	s, ok := t.SeatOf(p)
+	if !ok {
+		return ErrNotSeated
+	}
+	if t.inGame(s) {
+		t.forfeit(s, now)
+		return nil
+	}
+	t.seats[s] = seatState{}
+	if !t.inProgress {
+		for i := range t.seats {
+			t.seats[i].ready = false
+		}
+	}
+	return nil
+}
+
+// SetReady sets or clears player p's Ready flag at tick now. Once at least
+// MinPlayers are seated and every seated player is ready, the game starts
+// straight away and every Ready flag clears. It is rejected while a game is
+// in progress. A start the rules module rejects is returned as an error with
+// the flag left set.
+func (t *Table) SetReady(p world.PlayerID, ready bool, now uint64) error {
 	if t.inProgress {
 		return ErrInProgress
 	}
@@ -154,26 +210,44 @@ func (t *Table) Leave(p world.PlayerID) error {
 	if !ok {
 		return ErrNotSeated
 	}
-	t.seats[s] = seatState{}
+	t.seats[s].ready = ready
+	return t.tryStart(now)
+}
+
+// SetDisconnected marks or clears player p's seat as disconnected. While
+// marked, the seat's turn runs the rules module's timeout action at the next
+// Tick instead of waiting for the deadline.
+func (t *Table) SetDisconnected(p world.PlayerID, disconnected bool) error {
+	s, ok := t.SeatOf(p)
+	if !ok {
+		return ErrNotSeated
+	}
+	t.seats[s].disconnected = disconnected
 	return nil
 }
 
-// Start begins a game for every seated player at tick now.
-func (t *Table) Start(now uint64) error {
-	if t.inProgress {
-		return ErrInProgress
-	}
+// tryStart begins a game at tick now if enough players are seated and all of
+// them are ready.
+func (t *Table) tryStart(now uint64) error {
 	var order []Seat
 	for i, s := range t.seats {
-		if s.occupied {
-			order = append(order, Seat(i))
+		if !s.occupied {
+			continue
 		}
+		if !s.ready {
+			return nil
+		}
+		order = append(order, Seat(i))
 	}
-	if len(order) < t.rules.MinPlayers() || len(order) == 0 {
-		return ErrTooFewPlayers
+	if len(order) < t.rules.MinPlayers() || len(order) < 2 {
+		return nil
 	}
 	if err := t.rules.Start(append([]Seat(nil), order...)); err != nil {
 		return fmt.Errorf("cardtable: start game: %w", err)
+	}
+	for _, s := range order {
+		t.seats[s].ready = false
+		t.seats[s].missed = 0
 	}
 	t.inProgress = true
 	t.order = order
@@ -183,6 +257,16 @@ func (t *Table) Start(now uint64) error {
 	t.hasResult = false
 	t.winner = 0
 	return nil
+}
+
+// inGame reports whether seat s is playing in the current game.
+func (t *Table) inGame(s Seat) bool {
+	for _, o := range t.order {
+		if o == s {
+			return true
+		}
+	}
+	return false
 }
 
 // Turn returns the seat whose turn it is.
@@ -224,28 +308,79 @@ func (t *Table) Move(p world.PlayerID, move any, now uint64) error {
 	if err != nil {
 		return fmt.Errorf("cardtable: move from seat %d: %w", s, err)
 	}
+	t.seats[s].missed = 0
 	t.pass(out, now)
 	return nil
 }
 
 // Tick runs the turn timer at tick now: once the current seat's deadline has
-// passed, the rules module's timeout handler runs for it and the turn passes.
+// passed, or straight away if the seat is disconnected, the rules module's
+// timeout handler runs for it and the turn passes. That counts as a missed
+// turn; at MissedTurnLimit in a row the seat forfeits.
 func (t *Table) Tick(now uint64) {
-	if !t.inProgress || now < t.deadline {
+	if !t.inProgress {
 		return
 	}
-	out := t.rules.Timeout(t.order[t.turn])
+	s := t.order[t.turn]
+	if now < t.deadline && !t.seats[s].disconnected {
+		return
+	}
+	out := t.rules.Timeout(s)
+	t.seats[s].missed++
 	t.pass(out, now)
+	if t.inProgress && t.seats[s].missed >= MissedTurnLimit {
+		t.forfeit(s, now)
+	}
+}
+
+// forfeit removes seat s from the current game at tick now and frees it. If
+// s had the turn, the turn passes to the next seat in the current direction
+// with a fresh deadline. The game ends if the rules module says so, or with
+// the last seat left as the winner.
+func (t *Table) forfeit(s Seat, now uint64) {
+	t.rules.Forfeit(s)
+	t.seats[s] = seatState{}
+	i := 0
+	for t.order[i] != s {
+		i++
+	}
+	t.order = append(t.order[:i], t.order[i+1:]...)
+	if w, over := t.rules.Over(); over {
+		t.end(w)
+		return
+	}
+	if len(t.order) == 1 {
+		t.end(t.order[0])
+		return
+	}
+	n := len(t.order)
+	switch {
+	case i < t.turn:
+		t.turn--
+	case i == t.turn:
+		// The next seat forward has slid into index turn; backward it is
+		// the one before.
+		if t.dir < 0 {
+			t.turn--
+		}
+		t.turn = (t.turn + n) % n
+		t.deadline = now + t.turnTimeout
+	}
+}
+
+// end finishes the current game with seat w as the winner.
+func (t *Table) end(w Seat) {
+	t.inProgress = false
+	t.order = nil
+	t.hasResult = true
+	t.winner = w
 }
 
 // pass ends the game if the rules module says it is over, or else passes the
 // turn according to out and restarts the deadline.
 func (t *Table) pass(out Outcome, now uint64) {
 	if w, over := t.rules.Over(); over {
-		t.inProgress = false
-		t.order = nil
-		t.hasResult = true
-		t.winner = w
+		t.end(w)
 		return
 	}
 	if out.Reverse {
