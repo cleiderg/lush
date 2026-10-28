@@ -267,7 +267,7 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 - More attack styles (ranged, magic) and skills beyond combat. Not in Phase 1 unless decided here.
 
 **Card tables** ([[card-tables]], stretch)
-- Table size, turn timer, disconnect mid-game, house cut as a gold sink.
+- Table rules placeholders (seats 2 to 4, start when all seated players are Ready, 20 s turn timer, 3 missed turns forfeit, no house cut), tuned after playtests.
 - Table stake amounts (placeholders in server data), tuned after playtests.
 
 **Client and art** ([[architecture]])
