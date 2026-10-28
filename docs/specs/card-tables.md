@@ -18,6 +18,7 @@ Players sit at a table in a dedicated area and play turn-based card games agains
 ## First game: Shed (working name)
 
 - Deck: 4 colours (campus-themed names and art), each with one 0, two each of 1 to 9, two Skip, two Reverse and two Draw Two; plus 4 Wild and 4 Wild Draw Four. Original names and art, no Uno branding.
+- Colours (placeholders): Aldrich Green, Anteater Blue, Golden Hour Yellow, Brick Red. Phase 1 cards are flat-colour with text symbols (0–9, Skip, Reverse, +2, Wild, Wild +4); no image art.
 - Deal 7 cards to each player; turn the top card of the draw pile face up to start the discard pile.
 - On your turn, play a card that matches the top card's colour or symbol, or a Wild (choose the next colour). If you can't or don't play, draw one card and the turn passes.
 - Skip skips the next player; Reverse reverses the direction (with 2 players it acts as Skip); Draw Two and Wild Draw Four make the next player draw 2 or 4 and lose their turn.
