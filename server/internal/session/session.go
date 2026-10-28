@@ -926,7 +926,8 @@ func (s *Server) SetPvP(c *pvp.Combat) { s.pvp = c }
 // reaches it. Call it before the world starts ticking.
 func (s *Server) SetPvE(c *combat.System) { s.pve = c }
 
-// SetGroundItems connects the ground item system that PvP drops spawn in.
+// SetGroundItems connects the ground item system that PvP and NPC drops
+// spawn in.
 // Call it before the world starts ticking.
 func (s *Server) SetGroundItems(g *grounditems.System) { s.ground = g }
 
@@ -947,10 +948,28 @@ func (s *Server) Hit(h combat.Hit) {
 	s.tickHits = append(s.tickHits, e)
 }
 
-// NPCKilled implements combat.EventSink. The kill already reached clients
-// as a Died hit and the NPC leaves the next Snapshot; NPC drops are not
-// wired yet (#200).
-func (s *Server) NPCKilled(combat.Kill) {}
+// NPCKilled implements combat.EventSink: it spawns each item stack of the
+// kill as a ground item at the kill position, reserved for the killer, on
+// the tick of the kill, as PvPDrop does. The kill already reached clients as
+// a Died hit and the NPC leaves the next Snapshot. The killer's npc_drop
+// outbox event, which credited the kill's gold, is written by this Tick as
+// one audited transaction, and the new balance goes out in PlayerStats.
+// Called on the tick goroutine.
+func (s *Server) NPCKilled(k combat.Kill) {
+	if len(k.Items) == 0 {
+		return
+	}
+	if s.ground == nil {
+		s.log.Error("npc drop: no ground item system", "owner", k.Killer, "npc_type", k.Type, "stacks", len(k.Items))
+		return
+	}
+	now := s.clock.Now()
+	for _, st := range k.Items {
+		if _, err := s.ground.Spawn(st.Item, st.Qty, k.Pos, k.Killer, now); err != nil {
+			s.log.Error("npc drop", "owner", k.Killer, "npc_type", k.Type, "item", st.Item, "qty", st.Qty, "err", err)
+		}
+	}
+}
 
 // PlayerDied implements combat.EventSink. A PvE death costs nothing and the
 // player has already respawned, so the next Snapshot says all there is.
