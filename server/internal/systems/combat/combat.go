@@ -3,7 +3,8 @@
 // fights when aggressive, and deaths are applied on the combat tick.
 //
 // It does no I/O. Every hit and death goes to an EventSink, which the server
-// wires to the network and the drop spawner.
+// wires to the network and the drop spawner. A kill's gold goes straight to
+// the killer's balance, recorded in their economy outbox as ReasonNPCDrop.
 package combat
 
 import (
@@ -13,8 +14,13 @@ import (
 
 	"github.com/cleiderg/lush/server/internal/systems/combat/formula"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/loot"
 	"github.com/cleiderg/lush/server/internal/world"
 )
+
+// ReasonNPCDrop is the economy audit reason for the gold a kill credits to
+// the killer.
+const ReasonNPCDrop = "npc_drop"
 
 // AttackCommand asks for Player to attack the NPC NPC. It replaces Player's
 // previous NPC target.
@@ -37,12 +43,15 @@ type Hit struct {
 }
 
 // Kill is an NPC killed by a player: its type and where it died (where its
-// drops go), and the player who landed the killing hit.
+// drops go), the player who landed the killing hit (the drops' owner), and
+// the item stacks its loot roll dropped, in table order (nil if none). The
+// rolled gold is not here: it is already credited to the killer.
 type Kill struct {
 	NPC    world.NPCID
 	Type   world.NPCTypeID
 	Pos    world.Vec2
 	Killer world.PlayerID
+	Items  []world.Stack
 }
 
 // Death is a player killed by an NPC. Pos is where they died; they have
@@ -83,8 +92,12 @@ type Zones interface {
 //     swings when in range and due, and otherwise walks toward its target
 //     by setting its Goal for the NPC system's goal step.
 //
-// An NPC at 0 HP is removed from the world; a player at 0 HP respawns at the
-// spawn point with full HP and keeps everything.
+// An NPC at 0 HP is removed from the world and its loot rolled: the gold is
+// credited to the killer and the items go on the Kill event. If the killer's
+// inventory is locked (a trade is being saved), the gold is held and
+// credited at the start of the first combat tick their inventory is
+// unlocked. A player at 0 HP respawns at the spawn point with full HP and
+// keeps everything.
 type System struct {
 	data     *gamedata.Data
 	zones    Zones
@@ -99,11 +112,12 @@ type System struct {
 	npcTargets map[world.NPCID]world.PlayerID // NPC → player it attacks
 	next       map[world.PlayerID]uint64      // first combat tick the player may attack again
 	npcNext    map[world.NPCID]uint64         // first combat tick the NPC may attack again
+	owed       map[world.PlayerID]int         // kill gold held while the killer's inventory is locked
 }
 
 // New creates the PvE combat system. tileSize is the length of a tile in
 // metres (the collision grid's cell size); rand drives hit and damage rolls;
-// events receives every hit and death.
+// events receives every hit and death. Loot rolls use rand too.
 func New(d *gamedata.Data, z Zones, tileSize float64, clock world.Clock, r formula.Rand, events EventSink) (*System, error) {
 	if d == nil || z == nil || clock == nil || r == nil || events == nil {
 		return nil, errors.New("pve combat: nil dependency")
@@ -123,6 +137,7 @@ func New(d *gamedata.Data, z Zones, tileSize float64, clock world.Clock, r formu
 		npcTargets: make(map[world.NPCID]world.PlayerID),
 		next:       make(map[world.PlayerID]uint64),
 		npcNext:    make(map[world.NPCID]uint64),
+		owed:       make(map[world.PlayerID]int),
 	}, nil
 }
 
@@ -158,6 +173,7 @@ func (s *System) NPCTargetOf(id world.NPCID) (world.PlayerID, bool) {
 func (s *System) Tick(w *world.World, _ time.Duration) {
 	s.ticks++
 	s.forgetGone(w)
+	s.payOwed(w)
 	now := s.clock.Now()
 	s.aggress(w)
 	for _, p := range w.Players() {
@@ -179,6 +195,11 @@ func (s *System) forgetGone(w *world.World) {
 	for id := range s.next {
 		if w.Player(id) == nil {
 			delete(s.next, id)
+		}
+	}
+	for id := range s.owed {
+		if w.Player(id) == nil {
+			delete(s.owed, id)
 		}
 	}
 	for id := range s.npcTargets {
@@ -263,7 +284,7 @@ func (s *System) playerTurn(w *world.World, p *world.Player, now time.Time) {
 	died := n.HP <= 0
 	s.events.Hit(Hit{Player: p.ID, NPC: n.ID, Damage: dmg, Died: died})
 	if died {
-		s.killNPC(w, n, p.ID)
+		s.killNPC(w, n, p)
 		return
 	}
 	if _, busy := s.npcTargets[n.ID]; !busy && !n.Returning {
@@ -334,9 +355,18 @@ func (s *System) giveUp(n *world.NPC, leashed bool) {
 	}
 }
 
-// killNPC removes n, killed by killer, and emits the kill.
-func (s *System) killNPC(w *world.World, n *world.NPC, killer world.PlayerID) {
-	k := Kill{NPC: n.ID, Type: n.Type, Pos: n.Pos, Killer: killer}
+// killNPC removes n, killed by killer, rolls its loot, credits the gold to
+// killer and emits the kill with the item stacks.
+func (s *System) killNPC(w *world.World, n *world.NPC, killer *world.Player) {
+	k := Kill{NPC: n.ID, Type: n.Type, Pos: n.Pos, Killer: killer.ID}
+	// An unknown type can't get here: playerTurn checked it is in the table.
+	if l, err := loot.Roll(s.data, gamedata.NPCTypeID(n.Type), s.rand); err == nil {
+		k.Items = l.Items
+		if l.Gold > 0 {
+			s.owed[killer.ID] += l.Gold
+			s.pay(killer)
+		}
+	}
 	w.RemoveNPC(n.ID)
 	delete(s.npcTargets, n.ID)
 	delete(s.npcNext, n.ID)
@@ -346,6 +376,32 @@ func (s *System) killNPC(w *world.World, n *world.NPC, killer world.PlayerID) {
 		}
 	}
 	s.events.NPCKilled(k)
+}
+
+// payOwed credits held kill gold to every player whose inventory is no
+// longer locked.
+func (s *System) payOwed(w *world.World) {
+	for id := range s.owed {
+		if p := w.Player(id); p != nil {
+			s.pay(p)
+		}
+	}
+}
+
+// pay credits p's held kill gold as one ReasonNPCDrop event, unless p's
+// inventory is locked, in which case the gold stays held. Gold that would
+// overflow p's balance is dropped.
+func (s *System) pay(p *world.Player) {
+	gold := s.owed[p.ID]
+	if gold <= 0 || p.Inv.Locked() {
+		return
+	}
+	delete(s.owed, p.ID)
+	ch, err := p.Inv.AddGold(gold)
+	if err != nil {
+		return
+	}
+	p.RecordEconomy(ReasonNPCDrop, ch)
 }
 
 // killPlayer respawns p, killed by killer, at the spawn point with full HP.

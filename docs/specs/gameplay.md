@@ -95,7 +95,7 @@ Sources in Phase 1:
 
 ## Interact button
 
-- Interact picks, in order: the shop stall within shop distance; the nearest NPC within attack range (attack); the nearest player within trade distance (a trade request outside the PvP zone, an attack inside it). With no target it does nothing.
+- Interact picks, in order: the shop stall within shop distance; the nearest ground item within pick-up range that the player may take (pick up); the nearest NPC within attack range (attack); the nearest player within trade distance (a trade request outside the PvP zone, an attack inside it). With no target it does nothing.
 
 ## Player trading
 
@@ -113,6 +113,7 @@ Sources in Phase 1:
 - The player respawns at the safe spawn point with full HP.
 - They **drop everything except their 3 most valuable items** (by shop buy price), OSRS Wilderness style. Gold is never dropped in Phase 1, because there is no bank yet.
 - Drops are reserved for the killer for 60 s, then anyone can take them. They disappear after 3 minutes.
+- While a drop is reserved, only the player it is reserved for sees it; other players see it once the reservation ends.
 - Trades and drops must be handled as single transactions so items can never be duplicated.
 
 ## Death outside the PvP zone (PvE)
