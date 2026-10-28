@@ -18,6 +18,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"slices"
 	"sync"
 	"time"
 
@@ -46,6 +47,11 @@ const MaxGuestID = int(world.DefaultNPCIDMin) - 1
 // crowd entering view (up to interest.MaxVisible at once) leaves room in the
 // send queue for the Snapshot; the rest go on the following ticks.
 const maxInfoPerTick = transport.DefaultSendQueue / 2
+
+// maxGroundItems caps the ground items in one GroundItems (12 bytes each), so
+// a pile of drops can't make an unbounded frame; past it, the earliest
+// spawned in view are listed.
+const maxGroundItems = 512
 
 // Config holds session tuning.
 type Config struct {
@@ -128,6 +134,10 @@ type guest struct {
 	// The health ratio the client last got in EntityHealth, for entities in
 	// its view; absent means full. An entity leaving view is forgotten.
 	health map[world.PlayerID]knownHealth
+	// The ground items the client last got in GroundItems; groundSent is
+	// false until this connection has had one.
+	sentGround []groundEnt
+	groundSent bool
 }
 
 // knownHealth is an entity's last sent health ratio and the tick it was last in view.
@@ -191,6 +201,8 @@ type Server struct {
 	npcsIn   map[world.PlayerID]uint64 // NPC ids in grid, with the last tick they were in the world
 	infoLeft int                       // EntityInfo frames the current client may still get this tick
 	healths  []healthEnt               // reused: this tick's EntityHealth entries for one client
+	near     []grounditems.Item        // reused: ground items near one client
+	grounds  []groundEnt               // reused: the ground items one client may see
 	bld      *flatbuffers.Builder
 }
 
@@ -288,6 +300,9 @@ func (s *Server) ServeConn(c transport.Conn) {
 		m, err := decode(buf)
 		if err != nil {
 			s.log.Debug("bad frame", "player", g.id, "err", err)
+			if m.typ == protocol.MessagePickUp {
+				continue // a malformed pick-up is dropped; the client may retry
+			}
 			return
 		}
 		switch m.typ {
@@ -313,7 +328,8 @@ func (s *Server) ServeConn(c transport.Conn) {
 			}
 		case protocol.MessageItemAction, protocol.MessageShopBuy, protocol.MessageShopSell,
 			protocol.MessageTradeRequest, protocol.MessageTradeOffer, protocol.MessageTradeRemove,
-			protocol.MessageTradeSetGold, protocol.MessageTradeAccept, protocol.MessageTradeCancel:
+			protocol.MessageTradeSetGold, protocol.MessageTradeAccept, protocol.MessageTradeCancel,
+			protocol.MessagePickUp:
 			if cmd := m.command(g.id); cmd != nil {
 				s.w.Enqueue(cmd)
 			}
@@ -610,6 +626,7 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 			continue
 		}
 		s.sendChanged(g, p)
+		s.sendGroundItems(g, p)
 		s.hits = s.grid.Query(p.Pos, interest.ViewRadius, interest.MaxVisible, id, s.hits[:0])
 		s.ents = append(s.ents[:0], playerEnt(p))
 		s.infoLeft = maxInfoPerTick
@@ -637,6 +654,41 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		g.conn.Send(encodeSnapshot(s.bld, tick, g.lastSeq, s.ents))
 	}
 	s.tickHits = s.tickHits[:0]
+}
+
+// sendGroundItems sends g a GroundItems listing the ground items within
+// interest.ViewRadius of p that p may see, if the client has not had one on
+// this connection or the list differs from the last one it got. A drop still
+// reserved for another player is hidden until its reservation ends
+// (docs/specs/gameplay.md, Death in the PvP zone). When the send queue is
+// full nothing is recorded, so the list goes out on a later tick.
+func (s *Server) sendGroundItems(g *guest, p *world.Player) {
+	if s.ground == nil {
+		return
+	}
+	now := s.clock.Now()
+	reserve, ttl := s.data.Rules.DropReservation(), s.data.Rules.DropDespawn()
+	s.near = s.ground.Near(s.near[:0], p.Pos, float64(interest.ViewRadius))
+	s.grounds = s.grounds[:0]
+	for _, it := range s.near {
+		if len(s.grounds) == maxGroundItems {
+			break
+		}
+		if !now.Before(it.Spawned.Add(ttl)) {
+			continue // expired; the ground item system removes it on its tick
+		}
+		if it.Owner != p.ID && now.Before(it.Spawned.Add(reserve)) {
+			continue // reserved for someone else
+		}
+		s.grounds = append(s.grounds, groundEntOf(it))
+	}
+	if g.groundSent && slices.Equal(g.sentGround, s.grounds) {
+		return
+	}
+	if g.conn.Send(encodeGroundItems(s.bld, s.grounds)) {
+		g.sentGround = append(g.sentGround[:0], s.grounds...)
+		g.groundSent = true
+	}
 }
 
 // sendCombatHits sends g one CombatHit with this tick's PvP and PvE hits
@@ -748,6 +800,7 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 	g.lastSeq = 0                           // input sequence numbers are per connection
 	g.known = map[world.PlayerID]knownEnt{} // the new connection has no EntityInfo yet
 	g.health = map[world.PlayerID]knownHealth{}
+	g.groundSent = false // the new connection gets GroundItems on this tick
 	if p := s.w.Player(g.id); p != nil && s.live[g.id] == g {
 		// Still in the world from the previous connection, or waiting out
 		// the logout lock after it ended: take over the same player.
@@ -927,8 +980,9 @@ func (s *Server) SetPvP(c *pvp.Combat) { s.pvp = c }
 func (s *Server) SetPvE(c *combat.System) { s.pve = c }
 
 // SetGroundItems connects the ground item system that PvP and NPC drops
-// spawn in.
-// Call it before the world starts ticking.
+// spawn in and whose items in view clients get as GroundItems. PickUp
+// commands reach it as a world system. Call it before the world starts
+// ticking.
 func (s *Server) SetGroundItems(g *grounditems.System) { s.ground = g }
 
 // PvPHit implements pvp.HitSink: it keeps the hit for this tick's CombatHit.
