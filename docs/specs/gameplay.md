@@ -95,7 +95,7 @@ Sources in Phase 1:
 
 ## Interact button
 
-- Interact picks, in order: the shop stall within shop distance; the nearest NPC within attack range (attack); the nearest player within trade distance (a trade request outside the PvP zone, an attack inside it). With no target it does nothing.
+- Interact picks, in order: the shop stall within shop distance; the nearest ground item within pick-up range that the player may take (pick up); the nearest NPC within attack range (attack); the nearest player within trade distance (a trade request outside the PvP zone, an attack inside it). With no target it does nothing.
 
 ## Player trading
 
