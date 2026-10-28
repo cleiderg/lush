@@ -97,7 +97,7 @@ type Sink interface {
 	// meaningful when r is OK.
 	SitResult(to world.PlayerID, id TableID, seat cardtable.Seat, r Result)
 	// LeaveResult is the result of p's LeaveCommand. id is the table left,
-	// only meaningful when r is OK or InProgress.
+	// only meaningful when r is OK. Leaving mid-game forfeits the seat.
 	LeaveResult(to world.PlayerID, id TableID, r Result)
 	// TableChanged reports a change to table id: its public snapshot and a
 	// view for each seated player, in seat order, followed by the player who
@@ -191,7 +191,7 @@ func (s *System) leave(p world.PlayerID) {
 		return
 	}
 	t := s.byID[id]
-	if err := t.Leave(p); err != nil {
+	if err := t.Leave(p, s.now); err != nil {
 		s.sink.LeaveResult(p, id, resultOf(err))
 		return
 	}
