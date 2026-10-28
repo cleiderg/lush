@@ -272,6 +272,7 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 
 **Client and art** ([[architecture]])
 - glTF model budgets per model type (placeholders from #82, enforced by the CI check in #86): `characters/` 1,500 triangles / 150 KB, `props/` 1,000 / 100 KB, `buildings/` 8,000 / 500 KB, anything else 3,000 / 200 KB. Tune after profiling on an iPhone 13.
+- Retro post-process placeholders, tuned after profiling on an iPhone 13: internal resolution scale `RETRO_SCALE` 0.5, dither colour levels `RETRO_COLOR_LEVELS` 32 per channel (4x4 ordered dither), grain strength `RETRO_GRAIN` 0.04, vignette strength `RETRO_VIGNETTE` 0.35.
 - Chat display placeholders, tuned after playtests: chat log length `CHAT_LOG_LINES` 50 lines, overhead message duration `OVERHEAD_CHAT_MS` 5000 ms.
 
 **Housing** ([[housing]], Phase 2)
