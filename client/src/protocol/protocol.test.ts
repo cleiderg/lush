@@ -8,7 +8,8 @@ import {
   ProtocolVersion, Reload, RestartCountdown, Snapshot, Vec2, Welcome,
   TradeAccept, TradeCancel, TradeItem, TradeOffer, TradeRemove, TradeRequest, TradeRequestNotice, TradeResult,
   TradeResultCode, TradeSetGold, TradeState,
-  CardTableLeave, CardTableResult, CardTableResultCode, CardTableSit, CardTableState,
+  CardTableCatalog, CardTableInfo, CardTableLeave, CardTableReady, CardTableResult, CardTableResultCode, CardTableSit,
+  CardTableState, ShedCard, ShedColour, ShedDraw, ShedHand, ShedPlay, ShedState, ShedSymbol,
 } from './index.js';
 
 function finish(b: flatbuffers.Builder, type: Message, msg: flatbuffers.Offset): Uint8Array {
@@ -38,7 +39,7 @@ function buildSnapshot(n: number): Uint8Array {
 
 describe('protocol', () => {
   it('exposes the version constant', () => {
-    expect(ProtocolVersion.Current).toBe(10);
+    expect(ProtocolVersion.Current).toBe(11);
   });
 
   it('keeps a 101-entity snapshot under 1200 bytes', () => {
@@ -490,36 +491,162 @@ describe('protocol', () => {
   });
 
   it('round-trips CardTableState', () => {
-    const cases: [number, number[], boolean, number, boolean, number, boolean, number][] = [
+    const cases: [number, number[], boolean, number, boolean, number, boolean, number, boolean[]][] = [
       // 4 seats, one empty, game over with a winner.
-      [7, [300, 0, 12, 65535], false, 3, true, 0, true, 2],
-      [65535, [1, 2, 3, 4], true, 1, false, 4294967295, false, 0],
-      [0, [0, 0], false, 0, false, 0, false, 0],
+      [7, [300, 0, 12, 65535], false, 3, true, 0, true, 2, [true, false, false, true]],
+      [65535, [1, 2, 3, 4], true, 1, false, 4294967295, false, 0, [true, true, true, true]],
+      [0, [0, 0], false, 0, false, 0, false, 0, [false, false]],
     ];
-    for (const [tableId, seats, inProgress, turnSeat, reversed, ticksLeft, hasWinner, winnerSeat] of cases) {
+    for (const [tableId, seats, inProgress, turnSeat, reversed, ticksLeft, hasWinner, winnerSeat, ready] of cases) {
       const b = new flatbuffers.Builder(64);
       const sv = CardTableState.createSeatsVector(b, seats);
+      const rv = CardTableState.createReadyVector(b, ready);
       const buf = finish(b, Message.CardTableState, CardTableState.createCardTableState(
-        b, tableId, sv, inProgress, turnSeat, reversed, ticksLeft, hasWinner, winnerSeat));
+        b, tableId, sv, inProgress, turnSeat, reversed, ticksLeft, hasWinner, winnerSeat, rv));
       const m = open(buf, Message.CardTableState, new CardTableState());
       expect([m.tableId(), m.inProgress(), m.turnSeat(), m.reversed(), m.turnTicksLeft(), m.hasWinner(), m.winnerSeat()])
         .toEqual([tableId, inProgress, turnSeat, reversed, ticksLeft, hasWinner, winnerSeat]);
       expect(m.seatsLength()).toBe(seats.length);
       expect(Array.from(m.seatsArray()!)).toEqual(seats);
       seats.forEach((id, i) => expect(m.seats(i)).toBe(id));
+      expect(m.readyLength()).toBe(ready.length);
+      ready.forEach((r, i) => expect(m.ready(i)).toBe(r));
     }
+  });
+
+  it('reads a CardTableState without a ready list as empty', () => {
+    const b = new flatbuffers.Builder(32);
+    CardTableState.startCardTableState(b);
+    CardTableState.addTableId(b, 2);
+    const buf = finish(b, Message.CardTableState, CardTableState.endCardTableState(b));
+    const m = open(buf, Message.CardTableState, new CardTableState());
+    expect([m.tableId(), m.readyLength()]).toEqual([2, 0]);
   });
 
   it('round-trips CardTableResult', () => {
     const codes = [
       CardTableResultCode.Ok, CardTableResultCode.UnknownTable, CardTableResultCode.TableFull,
       CardTableResultCode.AlreadySeated, CardTableResultCode.NotSeated, CardTableResultCode.InProgress,
+      CardTableResultCode.NotYourTurn, CardTableResultCode.IllegalMove, CardTableResultCode.NoGame,
+      CardTableResultCode.NotEnoughGold, CardTableResultCode.TooFar,
     ];
+    // New codes go at the end, so older codes keep their values.
+    codes.forEach((code, i) => expect(code).toBe(i));
     expect(Object.values(CardTableResultCode).filter((v) => typeof v === 'number')).toHaveLength(codes.length);
     for (const code of codes) {
       const b = new flatbuffers.Builder(32);
       const buf = finish(b, Message.CardTableResult, CardTableResult.createCardTableResult(b, code));
       expect(open(buf, Message.CardTableResult, new CardTableResult()).code()).toBe(code);
     }
+  });
+
+  it('appends the new card table messages to the end of Message', () => {
+    expect([
+      Message.CardTableResult, Message.CardTableReady, Message.CardTableCatalog,
+      Message.ShedPlay, Message.ShedDraw, Message.ShedState, Message.ShedHand,
+    ]).toEqual([38, 39, 40, 41, 42, 43, 44]);
+  });
+
+  it('round-trips CardTableReady', () => {
+    const b = new flatbuffers.Builder(32);
+    const buf = finish(b, Message.CardTableReady, CardTableReady.createCardTableReady(b));
+    expect(open(buf, Message.CardTableReady, new CardTableReady())).toBeInstanceOf(CardTableReady);
+  });
+
+  it('round-trips CardTableCatalog with 8-byte tables', () => {
+    const tables: [number, number, number][] = [[1, 2, 0], [2, 4, 100], [65535, 255, 4294967295]];
+    const b = new flatbuffers.Builder(64);
+    CardTableCatalog.startTablesVector(b, tables.length);
+    for (let i = tables.length - 1; i >= 0; i--) CardTableInfo.createCardTableInfo(b, ...tables[i]);
+    const buf = finish(b, Message.CardTableCatalog, CardTableCatalog.createCardTableCatalog(b, b.endVector()));
+    const m = open(buf, Message.CardTableCatalog, new CardTableCatalog());
+    expect(m.tablesLength()).toBe(tables.length);
+    tables.forEach((want, i) => {
+      const t = m.tables(i)!;
+      expect([t.id(), t.seats(), t.stake()]).toEqual(want);
+    });
+    expect(CardTableInfo.sizeOf()).toBe(8);
+  });
+
+  it('keeps Shed enum values', () => {
+    expect([ShedColour.None, ShedColour.One, ShedColour.Two, ShedColour.Three, ShedColour.Four]).toEqual([0, 1, 2, 3, 4]);
+    expect([ShedSymbol.Zero, ShedSymbol.Nine, ShedSymbol.Skip, ShedSymbol.Reverse, ShedSymbol.DrawTwo,
+      ShedSymbol.Wild, ShedSymbol.WildDrawFour]).toEqual([0, 9, 10, 11, 12, 13, 14]);
+    expect(Object.values(ShedSymbol).filter((v) => typeof v === 'number')).toHaveLength(15);
+    expect(ShedCard.sizeOf()).toBe(2);
+  });
+
+  it('round-trips ShedPlay', () => {
+    const cases: [ShedColour, ShedSymbol, ShedColour][] = [
+      [ShedColour.One, ShedSymbol.Seven, ShedColour.None],
+      [ShedColour.Four, ShedSymbol.DrawTwo, ShedColour.None],
+      [ShedColour.None, ShedSymbol.Wild, ShedColour.Three],
+      [ShedColour.None, ShedSymbol.WildDrawFour, ShedColour.Four],
+    ];
+    for (const [colour, symbol, chosen] of cases) {
+      const b = new flatbuffers.Builder(32);
+      ShedPlay.startShedPlay(b);
+      ShedPlay.addCard(b, ShedCard.createShedCard(b, colour, symbol));
+      ShedPlay.addChosenColour(b, chosen);
+      const buf = finish(b, Message.ShedPlay, ShedPlay.endShedPlay(b));
+      const m = open(buf, Message.ShedPlay, new ShedPlay());
+      const c = m.card()!;
+      expect([c.colour(), c.symbol(), m.chosenColour()]).toEqual([colour, symbol, chosen]);
+    }
+  });
+
+  it('round-trips ShedDraw', () => {
+    const b = new flatbuffers.Builder(32);
+    const buf = finish(b, Message.ShedDraw, ShedDraw.createShedDraw(b));
+    expect(open(buf, Message.ShedDraw, new ShedDraw())).toBeInstanceOf(ShedDraw);
+  });
+
+  it('round-trips ShedState', () => {
+    const cases: [number, ShedColour, ShedSymbol, ShedColour, number[], number][] = [
+      [3, ShedColour.Two, ShedSymbol.Zero, ShedColour.Two, [7, 7], 93],
+      [65535, ShedColour.None, ShedSymbol.WildDrawFour, ShedColour.Four, [1, 0, 12, 108], 0],
+      [0, ShedColour.Three, ShedSymbol.Reverse, ShedColour.Three, [255, 255, 255], 255],
+    ];
+    for (const [tableId, topColour, topSymbol, colour, counts, drawPile] of cases) {
+      const b = new flatbuffers.Builder(64);
+      const cv = ShedState.createHandCountsVector(b, counts);
+      ShedState.startShedState(b);
+      ShedState.addTableId(b, tableId);
+      ShedState.addTopCard(b, ShedCard.createShedCard(b, topColour, topSymbol));
+      ShedState.addColour(b, colour);
+      ShedState.addHandCounts(b, cv);
+      ShedState.addDrawPile(b, drawPile);
+      const buf = finish(b, Message.ShedState, ShedState.endShedState(b));
+      const m = open(buf, Message.ShedState, new ShedState());
+      const top = m.topCard()!;
+      expect([m.tableId(), top.colour(), top.symbol(), m.colour(), m.drawPile()])
+        .toEqual([tableId, topColour, topSymbol, colour, drawPile]);
+      expect(Array.from(m.handCountsArray()!)).toEqual(counts);
+    }
+  });
+
+  it('round-trips ShedHand', () => {
+    const hands: [ShedColour, ShedSymbol][][] = [
+      [
+        [ShedColour.One, ShedSymbol.Zero], [ShedColour.Two, ShedSymbol.Nine], [ShedColour.Three, ShedSymbol.Skip],
+        [ShedColour.Four, ShedSymbol.Reverse], [ShedColour.One, ShedSymbol.DrawTwo],
+        [ShedColour.None, ShedSymbol.Wild], [ShedColour.None, ShedSymbol.WildDrawFour],
+      ],
+      [[ShedColour.Four, ShedSymbol.Five]],
+      [],
+    ];
+    hands.forEach((cards, hi) => {
+      const b = new flatbuffers.Builder(64);
+      ShedHand.startCardsVector(b, cards.length);
+      for (let i = cards.length - 1; i >= 0; i--) ShedCard.createShedCard(b, ...cards[i]);
+      const buf = finish(b, Message.ShedHand, ShedHand.createShedHand(b, hi + 1, b.endVector()));
+      const m = open(buf, Message.ShedHand, new ShedHand());
+      expect(m.tableId()).toBe(hi + 1);
+      expect(m.cardsLength()).toBe(cards.length);
+      cards.forEach((want, i) => {
+        const c = m.cards(i)!;
+        expect([c.colour(), c.symbol()]).toEqual(want);
+      });
+    });
   });
 });

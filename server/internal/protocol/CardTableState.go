@@ -143,8 +143,34 @@ func (rcv *CardTableState) MutateWinnerSeat(n byte) bool {
 	return rcv._tab.MutateByteSlot(18, n)
 }
 
+func (rcv *CardTableState) Ready(j int) bool {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(20))
+	if o != 0 {
+		a := rcv._tab.Vector(o)
+		return rcv._tab.GetBool(a + flatbuffers.UOffsetT(j*1))
+	}
+	return false
+}
+
+func (rcv *CardTableState) ReadyLength() int {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(20))
+	if o != 0 {
+		return rcv._tab.VectorLen(o)
+	}
+	return 0
+}
+
+func (rcv *CardTableState) MutateReady(j int, n bool) bool {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(20))
+	if o != 0 {
+		a := rcv._tab.Vector(o)
+		return rcv._tab.MutateBool(a+flatbuffers.UOffsetT(j*1), n)
+	}
+	return false
+}
+
 func CardTableStateStart(builder *flatbuffers.Builder) {
-	builder.StartObject(8)
+	builder.StartObject(9)
 }
 func CardTableStateAddTableId(builder *flatbuffers.Builder, tableId uint16) {
 	builder.PrependUint16Slot(0, tableId, 0)
@@ -172,6 +198,12 @@ func CardTableStateAddHasWinner(builder *flatbuffers.Builder, hasWinner bool) {
 }
 func CardTableStateAddWinnerSeat(builder *flatbuffers.Builder, winnerSeat byte) {
 	builder.PrependByteSlot(7, winnerSeat, 0)
+}
+func CardTableStateAddReady(builder *flatbuffers.Builder, ready flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(8, flatbuffers.UOffsetT(ready), 0)
+}
+func CardTableStateStartReadyVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
+	return builder.StartVector(1, numElems, 1)
 }
 func CardTableStateEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
