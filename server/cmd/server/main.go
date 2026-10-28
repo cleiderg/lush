@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,11 +20,16 @@ import (
 	"github.com/cleiderg/lush/server/internal/session"
 	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
+	"github.com/cleiderg/lush/server/internal/systems/combat"
 	"github.com/cleiderg/lush/server/internal/systems/emote"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/grounditems"
 	"github.com/cleiderg/lush/server/internal/systems/items"
+	"github.com/cleiderg/lush/server/internal/systems/npc"
+	"github.com/cleiderg/lush/server/internal/systems/pvp"
 	"github.com/cleiderg/lush/server/internal/systems/regen"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
+	"github.com/cleiderg/lush/server/internal/systems/spawner"
 	"github.com/cleiderg/lush/server/internal/systems/trade"
 	"github.com/cleiderg/lush/server/internal/transport"
 	"github.com/cleiderg/lush/server/internal/world"
@@ -87,7 +93,7 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 	metrics := ops.NewMetrics(version)
 	w := world.New(world.Config{TickRate: cfg.TickRate})
 
-	mover, grid, err := newMover(cfg.MoveSpeed)
+	mover, grid, err := newMover(cfg.MoveSpeed, cfg.RunSpeed)
 	if err != nil {
 		log.Error("movement setup failed", "err", err)
 		return 1
@@ -97,27 +103,19 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		log.Error("game data", "err", err)
 		return 1
 	}
-	sess := session.New(session.Config{
-		TickRate:     cfg.TickRate,
-		Spawn:        world.Vec2{X: cfg.SpawnX, Y: cfg.SpawnZ},
-		Collision:    grid,
-		MoveSpeed:    cfg.MoveSpeed,
-		SaveInterval: cfg.SaveInterval,
-		Data:         data,
-		OnPanic:      reporter.Recovered,
-	}, w, clock, players, log)
+	sess := session.New(sessionConfig(cfg, grid, data, reporter.Recovered), w, clock, players, log)
 	lookup, err := areas.Load()
 	if err != nil {
 		log.Error("areas", "err", err)
 		return 1
 	}
-	systems, err := gameSystems(mover, data, lookup, grid.CellSize(), clock, sess)
+	systems, err := gameSystems(mover, data, lookup, grid, cfg.MoveSpeed, clock, sess)
 	if err != nil {
 		log.Error("system setup failed", "err", err)
 		return 1
 	}
 	for _, s := range systems {
-		if err := w.Register(s); err != nil {
+		if err := w.RegisterEvery(s.sys, s.every); err != nil {
 			log.Error("register system", "err", err)
 			return 2
 		}
@@ -194,22 +192,63 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 	return 0
 }
 
+// combatEvery is the combat tick period in world ticks (0.6 s at 20 Hz).
+const combatEvery = 12
+
+// scheduled is a world system and the period, in world ticks, of its Tick.
+type scheduled struct {
+	sys   world.System
+	every int
+}
+
 // gameSystems lists the world systems in registration order. Order matters:
-// movement applies inputs, emote overrides animation, chat delivers, items
-// and shop apply item actions and trades with the stall (whose results the
-// session sends at once), trade runs player trades and commits them through
-// the session's Committer, regen heals (SW1), and the session sends
-// snapshots, stats and inventory last. tileSize is the collision grid's cell
-// size in metres, the unit of the shop and trade distances.
-func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, tileSize float64, clock world.Clock, sess *session.Server) ([]world.System, error) {
+// movement applies inputs, the NPC system walks NPCs toward their goals,
+// emote overrides animation, chat delivers, items and shop apply item
+// actions and trades with the stall (whose results the session sends at
+// once), trade runs player trades and commits them through the session's
+// Committer, ground items expire, PvP and then PvE combat swing on the combat
+// tick (PvE after NPC movement; hits go to the session, PvP drops become
+// ground items), the spawner replaces killed NPCs after combat so a kill
+// starts its respawn timer on the tick it happens, regen heals (SW1), and the
+// session sends snapshots, combat hits, stats and inventory last. The
+// collision grid's cell size is the tile, the unit of the shop, trade,
+// pick-up, attack and leash distances; walkSpeed is the NPC walk speed in
+// metres per second (the player walk speed, D-044).
+func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, grid *world.Grid, walkSpeed float32, clock world.Clock, sess *session.Server) ([]scheduled, error) {
+	tileSize := grid.CellSize()
 	heal, err := regen.New(data.Rules, clock)
+	if err != nil {
+		return nil, err
+	}
+	npcs, err := npc.New(npc.Config{WalkSpeed: walkSpeed, LeashTiles: data.Rules.LeashTiles, TileSize: tileSize, Collision: grid, Areas: lookup})
+	if err != nil {
+		return nil, err
+	}
+	pve, err := combat.New(data, lookup, tileSize, clock, rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())), sess)
+	if err != nil {
+		return nil, err
+	}
+	sess.SetPvE(pve)
+	spawns, err := spawner.New(spawner.Config{Data: data, Areas: lookup, Collision: grid, Clock: clock, Rand: rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64()))})
 	if err != nil {
 		return nil, err
 	}
 	trades := trade.New(data, lookup, tileSize, sess, sess)
 	sess.SetTrades(trades)
-	return []world.System{mover, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess),
-		items.New(data), shop.New(data, lookup, tileSize, sess), trades, heal, sess}, nil
+	ground := grounditems.New(data, clock, tileSize)
+	sess.SetGroundItems(ground)
+	fights, err := pvp.NewCombat(data, lookup, tileSize, clock, rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())), sess, sess)
+	if err != nil {
+		return nil, err
+	}
+	sess.SetPvP(fights)
+	out := []scheduled{}
+	for _, s := range []world.System{mover, npcs, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess),
+		items.New(data), shop.New(data, lookup, tileSize, sess), trades, ground} {
+		out = append(out, scheduled{s, 1})
+	}
+	return append(out, scheduled{fights, combatEvery}, scheduled{pve, combatEvery}, scheduled{spawns, 1},
+		scheduled{heal, 1}, scheduled{sess, 1}), nil
 }
 
 // openDatabase connects a pool and applies pending migrations. The returned
@@ -252,3 +291,19 @@ func (realClock) NewTicker(d time.Duration) world.Ticker {
 type realTicker struct{ *time.Ticker }
 
 func (t realTicker) C() <-chan time.Time { return t.Ticker.C }
+
+// sessionConfig is the session tuning from the server config. The walk and
+// run speeds are the same ones newMover gets, so Welcome tells clients the
+// speeds the server enforces (D-044).
+func sessionConfig(cfg ops.Config, grid *world.Grid, data *gamedata.Data, onPanic func(any)) session.Config {
+	return session.Config{
+		TickRate:     cfg.TickRate,
+		Spawn:        world.Vec2{X: cfg.SpawnX, Y: cfg.SpawnZ},
+		Collision:    grid,
+		MoveSpeed:    cfg.MoveSpeed,
+		RunSpeed:     cfg.RunSpeed,
+		SaveInterval: cfg.SaveInterval,
+		Data:         data,
+		OnPanic:      onPanic,
+	}
+}

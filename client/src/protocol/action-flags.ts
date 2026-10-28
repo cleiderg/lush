@@ -5,5 +5,6 @@
 export enum ActionFlags {
   Interact = 1,
   Attack = 2,
-  Jump = 4
+  Jump = 4,
+  Run = 8
 }

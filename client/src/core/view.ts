@@ -1,9 +1,31 @@
 import type { GameState } from '../state/world';
 import { toWorldMove, type Vec2 } from '../input/joystick';
+import type { ChatBubbleView, NpcView, PlayerView, WorldView } from '../render/worldView';
+import { EntityKind } from '../protocol';
 
-/** Snapshot of game state for the renderer: predicted local player plus interpolated remotes. */
-export function buildWorldView(game: GameState, now: number) {
-  return { local: game.local, remotes: game.remotes(now) };
+/**
+ * Snapshot of game state for the renderer: predicted local player, interpolated remotes and
+ * NPCs, entity state (equipment and health) from game.items, ground items, and the hits received since the previous view. An entity is an NPC when
+ * its EntityInfo kind is Npc; players and entities with no EntityInfo yet stay in remotes.
+ * Drains game.hits, so each hit appears in exactly one view. Chat holds the current overhead
+ * message of the local player and of each remote player in view; other speakers are left out.
+ */
+export function buildWorldView(game: GameState, now: number): WorldView {
+  const hits = game.hits.drain().flatMap((b) => b.hits.map((h) => ({ target: h.target, damage: h.damage, died: h.died })));
+  const remotes: PlayerView[] = [];
+  const npcs: NpcView[] = [];
+  for (const r of game.remotes(now)) {
+    const info = game.items.entityInfo(r.id);
+    if (info?.kind === EntityKind.Npc) npcs.push({ id: r.id, npcType: info.npcType, x: r.x, z: r.z, heading: r.heading });
+    else remotes.push(r);
+  }
+  const local = game.local;
+  const speakers = new Set([local.id, ...remotes.map((r) => r.id)]);
+  const chat: ChatBubbleView[] = game.chat
+    .activeOverheads(now)
+    .filter((o) => speakers.has(o.speakerId))
+    .map((o) => ({ id: o.speakerId, text: o.text }));
+  return { local, remotes, npcs, entities: game.items, groundItems: game.items.groundItems, hits, chat };
 }
 
 /**

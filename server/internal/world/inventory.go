@@ -84,6 +84,9 @@ const (
 	ChangeUnequip
 	// ChangeGold: the gold balance changed by Gold.
 	ChangeGold
+	// ChangeRemoveWorn: one Item left its equipment slot without passing
+	// through the inventory (a PvP death drop).
+	ChangeRemoveWorn
 )
 
 var changeKindNames = [...]string{
@@ -93,6 +96,8 @@ var changeKindNames = [...]string{
 	ChangeEquip:   "item_equip",
 	ChangeUnequip: "item_unequip",
 	ChangeGold:    "gold",
+
+	ChangeRemoveWorn: "item_remove_worn",
 }
 
 func (k ChangeKind) String() string {
@@ -411,6 +416,25 @@ func (inv *Inventory) Unequip(slot gamedata.Slot) ([]Change, error) {
 	inv.Slots[i] = Stack{Item: item, Qty: 1}
 	*ref = 0
 	return []Change{{Kind: ChangeUnequip, Item: item, Qty: 1}}, nil
+}
+
+// RemoveWorn takes the item worn in slot out of the player's possession; it
+// does not go into the inventory, so it works with a full inventory. It
+// fails, changing nothing, if nothing is worn there.
+func (inv *Inventory) RemoveWorn(slot gamedata.Slot) ([]Change, error) {
+	if inv.locked {
+		return nil, fmt.Errorf("remove worn %q: %w", slot, ErrInventoryLocked)
+	}
+	ref := inv.Equipment.ref(slot)
+	if ref == nil {
+		return nil, fmt.Errorf("remove worn %q: %w", slot, ErrBadEquipmentSlot)
+	}
+	if *ref == 0 {
+		return nil, fmt.Errorf("remove worn %s: %w", slot, ErrNothingEquipped)
+	}
+	item := *ref
+	*ref = 0
+	return []Change{{Kind: ChangeRemoveWorn, Item: item, Qty: 1}}, nil
 }
 
 // Bonuses totals accuracy, strength and defence over the worn items and

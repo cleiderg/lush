@@ -47,8 +47,18 @@ tickRate():number {
   return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
 }
 
+walkSpeed():number {
+  const offset = this.bb!.__offset(this.bb_pos, 12);
+  return offset ? this.bb!.readFloat32(this.bb_pos + offset) : 0.0;
+}
+
+runSpeed():number {
+  const offset = this.bb!.__offset(this.bb_pos, 14);
+  return offset ? this.bb!.readFloat32(this.bb_pos + offset) : 0.0;
+}
+
 static startWelcome(builder:flatbuffers.Builder) {
-  builder.startObject(4);
+  builder.startObject(6);
 }
 
 static addPlayerId(builder:flatbuffers.Builder, playerId:number) {
@@ -65,6 +75,14 @@ static addSpawn(builder:flatbuffers.Builder, spawnOffset:flatbuffers.Offset) {
 
 static addTickRate(builder:flatbuffers.Builder, tickRate:number) {
   builder.addFieldInt8(3, tickRate, 0);
+}
+
+static addWalkSpeed(builder:flatbuffers.Builder, walkSpeed:number) {
+  builder.addFieldFloat32(4, walkSpeed, 0.0);
+}
+
+static addRunSpeed(builder:flatbuffers.Builder, runSpeed:number) {
+  builder.addFieldFloat32(5, runSpeed, 0.0);
 }
 
 static endWelcome(builder:flatbuffers.Builder):flatbuffers.Offset {

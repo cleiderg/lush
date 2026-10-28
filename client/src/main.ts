@@ -1,19 +1,22 @@
 import { AudioManager } from './audio';
 import { initErrorReporting } from './core/errorReporting';
+import { interact } from './core/interact';
 import { GameLoop } from './core/loop';
+import { sendMove } from './core/move';
 import { buildWorldView, controlYaw } from './core/view';
 import { sendWave } from './core/wave';
-import { encodeInput } from './net/codec';
 import { localTokenStore, Session } from './net/session';
 import { WebSocketTransport } from './net/transport';
 import { createRenderer } from './render/renderer';
 import collisionUrl from '../../shared/map/collision.bin?url';
 import { CollisionGrid } from './state/collision';
 import { GameState } from './state/world';
+import { ChatLog, anyOpen } from './ui/chatLog';
 import { Controls } from './ui/controls';
 import { Hud } from './ui/hud';
+import { PvpWarning } from './ui/pvpWarning';
 import { RestartBanner } from './ui/restartBanner';
-import { ShopPanel } from './ui/shopPanel';
+import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
 import { TradePanel } from './ui/tradePanel';
 
 initErrorReporting();
@@ -27,9 +30,15 @@ window.addEventListener('resize', () => renderer.resize());
 
 const controls = new Controls({
   onWave: () => sendWave(session),
+  onChatSubmit: (text) => session.sendChat(text),
   tray: document.getElementById('control-tray') as HTMLElement,
   getCameraYaw: () => controlYaw(renderer.world.rig.yaw),
-  onInteract: () => shop.tryOpen(),
+  onInteract: () =>
+    interact(game, performance.now(), SHOP_STALL, {
+      openShop: () => shop.tryOpen(),
+      sendAttackTarget: (id) => session.sendAttackTarget(id),
+      sendTradeRequest: (id) => session.sendTradeRequest(id),
+    }),
 });
 
 const game = new GameState();
@@ -51,7 +60,8 @@ const shop = new ShopPanel({
   position: () => game.prediction.pos,
   onOpen: () => hud.setOpen(false),
 });
-new TradePanel({
+const pvpWarning = new PvpWarning({ parent: document.body, position: () => game.prediction.pos });
+const trade = new TradePanel({
   parent: document.body,
   trade: game.trade,
   items: game.items,
@@ -60,6 +70,12 @@ new TradePanel({
     hud.setOpen(false);
     shop.close();
   },
+});
+const chatLog = new ChatLog({
+  parent: document.body,
+  lines: () => game.chat.log,
+  playerId: () => game.playerId,
+  covered: () => anyOpen([hud, shop, trade]),
 });
 const session = new Session({
   factory: () => new WebSocketTransport(),
@@ -75,11 +91,14 @@ session.start();
 new GameLoop({
   update: (stepMs) => {
     shop.update();
+    pvpWarning.update();
     const m = controls.worldMove();
     // Inputs the server will never see would pile up unacknowledged; Welcome resets prediction anyway.
     if (!session.connected) return;
-    const input = game.prediction.applyInput(m.x, m.y, stepMs / 1000);
-    session.send(encodeInput(input.seq, m.x, m.y, game.heading));
+    sendMove(game, session, m.x, m.y, stepMs / 1000, controls.isRunning);
   },
-  render: () => renderer.render(buildWorldView(game, performance.now())),
+  render: () => {
+    chatLog.update();
+    renderer.render(buildWorldView(game, performance.now()));
+  },
 }).start();

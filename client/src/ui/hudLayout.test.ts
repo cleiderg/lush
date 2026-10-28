@@ -8,7 +8,7 @@ describe('hudLayout', () => {
       const viewport = { x: 0, y: 0, w, h };
       expect(inside(l.controls, viewport)).toBe(true);
       for (const [name, r] of [['hud', l.hud], ['toggle', l.toggle], ['panel', l.panel], ['shop', l.shop], ['trade', l.trade],
-        ['tradePrompt', l.tradePrompt]] as const) {
+        ['tradePrompt', l.tradePrompt], ['pvp', l.pvp]] as const) {
         expect(inside(r, viewport), name).toBe(true);
         expect(intersects(r, l.controls), name).toBe(false);
         expect(r.w, name).toBeGreaterThan(0);
@@ -24,6 +24,25 @@ describe('hudLayout', () => {
         expect(intersects(l.toggle, r)).toBe(false);
       }
       expect(inside(l.tradePrompt, l.trade)).toBe(true);
+      // The PvP warning / indicator stays clear of the HUD, the inventory toggle and every panel.
+      for (const [name, r] of [['hud', l.hud], ['toggle', l.toggle], ['panel', l.panel], ['shop', l.shop], ['trade', l.trade],
+        ['tradePrompt', l.tradePrompt]] as const) {
+        expect(intersects(l.pvp, r), name).toBe(false);
+      }
+    });
+  }
+
+  for (const [w, h] of [[320, 568], [390, 844], [480, 900]]) {
+    it(`at ${w}×${h} puts the chat log above the control tray, clear of the HUD, toggle and PvP strip`, () => {
+      const l = hudLayout(w, h);
+      expect(inside(l.chat, { x: 0, y: 0, w, h })).toBe(true);
+      expect(l.chat.w).toBeGreaterThan(0);
+      expect(l.chat.h).toBeGreaterThan(0);
+      expect(l.chat.y + l.chat.h).toBeLessThanOrEqual(l.controls.y);
+      expect(intersects(l.chat, l.controls)).toBe(false);
+      for (const [name, r] of [['hud', l.hud], ['toggle', l.toggle], ['pvp', l.pvp]] as const) {
+        expect(intersects(l.chat, r), name).toBe(false);
+      }
     });
   }
 

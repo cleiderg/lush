@@ -8,6 +8,7 @@ import {
   ProtocolVersion, Reload, RestartCountdown, Snapshot, Vec2, Welcome,
   TradeAccept, TradeCancel, TradeItem, TradeOffer, TradeRemove, TradeRequest, TradeRequestNotice, TradeResult,
   TradeResultCode, TradeSetGold, TradeState,
+  CardTableLeave, CardTableResult, CardTableResultCode, CardTableSit, CardTableState,
 } from './index.js';
 
 function finish(b: flatbuffers.Builder, type: Message, msg: flatbuffers.Offset): Uint8Array {
@@ -37,7 +38,7 @@ function buildSnapshot(n: number): Uint8Array {
 
 describe('protocol', () => {
   it('exposes the version constant', () => {
-    expect(ProtocolVersion.Current).toBe(8);
+    expect(ProtocolVersion.Current).toBe(10);
   });
 
   it('keeps a 101-entity snapshot under 1200 bytes', () => {
@@ -67,6 +68,8 @@ describe('protocol', () => {
     Welcome.addGuestToken(b, tok);
     Welcome.addSpawn(b, Vec2.createVec2(b, 1.5, -2.5));
     Welcome.addTickRate(b, 20);
+    Welcome.addWalkSpeed(b, 4);
+    Welcome.addRunSpeed(b, 7);
     const buf = finish(b, Message.Welcome, Welcome.endWelcome(b));
     const m = open(buf, Message.Welcome, new Welcome());
     expect(m.playerId()).toBe(42);
@@ -74,6 +77,8 @@ describe('protocol', () => {
     expect(m.spawn()!.x()).toBe(1.5);
     expect(m.spawn()!.z()).toBe(-2.5);
     expect(m.tickRate()).toBe(20);
+    expect(m.walkSpeed()).toBe(4);
+    expect(m.runSpeed()).toBe(7);
   });
 
   it('round-trips Input', () => {
@@ -82,14 +87,15 @@ describe('protocol', () => {
     Input.addSeq(b, 99);
     Input.addMove(b, Vec2.createVec2(b, 0.5, -1));
     Input.addFacing(b, 3.25);
-    Input.addActions(b, ActionFlags.Attack | ActionFlags.Jump);
+    Input.addActions(b, ActionFlags.Attack | ActionFlags.Jump | ActionFlags.Run);
     const buf = finish(b, Message.Input, Input.endInput(b));
     const m = open(buf, Message.Input, new Input());
     expect(m.seq()).toBe(99);
     expect(m.move()!.x()).toBe(0.5);
     expect(m.move()!.z()).toBe(-1);
     expect(m.facing()).toBe(3.25);
-    expect(m.actions()).toBe(ActionFlags.Attack | ActionFlags.Jump);
+    expect(m.actions()).toBe(ActionFlags.Attack | ActionFlags.Jump | ActionFlags.Run);
+    expect(m.actions() & ActionFlags.Run).toBe(ActionFlags.Run);
   });
 
   it('round-trips Snapshot', () => {
@@ -466,6 +472,54 @@ describe('protocol', () => {
       const b = new flatbuffers.Builder(32);
       const buf = finish(b, Message.TradeResult, TradeResult.createTradeResult(b, code));
       expect(open(buf, Message.TradeResult, new TradeResult()).code()).toBe(code);
+    }
+  });
+
+  it('round-trips CardTableSit', () => {
+    for (const id of [0, 3, 65535]) {
+      const b = new flatbuffers.Builder(32);
+      const buf = finish(b, Message.CardTableSit, CardTableSit.createCardTableSit(b, id));
+      expect(open(buf, Message.CardTableSit, new CardTableSit()).tableId()).toBe(id);
+    }
+  });
+
+  it('round-trips CardTableLeave', () => {
+    const b = new flatbuffers.Builder(32);
+    const buf = finish(b, Message.CardTableLeave, CardTableLeave.createCardTableLeave(b));
+    expect(open(buf, Message.CardTableLeave, new CardTableLeave())).toBeInstanceOf(CardTableLeave);
+  });
+
+  it('round-trips CardTableState', () => {
+    const cases: [number, number[], boolean, number, boolean, number, boolean, number][] = [
+      // 4 seats, one empty, game over with a winner.
+      [7, [300, 0, 12, 65535], false, 3, true, 0, true, 2],
+      [65535, [1, 2, 3, 4], true, 1, false, 4294967295, false, 0],
+      [0, [0, 0], false, 0, false, 0, false, 0],
+    ];
+    for (const [tableId, seats, inProgress, turnSeat, reversed, ticksLeft, hasWinner, winnerSeat] of cases) {
+      const b = new flatbuffers.Builder(64);
+      const sv = CardTableState.createSeatsVector(b, seats);
+      const buf = finish(b, Message.CardTableState, CardTableState.createCardTableState(
+        b, tableId, sv, inProgress, turnSeat, reversed, ticksLeft, hasWinner, winnerSeat));
+      const m = open(buf, Message.CardTableState, new CardTableState());
+      expect([m.tableId(), m.inProgress(), m.turnSeat(), m.reversed(), m.turnTicksLeft(), m.hasWinner(), m.winnerSeat()])
+        .toEqual([tableId, inProgress, turnSeat, reversed, ticksLeft, hasWinner, winnerSeat]);
+      expect(m.seatsLength()).toBe(seats.length);
+      expect(Array.from(m.seatsArray()!)).toEqual(seats);
+      seats.forEach((id, i) => expect(m.seats(i)).toBe(id));
+    }
+  });
+
+  it('round-trips CardTableResult', () => {
+    const codes = [
+      CardTableResultCode.Ok, CardTableResultCode.UnknownTable, CardTableResultCode.TableFull,
+      CardTableResultCode.AlreadySeated, CardTableResultCode.NotSeated, CardTableResultCode.InProgress,
+    ];
+    expect(Object.values(CardTableResultCode).filter((v) => typeof v === 'number')).toHaveLength(codes.length);
+    for (const code of codes) {
+      const b = new flatbuffers.Builder(32);
+      const buf = finish(b, Message.CardTableResult, CardTableResult.createCardTableResult(b, code));
+      expect(open(buf, Message.CardTableResult, new CardTableResult()).code()).toBe(code);
     }
   });
 });

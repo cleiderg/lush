@@ -75,6 +75,12 @@ func TestLoadRejectsBadData(t *testing.T) {
 		{"id zero", gamedata.ItemsFile,
 			`"id": 14,`, `"id": 0,`,
 			`items.json: item 0 ("scrap_metal"): id must be 1 to 65535`},
+		{"negative population", gamedata.NPCsFile,
+			`"population": 12,`, `"population": -1,`,
+			`npcs.json: npc 1 ("rabbit"): negative population -1`},
+		{"population above max_alive", gamedata.NPCsFile,
+			`"population": 1,`, `"population": 2,`,
+			`npcs.json: npc 6 ("coyote_alpha"): population 2 exceeds max_alive 1`},
 		{"unknown field", gamedata.RulesFile,
 			`"starting_gold": 100`, `"starting_gems": 100`,
 			`unknown field "starting_gems"`},
@@ -89,6 +95,13 @@ func TestLoadRejectsBadData(t *testing.T) {
 				t.Errorf("error = %q, want it to contain %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// TestLoadShippedData checks the shipped files, population included, load.
+func TestLoadShippedData(t *testing.T) {
+	if _, err := gamedata.Load(fixture(t, "", "", "")); err != nil {
+		t.Fatalf("Load shipped data: %v", err)
 	}
 }
 

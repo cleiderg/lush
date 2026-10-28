@@ -1,6 +1,6 @@
 import * as flatbuffers from 'flatbuffers';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Envelope, Hello, Message, Reload, RestartCountdown, Welcome, Vec2 } from '../protocol';
+import { ChatMessage, ChatSend, Envelope, Hello, Message, Reload, RestartCountdown, Welcome, Vec2 } from '../protocol';
 import { GameState } from '../state/world';
 import { decode } from './codec';
 import { localTokenStore, Session, TOKEN_KEY, type TokenStore } from './session';
@@ -151,5 +151,36 @@ describe('restart countdown', () => {
     s.start();
     t.onMessage?.(countdown(42));
     expect(game.restartSeconds).toBe(42);
+  });
+});
+
+describe('sendChat', () => {
+  function chatMessage(speakerId: number, text: string): Uint8Array {
+    const b = new flatbuffers.Builder(64);
+    b.finish(Envelope.createEnvelope(b, Message.ChatMessage, ChatMessage.createChatMessage(b, speakerId, b.createString(text))));
+    return b.asUint8Array().slice();
+  }
+
+  it('sends a ChatSend with the text, skips blank text, and leaves the log to the server echo (AC4)', () => {
+    const t = new FakeTransport();
+    const game = new GameState();
+    const s = new Session({ factory: () => t, store: { get: () => '', set: () => {} }, onMessage: (m) => game.handle(m, 0) });
+    s.start();
+    t.onMessage?.(welcome('g'));
+    t.sent = [];
+
+    s.sendChat('hello there');
+    expect(t.sent.length).toBe(1);
+    const env = Envelope.getRootAsEnvelope(new flatbuffers.ByteBuffer(t.sent[0]));
+    expect(env.msgType()).toBe(Message.ChatSend);
+    expect((env.msg(new ChatSend()) as ChatSend).text()).toBe('hello there');
+    expect(game.chat.log).toEqual([]);
+
+    s.sendChat('');
+    s.sendChat('  \t ');
+    expect(t.sent.length).toBe(1);
+
+    t.onMessage?.(chatMessage(7, 'hello there'));
+    expect(game.chat.log).toEqual([{ speakerId: 7, text: 'hello there' }]);
   });
 });

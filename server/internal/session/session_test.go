@@ -65,7 +65,7 @@ func newRigSystems(t *testing.T, queue int, cfg session.Config, players store.Pl
 	w := world.New(world.DefaultConfig())
 	st := &stats{}
 	sess := session.New(cfg, w, clock, players, log)
-	mv, err := movement.New(movement.Config{MaxSpeed: 5})
+	mv, err := movement.New(movement.Config{MaxSpeed: cfg.MoveSpeed, RunSpeed: cfg.RunSpeed})
 	if err != nil {
 		t.Fatal(err)
 	}

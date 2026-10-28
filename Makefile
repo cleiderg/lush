@@ -1,6 +1,6 @@
 # Root build entry points. Parts of the repo that don't exist yet are skipped.
 SHELL := /bin/bash
-.PHONY: protocol test lint build smoke loadtest bots deploy-check
+.PHONY: protocol test lint build smoke loadtest bots deploy-check sentry-sourcemaps
 
 HAS_GO  := $(wildcard server/go.mod)
 HAS_NPM := $(wildcard client/package.json)
@@ -83,6 +83,18 @@ else ifeq ($(LOADTEST_URL),)
 else
 	$(MAKE) --no-print-directory bots
 	tools/bots/bin/bots -url "$(LOADTEST_URL)" -bots 1000 -radius 25 -ramp 30s -duration 60s -out "$(LOADTEST_OUT)"
+endif
+
+# Upload the client's source maps to Sentry for a release, then delete them so
+# Cloudflare Pages never serves them. Reads SENTRY_AUTH_TOKEN, SENTRY_ORG and
+# SENTRY_PROJECT from the environment; SENTRY_CLI overrides the pinned CLI.
+SENTRY_DIST ?= client/dist
+sentry-sourcemaps:
+ifeq ($(SENTRY_RELEASE),)
+	@echo "sentry-sourcemaps: set SENTRY_RELEASE=<sha>"
+	@exit 1
+else
+	deploy/scripts/sentry-sourcemaps.sh "$(SENTRY_DIST)" "$(SENTRY_RELEASE)"
 endif
 
 # Checks for deploy/: shellcheck, the stubbed-ufw tests, and the systemd units

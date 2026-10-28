@@ -23,7 +23,7 @@ func finish(b *flatbuffers.Builder, typ protocol.Message, msg flatbuffers.UOffse
 	return append([]byte(nil), b.FinishedBytes()...)
 }
 
-func encodeWelcome(id world.PlayerID, token string, spawn world.Vec2, tickRate int) []byte {
+func encodeWelcome(id world.PlayerID, token string, spawn world.Vec2, tickRate int, walkSpeed, runSpeed float32) []byte {
 	b := flatbuffers.NewBuilder(128)
 	tok := b.CreateString(token)
 	protocol.WelcomeStart(b)
@@ -31,6 +31,8 @@ func encodeWelcome(id world.PlayerID, token string, spawn world.Vec2, tickRate i
 	protocol.WelcomeAddGuestToken(b, tok)
 	protocol.WelcomeAddSpawn(b, protocol.CreateVec2(b, spawn.X, spawn.Y))
 	protocol.WelcomeAddTickRate(b, byte(min(tickRate, 255)))
+	protocol.WelcomeAddWalkSpeed(b, walkSpeed)
+	protocol.WelcomeAddRunSpeed(b, runSpeed)
 	return finish(b, protocol.MessageWelcome, protocol.WelcomeEnd(b))
 }
 
@@ -124,14 +126,30 @@ func rotationByte(rad float32) uint8 {
 	return uint8(int(turns*256) & 0xff)
 }
 
+// snapEnt is one entity (player or NPC) in a Snapshot.
+type snapEnt struct {
+	id     world.PlayerID // entity id; NPC ids sit above guest ids
+	pos    world.Vec2
+	facing float32
+	anim   world.Anim
+}
+
+func playerEnt(p *world.Player) snapEnt {
+	return snapEnt{id: p.ID, pos: p.Pos, facing: p.Facing, anim: p.Anim}
+}
+
+func npcEnt(n *world.NPC) snapEnt {
+	return snapEnt{id: world.PlayerID(n.ID), pos: n.Pos, facing: n.Facing, anim: n.Anim}
+}
+
 // encodeSnapshot builds a Snapshot of ents. b is reused across calls.
-func encodeSnapshot(b *flatbuffers.Builder, tick uint64, lastSeq uint32, ents []*world.Player) []byte {
+func encodeSnapshot(b *flatbuffers.Builder, tick uint64, lastSeq uint32, ents []snapEnt) []byte {
 	b.Reset()
 	protocol.SnapshotStartEntitiesVector(b, len(ents))
 	for i := len(ents) - 1; i >= 0; i-- {
 		e := ents[i]
-		protocol.CreateEntity(b, uint16(e.ID), decimetres(e.Pos.X), decimetres(e.Pos.Y),
-			rotationByte(e.Facing), uint8(e.Anim))
+		protocol.CreateEntity(b, uint16(e.id), decimetres(e.pos.X), decimetres(e.pos.Y),
+			rotationByte(e.facing), uint8(e.anim))
 	}
 	vec := b.EndVector(len(ents))
 	protocol.SnapshotStart(b)
@@ -139,6 +157,86 @@ func encodeSnapshot(b *flatbuffers.Builder, tick uint64, lastSeq uint32, ents []
 	protocol.SnapshotAddLastInputSeq(b, lastSeq)
 	protocol.SnapshotAddEntities(b, vec)
 	return finish(b, protocol.MessageSnapshot, protocol.SnapshotEnd(b))
+}
+
+// entityInfo is what EntityInfo carries for one entity.
+type entityInfo struct {
+	kind    protocol.EntityKind
+	npcType uint16
+	level   int
+	equip   world.Equipment
+}
+
+func encodeEntityInfo(b *flatbuffers.Builder, id world.PlayerID, in entityInfo) []byte {
+	b.Reset()
+	protocol.EntityInfoStart(b)
+	protocol.EntityInfoAddId(b, uint16(id))
+	protocol.EntityInfoAddKind(b, in.kind)
+	protocol.EntityInfoAddNpcType(b, in.npcType)
+	protocol.EntityInfoAddCombatLevel(b, clampU8(in.level))
+	protocol.EntityInfoAddWeapon(b, uint16(in.equip.Weapon))
+	protocol.EntityInfoAddHead(b, uint16(in.equip.Head))
+	protocol.EntityInfoAddBody(b, uint16(in.equip.Body))
+	protocol.EntityInfoAddShield(b, uint16(in.equip.Shield))
+	return finish(b, protocol.MessageEntityInfo, protocol.EntityInfoEnd(b))
+}
+
+// fullHealth is the HealthRatio of an entity at full health.
+const fullHealth = 255
+
+// healthRatio is hp / maxHP scaled to 0..255, rounded down: 0 only when dead
+// and 255 only at full health.
+func healthRatio(hp, maxHP int) uint8 {
+	switch {
+	case hp <= 0 || maxHP <= 0:
+		return 0
+	case hp >= maxHP:
+		return fullHealth
+	}
+	return uint8(max(1, hp*fullHealth/maxHP))
+}
+
+// healthEnt is one entry of EntityHealth.
+type healthEnt struct {
+	id    world.PlayerID
+	ratio uint8
+}
+
+// encodeEntityHealth builds an EntityHealth of hs. b is reused across calls.
+func encodeEntityHealth(b *flatbuffers.Builder, hs []healthEnt) []byte {
+	b.Reset()
+	protocol.EntityHealthStartEntriesVector(b, len(hs))
+	for i := len(hs) - 1; i >= 0; i-- {
+		protocol.CreateHealthRatio(b, uint16(hs[i].id), hs[i].ratio)
+	}
+	vec := b.EndVector(len(hs))
+	protocol.EntityHealthStart(b)
+	protocol.EntityHealthAddEntries(b, vec)
+	return finish(b, protocol.MessageEntityHealth, protocol.EntityHealthEnd(b))
+}
+
+// hit is one PvP or PvE swing as CombatHit carries it: attacker and target
+// are entity ids (NPC ids sit above guest ids, as in snapEnt).
+type hit struct {
+	attacker, target world.PlayerID
+	damage           int
+	died             bool
+}
+
+// encodeCombatHit builds a CombatHit of hits for world tick tick. b is reused
+// across calls.
+func encodeCombatHit(b *flatbuffers.Builder, tick uint64, hits []hit) []byte {
+	b.Reset()
+	protocol.CombatHitStartHitsVector(b, len(hits))
+	for i := len(hits) - 1; i >= 0; i-- {
+		h := hits[i]
+		protocol.CreateHit(b, uint16(h.attacker), uint16(h.target), clampU8(h.damage), h.died)
+	}
+	vec := b.EndVector(len(hits))
+	protocol.CombatHitStart(b)
+	protocol.CombatHitAddTick(b, uint32(tick))
+	protocol.CombatHitAddHits(b, vec)
+	return finish(b, protocol.MessageCombatHit, protocol.CombatHitEnd(b))
 }
 
 // message is a decoded inbound envelope; only the field for typ is set.
@@ -150,6 +248,7 @@ type message struct {
 	moveX     float32
 	moveZ     float32
 	facing    float32
+	run       bool // Input's Run action flag
 	chatText  string
 	emote     protocol.Emote
 	pingToken uint32
@@ -164,6 +263,7 @@ type message struct {
 	index   int    // TradeRemove offer index
 	gold    uint32 // TradeSetGold
 	screen  uint8  // TradeAccept
+	target  uint16 // AttackTarget entity id
 }
 
 // gameSlots maps wire equipment slots to game data slots. EquipSlotNone is
@@ -244,6 +344,7 @@ func decode(buf []byte) (m message, err error) {
 		var in protocol.Input
 		in.Init(tbl.Bytes, tbl.Pos)
 		m.seq, m.facing = in.Seq(), in.Facing()
+		m.run = protocol.ActionFlags(in.Actions())&protocol.ActionFlagsRun != 0
 		if v := in.Move(nil); v != nil {
 			m.moveX, m.moveZ = v.X(), v.Z()
 		}
@@ -293,6 +394,10 @@ func decode(buf []byte) (m message, err error) {
 		m.screen = ta.Screen()
 	case protocol.MessageTradeCancel:
 		// No fields.
+	case protocol.MessageAttackTarget:
+		var at protocol.AttackTarget
+		at.Init(tbl.Bytes, tbl.Pos)
+		m.target = at.TargetId()
 	}
 	return m, nil
 }
@@ -377,4 +482,26 @@ func encodeItemCatalog(d *gamedata.Data) []byte {
 	protocol.ItemCatalogStart(b)
 	protocol.ItemCatalogAddItems(b, items)
 	return finish(b, protocol.MessageItemCatalog, protocol.ItemCatalogEnd(b))
+}
+
+// encodeNpcCatalog builds an NpcCatalog of every NPC type in d, in table order.
+func encodeNpcCatalog(d *gamedata.Data) []byte {
+	b := flatbuffers.NewBuilder(1024)
+	defs := make([]flatbuffers.UOffsetT, len(d.NPCs))
+	for i, n := range d.NPCs {
+		name := b.CreateString(n.Name)
+		protocol.NpcDefStart(b)
+		protocol.NpcDefAddId(b, uint16(n.ID))
+		protocol.NpcDefAddName(b, name)
+		protocol.NpcDefAddCombatLevel(b, clampU8(n.Level))
+		defs[i] = protocol.NpcDefEnd(b)
+	}
+	protocol.NpcCatalogStartNpcsVector(b, len(defs))
+	for i := len(defs) - 1; i >= 0; i-- {
+		b.PrependUOffsetT(defs[i])
+	}
+	npcs := b.EndVector(len(defs))
+	protocol.NpcCatalogStart(b)
+	protocol.NpcCatalogAddNpcs(b, npcs)
+	return finish(b, protocol.MessageNpcCatalog, protocol.NpcCatalogEnd(b))
 }

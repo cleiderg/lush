@@ -1,6 +1,6 @@
 import * as flatbuffers from 'flatbuffers';
 import {
-  AttackTarget, ChatMessage, ChatSend, CombatHit, Emote, EmoteSend, Entity, EntityHealth, EntityInfo, EntityKind, Envelope,
+  AttackTarget, CardTableLeave, CardTableResult, CardTableResultCode, CardTableSit, CardTableState, ChatMessage, ChatSend, CombatHit, Emote, EmoteSend, Entity, EntityHealth, EntityInfo, EntityKind, Envelope,
   EquipSlot, GroundItem, GroundItems, Hello, HealthRatio, Hit, Input, InventorySlot, InventoryState, ItemAction,
   ItemActionKind, ItemCatalog, ItemDef, ItemKind, Message, NpcCatalog, NpcDef, PickUp, Ping, PlayerStats, Pong,
   ProtocolVersion, Reload, RestartCountdown, ShopBuy, ShopResult, ShopResultCode, ShopSell, Snapshot, TradeAccept,
@@ -117,8 +117,23 @@ export interface TradeView {
   partnerAccepted: boolean;
 }
 
+/** Public seat and turn state of one card table. */
+export interface CardTableView {
+  tableId: number;
+  /** Entity id in each seat, 0 for an empty seat. */
+  seats: number[];
+  inProgress: boolean;
+  /** Seat index whose turn it is, or null when no game is in progress. */
+  turnSeat: number | null;
+  reversed: boolean;
+  /** World ticks until the turn times out. */
+  turnTicksLeft: number;
+  /** Seat index of the last game's winner, or null when there is none. */
+  winnerSeat: number | null;
+}
+
 export type ServerMessage =
-  | { type: 'welcome'; playerId: number; guestToken: string; spawn: { x: number; z: number }; tickRate: number }
+  | { type: 'welcome'; playerId: number; guestToken: string; spawn: { x: number; z: number }; tickRate: number; walkSpeed?: number; runSpeed?: number }
   | { type: 'snapshot'; tick: number; lastInputSeq: number; entities: EntityState[] }
   | { type: 'chat'; speakerId: number; text: string }
   | { type: 'pong'; token: number }
@@ -135,7 +150,9 @@ export type ServerMessage =
   | { type: 'npcCatalog'; npcs: NpcInfo[] }
   | { type: 'tradeRequestNotice'; fromId: number }
   | ({ type: 'tradeState' } & TradeView)
-  | { type: 'tradeResult'; code: TradeResultCode };
+  | { type: 'tradeResult'; code: TradeResultCode }
+  | ({ type: 'cardTableState' } & CardTableView)
+  | { type: 'cardTableResult'; code: CardTableResultCode };
 
 function wrap(b: flatbuffers.Builder, type: Message, msg: flatbuffers.Offset): Uint8Array {
   b.finish(Envelope.createEnvelope(b, type, msg));
@@ -233,6 +250,17 @@ export function encodeTradeCancel(): Uint8Array {
   return wrap(b, Message.TradeCancel, TradeCancel.createTradeCancel(b));
 }
 
+/** Sit in the first free seat of table `tableId`. */
+export function encodeCardTableSit(tableId: number): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.CardTableSit, CardTableSit.createCardTableSit(b, tableId));
+}
+
+export function encodeCardTableLeave(): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.CardTableLeave, CardTableLeave.createCardTableLeave(b));
+}
+
 function tradeItems(len: number, at: (i: number, obj: TradeItem) => TradeItem | null): TradeItemState[] {
   const out: TradeItemState[] = [];
   const t = new TradeItem();
@@ -260,6 +288,8 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
         guestToken: m.guestToken() ?? '',
         spawn: { x: s?.x() ?? 0, z: s?.z() ?? 0 },
         tickRate: m.tickRate(),
+        walkSpeed: m.walkSpeed(),
+        runSpeed: m.runSpeed(),
       };
     }
     case Message.Snapshot: {
@@ -401,6 +431,23 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
     }
     case Message.TradeResult:
       return { type: 'tradeResult', code: (env.msg(new TradeResult()) as TradeResult).code() };
+    case Message.CardTableState: {
+      const m = env.msg(new CardTableState()) as CardTableState;
+      const seats: number[] = [];
+      for (let i = 0; i < m.seatsLength(); i++) seats.push(m.seats(i) ?? 0);
+      return {
+        type: 'cardTableState',
+        tableId: m.tableId(),
+        seats,
+        inProgress: m.inProgress(),
+        turnSeat: m.inProgress() ? m.turnSeat() : null,
+        reversed: m.reversed(),
+        turnTicksLeft: m.turnTicksLeft(),
+        winnerSeat: m.hasWinner() ? m.winnerSeat() : null,
+      };
+    }
+    case Message.CardTableResult:
+      return { type: 'cardTableResult', code: (env.msg(new CardTableResult()) as CardTableResult).code() };
     default:
       return null;
   }

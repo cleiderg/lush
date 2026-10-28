@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 8
+  Current = 10
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -25,7 +25,8 @@ struct Vec2 {
 enum ActionFlags : ubyte (bit_flags) {
   Interact,
   Attack,
-  Jump
+  Jump,
+  Run    // held while the player is running (D-044)
 }
 
 // Entity.animation values, shared by server and client.
@@ -126,6 +127,8 @@ table Welcome {
   guest_token: string;
   spawn: Vec2;
   tick_rate: ubyte; // server ticks per second
+  walk_speed: float; // metres per second (D-044)
+  run_speed: float;  // metres per second (D-044)
 }
 
 // Client -> server, one per client tick.
@@ -391,6 +394,50 @@ table TradeResult {
   code: TradeResultCode;
 }
 
+// Card tables (D-016, docs/specs/card-tables.md). These messages are the
+// shared table system only: seats, turns, the turn timer and the winner.
+// They work for any game and never carry game-specific data (cards, hands,
+// moves or stakes); game state comes in a later, per-game message, and a
+// client is only ever sent its own cards.
+
+// Client -> server: sit in the first free seat of a table. The server
+// replies with CardTableResult, and with CardTableState on success.
+table CardTableSit {
+  table_id: ushort;
+}
+
+// Client -> server: leave the table you are seated at.
+table CardTableLeave {
+}
+
+// Server -> client: the public seat and turn state of one table, sent to
+// everyone seated at it whenever it changes.
+table CardTableState {
+  table_id: ushort;
+  seats: [uint16];         // entity id in each seat, 0 for an empty seat
+  in_progress: bool;       // a game is being played
+  turn_seat: ubyte;        // seat index whose turn it is (in_progress only)
+  reversed: bool;          // turn order runs backwards
+  turn_ticks_left: uint32; // world ticks until the turn times out
+  has_winner: bool;        // the last game ended with a winner
+  winner_seat: ubyte;      // seat index of the winner (has_winner only)
+}
+
+// CardTableResult.code values.
+enum CardTableResultCode : ubyte {
+  Ok = 0,             // the sit or leave succeeded
+  UnknownTable = 1,   // no table has that table_id
+  TableFull = 2,      // every seat at the table is taken
+  AlreadySeated = 3,  // you are already seated at a table
+  NotSeated = 4,      // you are not seated at a table
+  InProgress = 5      // a game is in progress, so you can't sit or leave now
+}
+
+// Server -> client: the outcome of a CardTableSit or CardTableLeave.
+table CardTableResult {
+  code: CardTableResultCode;
+}
+
 union Message {
   Hello,
   Welcome,
@@ -425,7 +472,11 @@ union Message {
   TradeCancel,
   TradeRequestNotice,
   TradeState,
-  TradeResult
+  TradeResult,
+  CardTableSit,
+  CardTableLeave,
+  CardTableState,
+  CardTableResult
 }
 
 table Envelope {
