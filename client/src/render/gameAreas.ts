@@ -55,8 +55,8 @@ export function borderGeometry(pts: [number, number][], width: number, y: number
   return g;
 }
 
-/** Axis-aligned box from (x0,y0,z0) to (x1,y1,z1), relative to the stall's centre. */
-function box(b: MeshBuilder, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, color: number): void {
+/** Axis-aligned box from (x0,y0,z0) to (x1,y1,z1), relative to the mesh origin. */
+export function box(b: MeshBuilder, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, color: number): void {
   const p = (x: number, y: number, z: number) => [x, y, z];
   const quad = (a: number[], c: number[], d: number[], e: number[], n: number[]) => {
     b.tri(a, c, d, n, color);

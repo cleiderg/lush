@@ -15,3 +15,13 @@ export const SHOP = { x: -22, z: -96 };
 export const SOUTH_FIELDS = [[-360, 240], [-200, 240], [-200, 320], [-360, 320]];
 /** Open ground north-east of the park, outside Ring Road. Corner nearest spawn is cut so every point stays 300 m+ away. */
 export const PVP_ZONE = [[200, -400], [400, -400], [400, -280], [220, -280], [200, -300]];
+
+/** Card table plaza about 20 m south of the spawn, inside the safe circle. build.mjs writes cardtables.json. */
+export const CARD_PLAZA = [[-29, -63], [-15, -63], [-15, -49], [-29, -49]];
+/** The plaza's 4 card tables, ids 1 to 4, 6 m apart. */
+export const CARD_TABLES = [
+  { id: 1, x: -25, z: -59 },
+  { id: 2, x: -19, z: -59 },
+  { id: 3, x: -25, z: -53 },
+  { id: 4, x: -19, z: -53 },
+];
