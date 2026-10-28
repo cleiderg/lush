@@ -1,6 +1,6 @@
 import type { EquipSlot, ItemActionKind } from '../protocol';
 import {
-  decode, encodeAttackTarget, encodeChat, encodeHello, encodeItemAction, encodePickUp, encodeShopBuy, encodeShopSell,
+  decode, encodeAttackTarget, encodeCardTableLeave, encodeCardTableSit, encodeChat, encodeHello, encodeItemAction, encodePickUp, encodeShopBuy, encodeShopSell,
   encodeTradeAccept, encodeTradeCancel, encodeTradeOffer, encodeTradeRemove, encodeTradeRequest, encodeTradeSetGold,
   type ServerMessage,
 } from './codec';
@@ -125,6 +125,16 @@ export class Session {
 
   sendTradeCancel(): void {
     this.send(encodeTradeCancel());
+  }
+
+  /** Sit in the first free seat of table `tableId`. */
+  sendCardTableSit(tableId: number): void {
+    this.send(encodeCardTableSit(tableId));
+  }
+
+  /** Leave the card table you are seated at. */
+  sendCardTableLeave(): void {
+    this.send(encodeCardTableLeave());
   }
 
   /** Sends a chat line; blank text is not sent. The server's echo puts it in the chat log. */
