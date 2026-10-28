@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import campusRaw from '../../../shared/map/campus.json?raw';
 import { GREEN_GRASS, GREEN_PITCH, GREEN_WATER, GREEN_WOOD, parseCampus, type CampusData, type Green } from './mapData';
+import { buildLandmark, isLandmark } from './landmarks';
 import { mulberry32 } from './rng';
 
 const DM = 0.1;
@@ -77,7 +78,8 @@ function fillPolygon(b: MeshBuilder, pts: THREE.Vector2[], y: number, color: num
   }
 }
 
-function addBuilding(b: MeshBuilder, id: number, h: number, p: number[]): void {
+/** The generic extrusion used for every building that isn't a hand-made landmark. */
+export function addBuilding(b: MeshBuilder, id: number, h: number, p: number[]): void {
   const rnd = mulberry32(id);
   const wall = WALLS[Math.floor(rnd() * WALLS.length)];
   const roof = ROOFS[Math.floor(rnd() * ROOFS.length)];
@@ -155,13 +157,17 @@ export function greenLayers(green: Green[]): Map<number, number> {
 export interface MapStats {
   chunks: number;
   triangles: number;
+  /** Building ids drawn as generic extrusions. */
+  extruded: number[];
+  /** Building ids drawn as hand-made landmarks (see landmarks.ts). */
+  landmarks: number[];
 }
 
 /** The campus drawn as one merged mesh per fixed-size chunk (frustum culling drops the far ones). */
 export class CampusMap {
   readonly group = new THREE.Group();
   readonly stats: MapStats;
-  private readonly material = new THREE.MeshLambertMaterial({ vertexColors: true });
+  readonly material = new THREE.MeshLambertMaterial({ vertexColors: true });
 
   constructor(data: CampusData) {
     this.group.name = 'campus-map';
@@ -200,9 +206,16 @@ export class CampusMap {
         addPathSegment(at((x0 + x1) / 2, (z0 + z1) / 2), x0 * DM, z0 * DM, x1 * DM, z1 * DM, half);
       }
     }
+    const extruded: number[] = [];
+    const landmarks: number[] = [];
     for (const bl of data.buildings) {
       const [cx, cz] = centre(bl.p);
-      addBuilding(at(cx, cz), bl.id, bl.h, bl.p);
+      if (isLandmark(bl.id) && buildLandmark(at(cx, cz), bl, data)) {
+        landmarks.push(bl.id);
+      } else {
+        addBuilding(at(cx, cz), bl.id, bl.h, bl.p);
+        extruded.push(bl.id);
+      }
     }
 
     let triangles = 0;
@@ -214,7 +227,7 @@ export class CampusMap {
       mesh.matrixAutoUpdate = false;
       this.group.add(mesh);
     }
-    this.stats = { chunks: builders.size, triangles };
+    this.stats = { chunks: builders.size, triangles, extruded, landmarks };
   }
 
   dispose(): void {
