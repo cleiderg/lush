@@ -485,7 +485,7 @@ func TestNPCKilled(t *testing.T) {
 			kills = append(kills, *e.Kill)
 		}
 	}
-	if len(kills) != 1 || kills[0] != want {
+	if len(kills) != 1 || !reflect.DeepEqual(kills[0], want) {
 		t.Errorf("kills = %+v, want [%+v]", kills, want)
 	}
 	if _, ok := f.sys.TargetOf(p.ID); ok {

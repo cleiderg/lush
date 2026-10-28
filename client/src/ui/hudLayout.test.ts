@@ -32,6 +32,20 @@ describe('hudLayout', () => {
     });
   }
 
+  for (const [w, h] of [[320, 568], [390, 844], [480, 900]]) {
+    it(`at ${w}×${h} puts the chat log above the control tray, clear of the HUD, toggle and PvP strip`, () => {
+      const l = hudLayout(w, h);
+      expect(inside(l.chat, { x: 0, y: 0, w, h })).toBe(true);
+      expect(l.chat.w).toBeGreaterThan(0);
+      expect(l.chat.h).toBeGreaterThan(0);
+      expect(l.chat.y + l.chat.h).toBeLessThanOrEqual(l.controls.y);
+      expect(intersects(l.chat, l.controls)).toBe(false);
+      for (const [name, r] of [['hud', l.hud], ['toggle', l.toggle], ['pvp', l.pvp]] as const) {
+        expect(intersects(l.chat, r), name).toBe(false);
+      }
+    });
+  }
+
   it('at 390×844 the control tray is the bottom 35% and the panel fills the space above it', () => {
     const l = hudLayout(390, 844);
     expect(l.controls).toEqual({ x: 0, y: 844 - 295, w: 390, h: 295 });
