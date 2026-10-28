@@ -9,6 +9,7 @@ import (
 
 	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/grounditems"
 	"github.com/cleiderg/lush/server/internal/systems/items"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
 	"github.com/cleiderg/lush/server/internal/world"
@@ -83,6 +84,46 @@ func TestDecodeItemAndShopCommands(t *testing.T) {
 				t.Fatalf("command = %#v, want %#v", got, tc.want)
 			}
 		})
+	}
+}
+
+func pickUpFrame(id uint16) []byte {
+	return frame(protocol.MessagePickUp, func(b *flatbuffers.Builder) flatbuffers.UOffsetT {
+		protocol.PickUpStart(b)
+		protocol.PickUpAddGroundItemId(b, id)
+		return protocol.PickUpEnd(b)
+	})
+}
+
+// #242 AC3: PickUp decodes into a ground item pick-up for the sending player;
+// ground item 0 (never used) is ignored, and truncated frames never panic.
+func TestDecodePickUp(t *testing.T) {
+	const id = world.PlayerID(7)
+	tests := []struct {
+		name  string
+		frame []byte
+		want  world.Command
+	}{
+		{"pick up", pickUpFrame(42), grounditems.PickUpCommand{Player: id, ID: 42}},
+		{"max id", pickUpFrame(65535), grounditems.PickUpCommand{Player: id, ID: 65535}},
+		{"id 0", pickUpFrame(0), nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m, err := decode(tc.frame)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := m.command(id); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("command = %#v, want %#v", got, tc.want)
+			}
+		})
+	}
+	f := pickUpFrame(42)
+	for n := 0; n < len(f); n++ {
+		if m, err := decode(f[:n]); err == nil {
+			m.command(id)
+		}
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/grounditems"
 	"github.com/cleiderg/lush/server/internal/systems/items"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
 	"github.com/cleiderg/lush/server/internal/systems/trade"
@@ -239,6 +240,32 @@ func encodeCombatHit(b *flatbuffers.Builder, tick uint64, hits []hit) []byte {
 	return finish(b, protocol.MessageCombatHit, protocol.CombatHitEnd(b))
 }
 
+// groundEnt is one GroundItem as the wire carries it.
+type groundEnt struct {
+	id   grounditems.ID
+	item uint16
+	qty  uint32
+	x, z int16
+}
+
+func groundEntOf(it grounditems.Item) groundEnt {
+	return groundEnt{id: it.ID, item: uint16(it.Item), qty: clampU32(it.Qty), x: decimetres(it.Pos.X), z: decimetres(it.Pos.Y)}
+}
+
+// encodeGroundItems builds a GroundItems of gs. b is reused across calls.
+func encodeGroundItems(b *flatbuffers.Builder, gs []groundEnt) []byte {
+	b.Reset()
+	protocol.GroundItemsStartItemsVector(b, len(gs))
+	for i := len(gs) - 1; i >= 0; i-- {
+		g := gs[i]
+		protocol.CreateGroundItem(b, uint16(g.id), g.item, g.qty, g.x, g.z)
+	}
+	vec := b.EndVector(len(gs))
+	protocol.GroundItemsStart(b)
+	protocol.GroundItemsAddItems(b, vec)
+	return finish(b, protocol.MessageGroundItems, protocol.GroundItemsEnd(b))
+}
+
 // message is a decoded inbound envelope; only the field for typ is set.
 type message struct {
 	typ       protocol.Message
@@ -264,6 +291,7 @@ type message struct {
 	gold    uint32 // TradeSetGold
 	screen  uint8  // TradeAccept
 	target  uint16 // AttackTarget entity id
+	ground  uint16 // PickUp ground item id
 }
 
 // gameSlots maps wire equipment slots to game data slots. EquipSlotNone is
@@ -275,11 +303,12 @@ var gameSlots = map[protocol.EquipSlot]gamedata.Slot{
 	protocol.EquipSlotShield: gamedata.SlotShield,
 }
 
-// command turns a decoded ItemAction, ShopBuy, ShopSell or trade message into
-// the world command for player id. It returns nil for other messages and for
-// values the protocol doesn't define (an unknown action or equipment slot, a
-// trade request naming no player, an accept of a screen other than 1 or 2, an
-// offer of nothing); those are ignored, not fatal. Everything else is checked
+// command turns a decoded ItemAction, ShopBuy, ShopSell, trade or PickUp
+// message into the world command for player id. It returns nil for other
+// messages and for values the protocol doesn't define (an unknown action or
+// equipment slot, a trade request naming no player, an accept of a screen
+// other than 1 or 2, an offer of nothing, a pick-up of ground item 0); those
+// are ignored, not fatal. Everything else is checked
 // by the systems.
 func (m message) command(id world.PlayerID) world.Command {
 	switch m.typ {
@@ -316,6 +345,10 @@ func (m message) command(id world.PlayerID) world.Command {
 		}
 	case protocol.MessageTradeCancel:
 		return trade.CancelCommand{Player: id}
+	case protocol.MessagePickUp:
+		if m.ground != 0 {
+			return grounditems.PickUpCommand{Player: id, ID: grounditems.ID(m.ground)}
+		}
 	}
 	return nil
 }
@@ -398,6 +431,10 @@ func decode(buf []byte) (m message, err error) {
 		var at protocol.AttackTarget
 		at.Init(tbl.Bytes, tbl.Pos)
 		m.target = at.TargetId()
+	case protocol.MessagePickUp:
+		var pu protocol.PickUp
+		pu.Init(tbl.Bytes, tbl.Pos)
+		m.ground = pu.GroundItemId()
 	}
 	return m, nil
 }
