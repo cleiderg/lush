@@ -94,7 +94,7 @@ func TestTradeWriteAfterEarlierEconomyWrites(t *testing.T) {
 	r.st.setFailFor(ga.storeID)
 	gain(t, pa, 5)
 	r.w.Tick()
-	waitUntil(t, "a's write to fail", func() bool { _, f := r.st.counts(); return f == 1 })
+	r.waitSaverFailed("a's write to fail", ga.storeID)
 
 	r.agree(pa.ID, pb.ID, 3)
 	gain(t, pb, 1) // in b's outbox when the trade commits
@@ -102,7 +102,7 @@ func TestTradeWriteAfterEarlierEconomyWrites(t *testing.T) {
 	if !r.trades.Committing(pa.ID) || !r.trades.Committing(pb.ID) {
 		t.Fatal("trade not committing")
 	}
-	waitUntil(t, "the retry to fail", func() bool { _, f := r.st.counts(); return f == 2 })
+	r.waitSaverFailed("the retry to fail", ga.storeID)
 	for i := 0; i < 5; i++ {
 		r.w.Tick()
 	}
