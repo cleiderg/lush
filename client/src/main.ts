@@ -36,6 +36,7 @@ const controls = new Controls({
   onInteract: () =>
     interact(game, performance.now(), SHOP_STALL, {
       openShop: () => shop.tryOpen(),
+      sendPickUp: (id) => session.sendPickUp(id),
       sendAttackTarget: (id) => session.sendAttackTarget(id),
       sendTradeRequest: (id) => session.sendTradeRequest(id),
     }),
