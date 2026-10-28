@@ -1,10 +1,10 @@
-// Converts the committed OSM snapshot into the compact map file, the collision grid and the gameplay areas.
+// Converts the committed OSM snapshot into the compact map file, the collision grid, the gameplay areas and the card tables.
 //   node shared/map/build.mjs [outDir]      (default: this directory)
 // Deterministic: same input -> byte-identical output. No Math.random, no timestamps.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { BBOX, ORIGIN, CHUNK_SIZE, CELL_SIZE } from './config.mjs';
-import { ALDRICH_PARK_WAY, SPAWN, SAFE_RADIUS, SHOP, SOUTH_FIELDS, PVP_ZONE } from './areas.mjs';
+import { ALDRICH_PARK_WAY, SPAWN, SAFE_RADIUS, SHOP, SOUTH_FIELDS, PVP_ZONE, CARD_PLAZA, CARD_TABLES } from './areas.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const outDir = process.argv[2] ?? here;
@@ -171,9 +171,17 @@ const areas = {
     { id: 'pvp_zone', kind: 'pvp', p: dm(PVP_ZONE) },
   ],
 };
+// Card table plaza, in its own file so areas.json (and the server's area ids) stay as they are.
+const cardTables = {
+  version: 1,
+  units: 'decimetres',
+  plaza: dm(CARD_PLAZA),
+  tables: CARD_TABLES.map((t) => ({ id: t.id, ...cellCentre(t, `card table ${t.id}`) })),
+};
 
 mkdirSync(outDir, { recursive: true });
 writeFileSync(outDir + '/campus.json', JSON.stringify(campus) + '\n');
 writeFileSync(outDir + '/collision.bin', Buffer.concat([header, Buffer.from(bits)]));
 writeFileSync(outDir + '/areas.json', JSON.stringify(areas) + '\n');
+writeFileSync(outDir + '/cardtables.json', JSON.stringify(cardTables) + '\n');
 console.log(`buildings=${buildings.length} paths=${paths.length} green=${green.length} grid=${width}x${height}`);

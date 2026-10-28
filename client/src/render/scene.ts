@@ -9,6 +9,7 @@ import { GroundItems } from './groundItems';
 import { Npcs } from './npcs';
 import { ChatText } from './chatText';
 import { AreaMarkers, loadAreas } from './gameAreas';
+import { CardTables, loadCardTables } from './cardTables';
 import type { CampusData } from './mapData';
 import type { WorldView } from './worldView';
 
@@ -35,6 +36,7 @@ export class WorldScene {
   readonly rig = new CameraRig();
   readonly map = new CampusMap(loadCampus());
   readonly areas = new AreaMarkers(loadAreas());
+  readonly cardTables = new CardTables(loadCardTables());
   private readonly player = new Character();
   private readonly remotes = new RemotePlayers();
   readonly healthBars = new HealthBars();
@@ -56,6 +58,8 @@ export class WorldScene {
     sun.position.set(30, 60, 20);
     this.scene.add(sun);
     this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.areas.group, this.player.root, this.remotes.group, this.healthBars.group);
+    // After the players: tests find the remote-player instanced meshes as the first ones in the scene.
+    this.scene.add(this.cardTables.group);
   }
 
   update(view: WorldView): void {

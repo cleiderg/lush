@@ -5,11 +5,12 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 | File | What |
 |---|---|
 | `source/osm-central.json` | Committed OSM snapshot (`node shared/map/fetch.mjs` refreshes it; needs network) |
-| `build.mjs` | `node shared/map/build.mjs [outDir]` writes `campus.json`, `collision.bin` and `areas.json`. Offline and deterministic |
+| `build.mjs` | `node shared/map/build.mjs [outDir]` writes `campus.json`, `collision.bin`, `areas.json` and `cardtables.json`. Offline and deterministic |
 | `campus.json` | Compact map for rendering |
 | `collision.bin` | Collision grid for client and server |
-| `areas.mjs` | Gameplay places (spawn, shop, area polygons) in metres; edit here, then rebuild |
+| `areas.mjs` | Gameplay places (spawn, shop, area polygons, card tables) in metres; edit here, then rebuild |
 | `areas.json` | Gameplay areas for client and server |
+| `cardtables.json` | Card table plaza and its 4 tables |
 | `config.mjs` | Bounding box, origin, chunk size, cell size |
 
 ## Coordinates
@@ -64,3 +65,15 @@ Gameplay places from `docs/specs/map.md` (Gameplay areas). Same units as `campus
   - `pvp_zone` (`pvp`): the only place players can attack each other.
 
 `build.mjs` snaps `spawn` and `shop` to the centre of their collision cell and fails if that cell is blocked.
+
+## `cardtables.json`
+
+The card table area from `docs/specs/map.md` (Gameplay areas): a small plaza about 20 m south of the spawn, inside the safe circle. Kept out of `areas.json` so the server's area ids don't change. Same units: integer decimetres, x east, z south.
+
+`{version, units, plaza, tables}`
+
+- `version`: 1.
+- `plaza`: closed polygon `[x0,z0,x1,z1,...]` (last point not repeated) around the tables, wholly inside the safe circle.
+- `tables[]`: `{id, x, z}`. `id` 1 to 4; `x`, `z` the table centre, at least 3 m from every other table.
+
+`build.mjs` snaps each table to the centre of its collision cell and fails if that cell is blocked.
