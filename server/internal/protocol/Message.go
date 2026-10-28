@@ -42,6 +42,10 @@ const (
 	MessageTradeRequestNotice Message = 32
 	MessageTradeState         Message = 33
 	MessageTradeResult        Message = 34
+	MessageCardTableSit       Message = 35
+	MessageCardTableLeave     Message = 36
+	MessageCardTableState     Message = 37
+	MessageCardTableResult    Message = 38
 )
 
 var EnumNamesMessage = map[Message]string{
@@ -80,6 +84,10 @@ var EnumNamesMessage = map[Message]string{
 	MessageTradeRequestNotice: "TradeRequestNotice",
 	MessageTradeState:         "TradeState",
 	MessageTradeResult:        "TradeResult",
+	MessageCardTableSit:       "CardTableSit",
+	MessageCardTableLeave:     "CardTableLeave",
+	MessageCardTableState:     "CardTableState",
+	MessageCardTableResult:    "CardTableResult",
 }
 
 var EnumValuesMessage = map[string]Message{
@@ -118,6 +126,10 @@ var EnumValuesMessage = map[string]Message{
 	"TradeRequestNotice": MessageTradeRequestNotice,
 	"TradeState":         MessageTradeState,
 	"TradeResult":        MessageTradeResult,
+	"CardTableSit":       MessageCardTableSit,
+	"CardTableLeave":     MessageCardTableLeave,
+	"CardTableState":     MessageCardTableState,
+	"CardTableResult":    MessageCardTableResult,
 }
 
 func (v Message) String() string {
