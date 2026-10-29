@@ -8,7 +8,7 @@ describe('hudLayout', () => {
       const viewport = { x: 0, y: 0, w, h };
       expect(inside(l.controls, viewport)).toBe(true);
       for (const [name, r] of [['hud', l.hud], ['toggle', l.toggle], ['panel', l.panel], ['shop', l.shop], ['trade', l.trade],
-        ['tradePrompt', l.tradePrompt], ['pvp', l.pvp]] as const) {
+        ['cardTable', l.cardTable], ['tradePrompt', l.tradePrompt], ['pvp', l.pvp]] as const) {
         expect(inside(r, viewport), name).toBe(true);
         expect(intersects(r, l.controls), name).toBe(false);
         expect(r.w, name).toBeGreaterThan(0);
@@ -19,14 +19,14 @@ describe('hudLayout', () => {
       expect(intersects(l.toggle, l.panel)).toBe(false);
       expect(intersects(l.hud, l.shop)).toBe(false);
       expect(intersects(l.toggle, l.shop)).toBe(false);
-      for (const r of [l.trade, l.tradePrompt]) {
+      for (const r of [l.trade, l.tradePrompt, l.cardTable]) {
         expect(intersects(l.hud, r)).toBe(false);
         expect(intersects(l.toggle, r)).toBe(false);
       }
       expect(inside(l.tradePrompt, l.trade)).toBe(true);
       // The PvP warning / indicator stays clear of the HUD, the inventory toggle and every panel.
       for (const [name, r] of [['hud', l.hud], ['toggle', l.toggle], ['panel', l.panel], ['shop', l.shop], ['trade', l.trade],
-        ['tradePrompt', l.tradePrompt]] as const) {
+        ['cardTable', l.cardTable], ['tradePrompt', l.tradePrompt]] as const) {
         expect(intersects(l.pvp, r), name).toBe(false);
       }
     });
