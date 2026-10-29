@@ -166,7 +166,7 @@ func TestEncodeCardTableCatalog(t *testing.T) {
 
 func TestEncodeCardTableState(t *testing.T) {
 	snap := cardroom.Snapshot{
-		Seats: []cardroom.SeatInfo{{Occupied: true, Player: 5, Ready: true}, {}, {Occupied: true, Player: 9}},
+		Seats:      []cardroom.SeatInfo{{Occupied: true, Player: 5, Ready: true}, {}, {Occupied: true, Player: 9}},
 		InProgress: true, Turn: 2, Reversed: true, TicksLeft: 123, HasWinner: true, Winner: 1,
 	}
 	b := flatbuffers.NewBuilder(0)

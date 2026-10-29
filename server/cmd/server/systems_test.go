@@ -8,6 +8,7 @@ import (
 
 	"github.com/cleiderg/lush/server/internal/session"
 	"github.com/cleiderg/lush/server/internal/store"
+	"github.com/cleiderg/lush/server/internal/systems/cardroom"
 	"github.com/cleiderg/lush/server/internal/systems/combat"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/npc"
@@ -38,7 +39,7 @@ func realSystems(t *testing.T) (*world.World, []scheduled, *areas.Lookup, *gamed
 	if err != nil {
 		t.Fatal(err)
 	}
-	systems, err := gameSystems(mover, data, lookup, grid, 5, clock, sess)
+	systems, err := gameSystems(mover, data, lookup, grid, 5, w.TickInterval(), clock, sess)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,8 +54,10 @@ func realSystems(t *testing.T) (*world.World, []scheduled, *areas.Lookup, *gamed
 // AC1 (#218): the PvP combat system is registered with RegisterEvery(s, 12).
 // AC1 (#241): the NPC system, PvE combat (every 12 ticks, after NPC
 // movement) and the spawner (after combat) are registered.
+// AC1 (#307): the card room, built from game data, is registered with every
+// card table and its stake, before the session.
 func TestGameSystemsRegisterItemsShopTradeRegenBeforeSession(t *testing.T) {
-	_, systems, _, _ := realSystems(t)
+	_, systems, _, data := realSystems(t)
 	var names []string
 	for _, s := range systems {
 		names = append(names, s.sys.Name())
@@ -66,7 +69,7 @@ func TestGameSystemsRegisterItemsShopTradeRegenBeforeSession(t *testing.T) {
 			t.Errorf("%s every %d ticks, want %d", s.sys.Name(), s.every, want)
 		}
 	}
-	want := []string{"movement", "npc", "emote", "chat", "items", "shop", "trade", "grounditems",
+	want := []string{"movement", "npc", "emote", "chat", "items", "shop", "trade", "cardroom", "grounditems",
 		"pvp_combat", "pve_combat", "spawner", "regen", "session"}
 	if !slices.Equal(names, want) {
 		t.Fatalf("systems = %v, want %v", names, want)
@@ -77,7 +80,16 @@ func TestGameSystemsRegisterItemsShopTradeRegenBeforeSession(t *testing.T) {
 	if _, ok := systems[slices.Index(names, "pvp_combat")].sys.(*pvp.Combat); !ok {
 		t.Fatalf("system %q is %T, want *pvp.Combat", "pvp_combat", systems[slices.Index(names, "pvp_combat")].sys)
 	}
-	for name, typ := range map[string]any{"npc": (*npc.System)(nil), "pve_combat": (*combat.System)(nil), "spawner": (*spawner.System)(nil)} {
+	cards := systems[slices.Index(names, "cardroom")].sys.(*cardroom.System)
+	for _, ct := range data.CardTables {
+		if stake, ok := cards.Stake(cardroom.TableID(ct.ID)); !ok || stake != ct.Stake {
+			t.Errorf("card table %d: stake %d (hosted %v), want %d", ct.ID, stake, ok, ct.Stake)
+		}
+		if tb, ok := cards.Table(cardroom.TableID(ct.ID)); !ok || tb.Seats() != ct.Seats {
+			t.Errorf("card table %d not hosted with %d seats", ct.ID, ct.Seats)
+		}
+	}
+	for name, typ := range map[string]any{"cardroom": (*cardroom.System)(nil), "npc": (*npc.System)(nil), "pve_combat": (*combat.System)(nil), "spawner": (*spawner.System)(nil)} {
 		if got := systems[slices.Index(names, name)].sys; reflect.TypeOf(got) != reflect.TypeOf(typ) {
 			t.Errorf("system %q is %T, want %T", name, got, typ)
 		}
