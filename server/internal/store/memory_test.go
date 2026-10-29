@@ -31,3 +31,16 @@ func TestMemoryApplyEconomyAudit(t *testing.T) {
 		t.Fatalf("audit = %+v, want only the committed entry", got)
 	}
 }
+
+func TestMemoryCardPots(t *testing.T) {
+	storetest.RunCardPots(t, func(*testing.T) (storetest.CardPotStore, func() []store.Entry) {
+		m := store.NewMemory()
+		return m, func() []store.Entry {
+			out := m.AuditEntries()
+			for i := range out {
+				out[i].Payload = nil
+			}
+			return out
+		}
+	})
+}

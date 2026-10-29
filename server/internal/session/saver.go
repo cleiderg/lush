@@ -31,6 +31,9 @@ type saveReq struct {
 type econReq struct {
 	changes []store.EconomyChange
 	entries []store.Entry
+	// write, if set, writes the request instead of ApplyEconomy; changes
+	// still name the players it waits behind.
+	write func(ctx context.Context) error
 	// done, if set, is told whether the write committed. A request with done
 	// is never retried: a failure is final and does not hold back the
 	// players' later writes. Called on the saver goroutine.
@@ -220,7 +223,12 @@ func (s *saver) writeEconomy(q []econReq) {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(s.ctx, saveTimeout)
-		err := s.store.ApplyEconomy(ctx, r.changes, r.entries)
+		var err error
+		if r.write != nil {
+			err = r.write(ctx)
+		} else {
+			err = s.store.ApplyEconomy(ctx, r.changes, r.entries)
+		}
 		cancel()
 		if err != nil {
 			s.log.Error("apply economy", "store_id", r.changes[0].PlayerID, "players", len(r.changes), "retry", r.done == nil, "err", err)

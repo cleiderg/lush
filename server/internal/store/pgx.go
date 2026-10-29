@@ -190,29 +190,31 @@ func (s *PGPlayers) ApplyEconomy(ctx context.Context, changes []EconomyChange, e
 	if err := distinctPlayers(changes); err != nil {
 		return fmt.Errorf("apply economy: %w", err)
 	}
-	sorted := slices.SortedFunc(slices.Values(changes), func(a, b EconomyChange) int {
-		return cmp.Compare(a.PlayerID, b.PlayerID)
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		return writeEconomy(ctx, tx, changes, entries)
 	})
-
-	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("apply economy: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck // no-op after Commit
+	return nil
+}
 
+// writeEconomy writes every change, in player id order, and every entry
+// inside tx. The caller has checked that changes name distinct players.
+func writeEconomy(ctx context.Context, tx pgx.Tx, changes []EconomyChange, entries []Entry) error {
+	sorted := slices.SortedFunc(slices.Values(changes), func(a, b EconomyChange) int {
+		return cmp.Compare(a.PlayerID, b.PlayerID)
+	})
 	for _, c := range sorted {
 		if err := writeHoldings(ctx, tx, c); err != nil {
-			return fmt.Errorf("apply economy: player %d: %w", c.PlayerID, classify(err))
+			return fmt.Errorf("player %d: %w", c.PlayerID, classify(err))
 		}
 	}
 	var audit PGAudit
 	for _, e := range entries {
 		if err := audit.Append(ctx, tx, e); err != nil {
-			return fmt.Errorf("apply economy: %w", classify(err))
+			return classify(err)
 		}
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("apply economy: %w", err)
 	}
 	return nil
 }

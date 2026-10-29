@@ -13,6 +13,9 @@ type Memory struct {
 	byID   map[int64]Player
 	byHash map[string]int64
 	audit  []Entry
+
+	nextPot int64
+	pots    map[int64]*memPot // open card pots
 }
 
 var _ Players = (*Memory)(nil)
@@ -96,41 +99,60 @@ func (m *Memory) ApplyEconomy(ctx context.Context, changes []EconomyChange, entr
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("apply economy: %w", err)
 	}
-	if err := distinctPlayers(changes); err != nil {
-		return fmt.Errorf("apply economy: %w", err)
-	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.checkEconomyLocked(changes, entries); err != nil {
+		return fmt.Errorf("apply economy: %w", err)
+	}
+	m.applyEconomyLocked(changes, entries)
+	return nil
+}
+
+// checkEconomyLocked checks what ApplyEconomy checks, changing nothing.
+func (m *Memory) checkEconomyLocked(changes []EconomyChange, entries []Entry) error {
+	if err := distinctPlayers(changes); err != nil {
+		return err
+	}
 	for _, c := range changes {
 		if _, ok := m.byID[c.PlayerID]; !ok {
-			return fmt.Errorf("apply economy: player %d: %w", c.PlayerID, ErrNotFound)
+			return fmt.Errorf("player %d: %w", c.PlayerID, ErrNotFound)
 		}
 		if err := c.Holdings.validate(); err != nil {
-			return fmt.Errorf("apply economy: player %d: %w", c.PlayerID, err)
+			return fmt.Errorf("player %d: %w", c.PlayerID, err)
 		}
 	}
 	for _, e := range entries {
-		if _, ok := m.byID[e.Actor]; !ok {
-			return fmt.Errorf("apply economy: audit actor %d: %w", e.Actor, ErrNotFound)
-		}
-		if _, ok := m.byID[e.Counterparty]; e.Counterparty != 0 && !ok {
-			return fmt.Errorf("apply economy: audit counterparty %d: %w", e.Counterparty, ErrNotFound)
-		}
-		if err := checkPayload(e); err != nil {
-			return fmt.Errorf("apply economy: %w", err)
+		if err := m.checkEntryLocked(e); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+// checkEntryLocked fails, as PGAudit.Append would, on an unknown actor or
+// counterparty or a payload that can't be encoded.
+func (m *Memory) checkEntryLocked(e Entry) error {
+	if _, ok := m.byID[e.Actor]; !ok {
+		return fmt.Errorf("audit actor %d: %w", e.Actor, ErrNotFound)
+	}
+	if _, ok := m.byID[e.Counterparty]; e.Counterparty != 0 && !ok {
+		return fmt.Errorf("audit counterparty %d: %w", e.Counterparty, ErrNotFound)
+	}
+	return checkPayload(e)
+}
+
+// applyEconomyLocked writes checked changes and entries.
+func (m *Memory) applyEconomyLocked(changes []EconomyChange, entries []Entry) {
 	for _, c := range changes {
 		p := m.byID[c.PlayerID]
 		p.Holdings = c.Holdings
 		m.byID[p.ID] = p
 	}
 	m.audit = append(m.audit, entries...)
-	return nil
 }
 
-// AuditEntries returns a copy of the audit entries appended by ApplyEconomy,
-// in order.
+// AuditEntries returns a copy of the audit entries appended by ApplyEconomy
+// and the card pot methods, in order.
 func (m *Memory) AuditEntries() []Entry {
 	m.mu.Lock()
 	defer m.mu.Unlock()

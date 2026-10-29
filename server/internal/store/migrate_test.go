@@ -14,7 +14,13 @@ import (
 )
 
 // latestMigration is the version of the newest file in db/migrations.
-const latestMigration = 3
+const latestMigration = 4
+
+// progressMigration is the version of 00003_player_progress.sql.
+const progressMigration = 3
+
+// cardPotsMigration is the version of 00004_card_pots.sql.
+const cardPotsMigration = 4
 
 func TestMigrate(t *testing.T) {
 	url := os.Getenv("LUSH_TEST_DATABASE_URL")
@@ -29,7 +35,7 @@ func TestMigrate(t *testing.T) {
 	defer pool.Close()
 
 	// Start from an empty database.
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -53,8 +59,8 @@ func TestMigrate(t *testing.T) {
 	}
 }
 
-// TestMigrateProgressDownUp rolls the newest migration back to the previous
-// version and applies it again, then checks its constraints.
+// TestMigrateProgressDownUp rolls the player progress migration back to the
+// previous version and applies it again, then checks its constraints.
 func TestMigrateProgressDownUp(t *testing.T) {
 	url := os.Getenv("LUSH_TEST_DATABASE_URL")
 	if url == "" {
@@ -66,7 +72,7 @@ func TestMigrateProgressDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Migrate(ctx, pool); err != nil {
@@ -79,11 +85,11 @@ func TestMigrateProgressDownUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := provider.DownTo(ctx, latestMigration-1); err != nil {
-		t.Fatalf("down to %d: %v", latestMigration-1, err)
+	if _, err := provider.DownTo(ctx, progressMigration-1); err != nil {
+		t.Fatalf("down to %d: %v", progressMigration-1, err)
 	}
-	if v, err := provider.GetDBVersion(ctx); err != nil || v != latestMigration-1 {
-		t.Fatalf("version after down = %d, err %v; want %d", v, err, latestMigration-1)
+	if v, err := provider.GetDBVersion(ctx); err != nil || v != progressMigration-1 {
+		t.Fatalf("version after down = %d, err %v; want %d", v, err, progressMigration-1)
 	}
 	var exists bool
 	if err := pool.QueryRow(ctx, "SELECT to_regclass('player_inventory') IS NOT NULL").Scan(&exists); err != nil || exists {
@@ -123,6 +129,73 @@ func TestMigrateProgressDownUp(t *testing.T) {
 		{"equipment item zero", "UPDATE player_equipment SET item_id = 0 WHERE player_id = $1", false},
 	} {
 		_, err := pool.Exec(ctx, tc.sql, id)
+		if tc.ok && err != nil {
+			t.Errorf("%s: %v", tc.name, err)
+		}
+		if !tc.ok && err == nil {
+			t.Errorf("%s: accepted, want rejected", tc.name)
+		}
+	}
+}
+
+// TestMigrateCardPotsDownUp rolls the card pot migration back and applies it
+// again, then checks its constraints.
+func TestMigrateCardPotsDownUp(t *testing.T) {
+	url := os.Getenv("LUSH_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("LUSH_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatalf("up: %v", err)
+	}
+	db := stdlib.OpenDBFromPool(pool)
+	defer db.Close()
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.DownTo(ctx, cardPotsMigration-1); err != nil {
+		t.Fatalf("down to %d: %v", cardPotsMigration-1, err)
+	}
+	var exists bool
+	if err := pool.QueryRow(ctx, "SELECT to_regclass('card_pots') IS NOT NULL OR to_regclass('card_pot_stakes') IS NOT NULL").Scan(&exists); err != nil || exists {
+		t.Fatalf("card pot tables exist after down = %v, err %v", exists, err)
+	}
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+
+	var player, pot int64
+	if err := pool.QueryRow(ctx, "INSERT INTO players (token_hash) VALUES ('p') RETURNING id").Scan(&player); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, "INSERT INTO card_pots (table_id) VALUES (1) RETURNING id").Scan(&pot); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		sql  string
+		ok   bool
+	}{
+		{"stake zero", "INSERT INTO card_pot_stakes (pot_id, player_id, stake) VALUES ($1, $2, 0)", false},
+		{"stake unknown player", "INSERT INTO card_pot_stakes (pot_id, player_id, stake) VALUES ($1, $2 + 1000, 5)", false},
+		{"stake", "INSERT INTO card_pot_stakes (pot_id, player_id, stake) VALUES ($1, $2, 5)", true},
+		{"stake twice", "INSERT INTO card_pot_stakes (pot_id, player_id, stake) VALUES ($1, $2, 5)", false},
+		{"closed without kind", "UPDATE card_pots SET closed_at = now() WHERE id = $1 AND $2::bigint > 0", false},
+		{"kind without closed", "UPDATE card_pots SET closed_by = 'payout' WHERE id = $1 AND $2::bigint > 0", false},
+		{"unknown kind", "UPDATE card_pots SET closed_at = now(), closed_by = 'house' WHERE id = $1 AND $2::bigint > 0", false},
+		{"closed by refund", "UPDATE card_pots SET closed_at = now(), closed_by = 'refund' WHERE id = $1 AND $2::bigint > 0", true},
+	} {
+		_, err := pool.Exec(ctx, tc.sql, pot, player)
 		if tc.ok && err != nil {
 			t.Errorf("%s: %v", tc.name, err)
 		}

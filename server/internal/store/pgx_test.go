@@ -192,3 +192,107 @@ func TestPGCreateGuestAudit(t *testing.T) {
 		t.Fatalf("audit kinds = %v, want [item_create gold]", kinds)
 	}
 }
+
+func TestPGCardPots(t *testing.T) {
+	url := os.Getenv("LUSH_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("LUSH_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	storetest.RunCardPots(t, func(t *testing.T) (storetest.CardPotStore, func() []store.Entry) {
+		if _, err := pool.Exec(ctx, "TRUNCATE players, card_pots RESTART IDENTITY CASCADE"); err != nil {
+			t.Fatal(err)
+		}
+		return store.NewPGPlayers(pool), func() []store.Entry {
+			rows, err := pool.Query(ctx, `SELECT kind, actor_player_id, coalesce(counterparty_player_id, 0)
+				FROM economy_audit ORDER BY id`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var out []store.Entry
+			var e store.Entry
+			if _, err := pgx.ForEachRow(rows, []any{&e.Kind, &e.Actor, &e.Counterparty}, func() error {
+				out = append(out, e)
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			return out
+		}
+	})
+}
+
+// TestPGCardPotAtomic forces failures after the pot, stake, holdings and
+// audit rows are written and checks that no row of any table changed.
+func TestPGCardPotAtomic(t *testing.T) {
+	url := os.Getenv("LUSH_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("LUSH_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "TRUNCATE players, card_pots RESTART IDENTITY CASCADE"); err != nil {
+		t.Fatal(err)
+	}
+	s := store.NewPGPlayers(pool)
+	a, _ := s.CreateGuest(ctx, "a", store.Holdings{Gold: 100}, nil)
+	b, _ := s.CreateGuest(ctx, "b", store.Holdings{Gold: 100}, nil)
+	snapshot := func() string {
+		var out string
+		err := pool.QueryRow(ctx, `SELECT concat_ws('|',
+			(SELECT string_agg(concat_ws(',', id, gold, version, updated_at), ';' ORDER BY id) FROM players),
+			(SELECT string_agg(concat_ws(',', id, kind, actor_player_id, payload), ';' ORDER BY id) FROM economy_audit),
+			(SELECT string_agg(concat_ws(',', id, table_id, closed_at, closed_by), ';' ORDER BY id) FROM card_pots),
+			(SELECT string_agg(concat_ws(',', pot_id, player_id, stake, refunded_at), ';' ORDER BY pot_id, player_id) FROM card_pot_stakes))`).Scan(&out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	stakes := []store.CardStake{{PlayerID: a.ID, Gold: 25}, {PlayerID: b.ID, Gold: 25}}
+	staked := []store.EconomyChange{{PlayerID: a.ID, Holdings: store.Holdings{Gold: 75}}, {PlayerID: b.ID, Holdings: store.Holdings{Gold: 75}}}
+	badEntries := []store.Entry{{Kind: "gold", Actor: a.ID}, {Kind: "gold", Actor: b.ID + 1000}}
+
+	before := snapshot()
+	if _, err := s.OpenCardPot(ctx, 1, stakes, staked, badEntries); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("open: err = %v, want ErrNotFound", err)
+	}
+	if after := snapshot(); after != before {
+		t.Fatalf("failed stake commit wrote:\nbefore %s\nafter  %s", before, after)
+	}
+	var pots int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM card_pots").Scan(&pots); err != nil || pots != 0 {
+		t.Fatalf("%d card pots after a failed stake commit, err %v", pots, err)
+	}
+
+	pot, err := s.OpenCardPot(ctx, 1, stakes, staked, []store.Entry{{Kind: "gold", Actor: a.ID}, {Kind: "gold", Actor: b.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before = snapshot()
+	if err := s.PayCardPot(ctx, pot, []store.EconomyChange{{PlayerID: a.ID, Holdings: store.Holdings{Gold: 125}}}, badEntries); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("pay: err = %v, want ErrNotFound", err)
+	}
+	if after := snapshot(); after != before {
+		t.Fatalf("failed payout wrote:\nbefore %s\nafter  %s", before, after)
+	}
+	var open bool
+	if err := pool.QueryRow(ctx, "SELECT closed_at IS NULL FROM card_pots WHERE id = $1", pot).Scan(&open); err != nil || !open {
+		t.Fatalf("pot open after failed payout = %v, err %v", open, err)
+	}
+}
