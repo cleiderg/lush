@@ -16,6 +16,8 @@ export interface HudLayout {
   shop: Rect;
   /** The trade window; it also takes the inventory panel's place. */
   trade: Rect;
+  /** The card table panel; it also takes the inventory panel's place. */
+  cardTable: Rect;
   /** The trade request prompt (Accept / Decline), a strip at the top of the panel area. */
   tradePrompt: Rect;
   /** The PvP warning banner / in-zone indicator, a strip just above the control tray and below the panels. */
@@ -62,7 +64,7 @@ export function hudLayout(width: number, height: number): HudLayout {
   const tradePrompt = { ...panel, h: Math.min(PROMPT_H, panel.h) };
   const chatH = Math.min(CHAT_H, panel.h);
   const chat = { x: panel.x, y: panel.y + panel.h - chatH, w: panel.w, h: chatH };
-  return { controls, hud, toggle, panel, shop: { ...panel }, trade: { ...panel }, tradePrompt, pvp, chat };
+  return { controls, hud, toggle, panel, shop: { ...panel }, trade: { ...panel }, cardTable: { ...panel }, tradePrompt, pvp, chat };
 }
 
 export function intersects(a: Rect, b: Rect): boolean {

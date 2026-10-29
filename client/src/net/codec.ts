@@ -1,9 +1,9 @@
 import * as flatbuffers from 'flatbuffers';
 import {
-  AttackTarget, CardTableLeave, CardTableResult, CardTableResultCode, CardTableSit, CardTableState, ChatMessage, ChatSend, CombatHit, Emote, EmoteSend, Entity, EntityHealth, EntityInfo, EntityKind, Envelope,
+  AttackTarget, CardTableCatalog, CardTableInfo, CardTableLeave, CardTableReady, CardTableResult, CardTableResultCode, CardTableSit, CardTableState, ChatMessage, ChatSend, CombatHit, Emote, EmoteSend, Entity, EntityHealth, EntityInfo, EntityKind, Envelope,
   EquipSlot, GroundItem, GroundItems, Hello, HealthRatio, Hit, Input, InventorySlot, InventoryState, ItemAction,
   ItemActionKind, ItemCatalog, ItemDef, ItemKind, Message, NpcCatalog, NpcDef, PickUp, Ping, PlayerStats, Pong,
-  ProtocolVersion, Reload, RestartCountdown, ShopBuy, ShopResult, ShopResultCode, ShopSell, Snapshot, TradeAccept,
+  ProtocolVersion, Reload, RestartCountdown, ShedCard, ShedColour, ShedDraw, ShedHand, ShedPlay, ShedState, ShedSymbol, ShopBuy, ShopResult, ShopResultCode, ShopSell, Snapshot, TradeAccept,
   TradeCancel, TradeItem, TradeOffer, TradeRemove, TradeRequest, TradeRequestNotice, TradeResult, TradeResultCode,
   TradeSetGold, TradeState, Vec2, Welcome,
 } from '../protocol';
@@ -130,6 +130,41 @@ export interface CardTableView {
   turnTicksLeft: number;
   /** Seat index of the last game's winner, or null when there is none. */
   winnerSeat: number | null;
+  /** Per seat, as in seats: that player pressed Ready. */
+  ready: boolean[];
+}
+
+/** One table in the CardTableCatalog. */
+export interface CardTableInfoState {
+  id: number;
+  /** Number of seats at the table. */
+  seats: number;
+  /** Gold each seated player puts into the pot when a game starts. */
+  stake: number;
+}
+
+/** One Shed card; Wild and WildDrawFour have colour None. */
+export interface ShedCardValue {
+  colour: ShedColour;
+  symbol: ShedSymbol;
+}
+
+/** Public Shed state of one table; turn order and timer are in CardTableView. */
+export interface ShedPublicState {
+  tableId: number;
+  topCard: ShedCardValue;
+  /** The colour to match (the chosen colour after a Wild). */
+  colour: ShedColour;
+  /** Cards in each seat's hand, as in CardTableView.seats. */
+  handCounts: number[];
+  /** Cards left in the draw pile. */
+  drawPile: number;
+}
+
+/** The local player's own Shed hand. */
+export interface ShedHandState {
+  tableId: number;
+  cards: ShedCardValue[];
 }
 
 export type ServerMessage =
@@ -152,7 +187,10 @@ export type ServerMessage =
   | ({ type: 'tradeState' } & TradeView)
   | { type: 'tradeResult'; code: TradeResultCode }
   | ({ type: 'cardTableState' } & CardTableView)
-  | { type: 'cardTableResult'; code: CardTableResultCode };
+  | { type: 'cardTableResult'; code: CardTableResultCode }
+  | { type: 'cardTableCatalog'; tables: CardTableInfoState[] }
+  | ({ type: 'shedState' } & ShedPublicState)
+  | ({ type: 'shedHand' } & ShedHandState);
 
 function wrap(b: flatbuffers.Builder, type: Message, msg: flatbuffers.Offset): Uint8Array {
   b.finish(Envelope.createEnvelope(b, type, msg));
@@ -259,6 +297,27 @@ export function encodeCardTableSit(tableId: number): Uint8Array {
 export function encodeCardTableLeave(): Uint8Array {
   const b = new flatbuffers.Builder(16);
   return wrap(b, Message.CardTableLeave, CardTableLeave.createCardTableLeave(b));
+}
+
+/** Ready to start a game at the table you are seated at. */
+export function encodeCardTableReady(): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.CardTableReady, CardTableReady.createCardTableReady(b));
+}
+
+/** Play `card` from your hand; chosenColour is the colour to match next after a Wild or WildDrawFour. */
+export function encodeShedPlay(card: ShedCardValue, chosenColour: ShedColour = ShedColour.None): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  ShedPlay.startShedPlay(b);
+  ShedPlay.addCard(b, ShedCard.createShedCard(b, card.colour, card.symbol));
+  ShedPlay.addChosenColour(b, chosenColour);
+  return wrap(b, Message.ShedPlay, ShedPlay.endShedPlay(b));
+}
+
+/** Draw one card; the turn passes. */
+export function encodeShedDraw(): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.ShedDraw, ShedDraw.createShedDraw(b));
 }
 
 function tradeItems(len: number, at: (i: number, obj: TradeItem) => TradeItem | null): TradeItemState[] {
@@ -444,10 +503,46 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
         reversed: m.reversed(),
         turnTicksLeft: m.turnTicksLeft(),
         winnerSeat: m.hasWinner() ? m.winnerSeat() : null,
+        // A missing or short ready list means not ready.
+        ready: seats.map((_, i) => i < m.readyLength() && !!m.ready(i)),
       };
     }
     case Message.CardTableResult:
       return { type: 'cardTableResult', code: (env.msg(new CardTableResult()) as CardTableResult).code() };
+    case Message.CardTableCatalog: {
+      const m = env.msg(new CardTableCatalog()) as CardTableCatalog;
+      const tables: CardTableInfoState[] = [];
+      const t = new CardTableInfo();
+      for (let i = 0; i < m.tablesLength(); i++) {
+        m.tables(i, t);
+        tables.push({ id: t.id(), seats: t.seats(), stake: t.stake() });
+      }
+      return { type: 'cardTableCatalog', tables };
+    }
+    case Message.ShedState: {
+      const m = env.msg(new ShedState()) as ShedState;
+      const top = m.topCard();
+      const handCounts: number[] = [];
+      for (let i = 0; i < m.handCountsLength(); i++) handCounts.push(m.handCounts(i) ?? 0);
+      return {
+        type: 'shedState',
+        tableId: m.tableId(),
+        topCard: { colour: top?.colour() ?? ShedColour.None, symbol: top?.symbol() ?? ShedSymbol.Zero },
+        colour: m.colour(),
+        handCounts,
+        drawPile: m.drawPile(),
+      };
+    }
+    case Message.ShedHand: {
+      const m = env.msg(new ShedHand()) as ShedHand;
+      const cards: ShedCardValue[] = [];
+      const c = new ShedCard();
+      for (let i = 0; i < m.cardsLength(); i++) {
+        m.cards(i, c);
+        cards.push({ colour: c.colour(), symbol: c.symbol() });
+      }
+      return { type: 'shedHand', tableId: m.tableId(), cards };
+    }
     default:
       return null;
   }
