@@ -44,8 +44,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 10 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 10", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 11 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 11", ProtocolVersionCurrent)
 	}
 }
 
@@ -990,14 +990,15 @@ type cardTableState struct {
 	ticksLeft  uint32
 	hasWinner  bool
 	winnerSeat uint8
+	ready      []bool
 }
 
 func TestRoundTripCardTableState(t *testing.T) {
 	cases := []cardTableState{
 		// 4 seats, one empty, game over with a winner.
-		{7, []uint16{300, 0, 12, 65535}, false, 3, true, 0, true, 2},
-		{65535, []uint16{1, 2, 3, 4}, true, 1, false, 4294967295, false, 0},
-		{0, []uint16{0, 0}, false, 0, false, 0, false, 0},
+		{7, []uint16{300, 0, 12, 65535}, false, 3, true, 0, true, 2, []bool{true, false, false, true}},
+		{65535, []uint16{1, 2, 3, 4}, true, 1, false, 4294967295, false, 0, []bool{true, true, true, true}},
+		{0, []uint16{0, 0}, false, 0, false, 0, false, 0, []bool{false, false}},
 	}
 	for ci, w := range cases {
 		b := flatbuffers.NewBuilder(64)
@@ -1006,6 +1007,11 @@ func TestRoundTripCardTableState(t *testing.T) {
 			b.PrependUint16(w.seats[i])
 		}
 		seats := b.EndVector(len(w.seats))
+		CardTableStateStartReadyVector(b, len(w.ready))
+		for i := len(w.ready) - 1; i >= 0; i-- {
+			b.PrependBool(w.ready[i])
+		}
+		ready := b.EndVector(len(w.ready))
 		CardTableStateStart(b)
 		CardTableStateAddTableId(b, w.tableID)
 		CardTableStateAddSeats(b, seats)
@@ -1015,15 +1021,19 @@ func TestRoundTripCardTableState(t *testing.T) {
 		CardTableStateAddTurnTicksLeft(b, w.ticksLeft)
 		CardTableStateAddHasWinner(b, w.hasWinner)
 		CardTableStateAddWinnerSeat(b, w.winnerSeat)
+		CardTableStateAddReady(b, ready)
 		buf := finish(b, MessageCardTableState, CardTableStateEnd(b))
 
 		var m CardTableState
 		tbl := open(t, buf, MessageCardTableState)
 		m.Init(tbl.Bytes, tbl.Pos)
 		got := cardTableState{m.TableId(), nil, m.InProgress(), m.TurnSeat(), m.Reversed(),
-			m.TurnTicksLeft(), m.HasWinner(), m.WinnerSeat()}
+			m.TurnTicksLeft(), m.HasWinner(), m.WinnerSeat(), nil}
 		for i := 0; i < m.SeatsLength(); i++ {
 			got.seats = append(got.seats, m.Seats(i))
+		}
+		for i := 0; i < m.ReadyLength(); i++ {
+			got.ready = append(got.ready, m.Ready(i))
 		}
 		if !reflect.DeepEqual(got, w) {
 			t.Fatalf("case %d: got %+v, want %+v", ci, got, w)
@@ -1035,6 +1045,13 @@ func TestRoundTripCardTableResult(t *testing.T) {
 	codes := []CardTableResultCode{
 		CardTableResultCodeOk, CardTableResultCodeUnknownTable, CardTableResultCodeTableFull,
 		CardTableResultCodeAlreadySeated, CardTableResultCodeNotSeated, CardTableResultCodeInProgress,
+		CardTableResultCodeNotYourTurn, CardTableResultCodeIllegalMove, CardTableResultCodeNoGame,
+		CardTableResultCodeNotEnoughGold, CardTableResultCodeTooFar,
+	}
+	for i, code := range codes {
+		if int(code) != i {
+			t.Fatalf("%v = %d, want %d (new codes go at the end)", code, code, i)
+		}
 	}
 	if len(codes) != len(EnumNamesCardTableResultCode) {
 		t.Fatalf("CardTableResultCode has %d values, want %d", len(EnumNamesCardTableResultCode), len(codes))
@@ -1051,5 +1068,250 @@ func TestRoundTripCardTableResult(t *testing.T) {
 		if m.Code() != code {
 			t.Fatalf("code = %v, want %v", m.Code(), code)
 		}
+	}
+}
+
+// A CardTableState sent before this field existed has no ready list; new
+// code reads it as empty.
+func TestCardTableStateWithoutReady(t *testing.T) {
+	b := flatbuffers.NewBuilder(32)
+	CardTableStateStart(b)
+	CardTableStateAddTableId(b, 2)
+	buf := finish(b, MessageCardTableState, CardTableStateEnd(b))
+
+	var m CardTableState
+	tbl := open(t, buf, MessageCardTableState)
+	m.Init(tbl.Bytes, tbl.Pos)
+	if m.TableId() != 2 || m.ReadyLength() != 0 {
+		t.Fatalf("table id %d, ready length %d", m.TableId(), m.ReadyLength())
+	}
+}
+
+// New union members go at the end of Message, so older ids keep their values.
+func TestCardTableMessageIDs(t *testing.T) {
+	want := []Message{
+		MessageCardTableResult, MessageCardTableReady, MessageCardTableCatalog,
+		MessageShedPlay, MessageShedDraw, MessageShedState, MessageShedHand,
+	}
+	for i, m := range want {
+		if int(m) != 38+i {
+			t.Fatalf("%v = %d, want %d", m, m, 38+i)
+		}
+	}
+	if len(EnumNamesMessage) != 45 {
+		t.Fatalf("Message has %d values, want 45 (NONE plus 44 messages)", len(EnumNamesMessage))
+	}
+}
+
+func TestRoundTripCardTableReady(t *testing.T) {
+	b := flatbuffers.NewBuilder(32)
+	CardTableReadyStart(b)
+	buf := finish(b, MessageCardTableReady, CardTableReadyEnd(b))
+
+	var m CardTableReady
+	tbl := open(t, buf, MessageCardTableReady)
+	m.Init(tbl.Bytes, tbl.Pos)
+}
+
+type cardTableInfo struct {
+	id    uint16
+	seats uint8
+	stake uint32
+}
+
+func buildCardTableCatalog(tables []cardTableInfo) []byte {
+	b := flatbuffers.NewBuilder(64)
+	CardTableCatalogStartTablesVector(b, len(tables))
+	for i := len(tables) - 1; i >= 0; i-- {
+		CreateCardTableInfo(b, tables[i].id, tables[i].seats, tables[i].stake)
+	}
+	vec := b.EndVector(len(tables))
+	CardTableCatalogStart(b)
+	CardTableCatalogAddTables(b, vec)
+	return finish(b, MessageCardTableCatalog, CardTableCatalogEnd(b))
+}
+
+func TestRoundTripCardTableCatalog(t *testing.T) {
+	want := []cardTableInfo{{1, 2, 0}, {2, 4, 100}, {65535, 255, 4294967295}}
+	buf := buildCardTableCatalog(want)
+
+	var m CardTableCatalog
+	tbl := open(t, buf, MessageCardTableCatalog)
+	m.Init(tbl.Bytes, tbl.Pos)
+	var got []cardTableInfo
+	var info CardTableInfo
+	for i := 0; i < m.TablesLength(); i++ {
+		if !m.Tables(&info, i) {
+			t.Fatalf("table %d missing", i)
+		}
+		got = append(got, cardTableInfo{info.Id(), info.Seats(), info.Stake()})
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+// Each extra catalog table adds exactly 8 bytes, so CardTableInfo stays 8 bytes.
+func TestCardTableInfoIsEightBytes(t *testing.T) {
+	one := buildCardTableCatalog([]cardTableInfo{{1, 2, 3}})
+	two := buildCardTableCatalog([]cardTableInfo{{1, 2, 3}, {4, 5, 6}})
+	if d := len(two) - len(one); d != 8 {
+		t.Fatalf("one more table adds %d bytes, want 8", d)
+	}
+}
+
+func TestShedEnums(t *testing.T) {
+	if len(EnumNamesShedColour) != 5 || ShedColourNone != 0 || ShedColourFour != 4 {
+		t.Fatalf("ShedColour: %d values, None %d, Four %d", len(EnumNamesShedColour), ShedColourNone, ShedColourFour)
+	}
+	if len(EnumNamesShedSymbol) != 15 || ShedSymbolNine != 9 || ShedSymbolSkip != 10 ||
+		ShedSymbolReverse != 11 || ShedSymbolDrawTwo != 12 || ShedSymbolWild != 13 || ShedSymbolWildDrawFour != 14 {
+		t.Fatalf("ShedSymbol values changed: %v", EnumNamesShedSymbol)
+	}
+}
+
+type shedCard struct {
+	colour ShedColour
+	symbol ShedSymbol
+}
+
+func TestRoundTripShedPlay(t *testing.T) {
+	for _, w := range []struct {
+		card   shedCard
+		chosen ShedColour
+	}{
+		{shedCard{ShedColourOne, ShedSymbolSeven}, ShedColourNone},
+		{shedCard{ShedColourFour, ShedSymbolDrawTwo}, ShedColourNone},
+		{shedCard{ShedColourNone, ShedSymbolWild}, ShedColourThree},
+		{shedCard{ShedColourNone, ShedSymbolWildDrawFour}, ShedColourFour},
+	} {
+		b := flatbuffers.NewBuilder(32)
+		ShedPlayStart(b)
+		ShedPlayAddCard(b, CreateShedCard(b, w.card.colour, w.card.symbol))
+		ShedPlayAddChosenColour(b, w.chosen)
+		buf := finish(b, MessageShedPlay, ShedPlayEnd(b))
+
+		var m ShedPlay
+		tbl := open(t, buf, MessageShedPlay)
+		m.Init(tbl.Bytes, tbl.Pos)
+		c := m.Card(nil)
+		if c == nil {
+			t.Fatal("card missing")
+		}
+		if got := (shedCard{c.Colour(), c.Symbol()}); got != w.card || m.ChosenColour() != w.chosen {
+			t.Fatalf("got %+v %v, want %+v %v", got, m.ChosenColour(), w.card, w.chosen)
+		}
+	}
+}
+
+func TestRoundTripShedDraw(t *testing.T) {
+	b := flatbuffers.NewBuilder(32)
+	ShedDrawStart(b)
+	buf := finish(b, MessageShedDraw, ShedDrawEnd(b))
+
+	var m ShedDraw
+	tbl := open(t, buf, MessageShedDraw)
+	m.Init(tbl.Bytes, tbl.Pos)
+}
+
+type shedState struct {
+	tableID    uint16
+	top        shedCard
+	colour     ShedColour
+	handCounts []uint8
+	drawPile   uint8
+}
+
+func TestRoundTripShedState(t *testing.T) {
+	cases := []shedState{
+		{3, shedCard{ShedColourTwo, ShedSymbolZero}, ShedColourTwo, []uint8{7, 7}, 93},
+		{65535, shedCard{ShedColourNone, ShedSymbolWildDrawFour}, ShedColourFour, []uint8{1, 0, 12, 108}, 0},
+		{0, shedCard{ShedColourThree, ShedSymbolReverse}, ShedColourThree, []uint8{255, 255, 255}, 255},
+	}
+	for ci, w := range cases {
+		b := flatbuffers.NewBuilder(64)
+		counts := b.CreateByteVector(w.handCounts)
+		ShedStateStart(b)
+		ShedStateAddTableId(b, w.tableID)
+		ShedStateAddTopCard(b, CreateShedCard(b, w.top.colour, w.top.symbol))
+		ShedStateAddColour(b, w.colour)
+		ShedStateAddHandCounts(b, counts)
+		ShedStateAddDrawPile(b, w.drawPile)
+		buf := finish(b, MessageShedState, ShedStateEnd(b))
+
+		var m ShedState
+		tbl := open(t, buf, MessageShedState)
+		m.Init(tbl.Bytes, tbl.Pos)
+		c := m.TopCard(nil)
+		if c == nil {
+			t.Fatalf("case %d: top card missing", ci)
+		}
+		got := shedState{m.TableId(), shedCard{c.Colour(), c.Symbol()}, m.Colour(), nil, m.DrawPile()}
+		for i := 0; i < m.HandCountsLength(); i++ {
+			got.handCounts = append(got.handCounts, m.HandCounts(i))
+		}
+		if !reflect.DeepEqual(got, w) {
+			t.Fatalf("case %d: got %+v, want %+v", ci, got, w)
+		}
+	}
+}
+
+func buildShedHand(tableID uint16, cards []shedCard) []byte {
+	b := flatbuffers.NewBuilder(64)
+	ShedHandStartCardsVector(b, len(cards))
+	for i := len(cards) - 1; i >= 0; i-- {
+		CreateShedCard(b, cards[i].colour, cards[i].symbol)
+	}
+	vec := b.EndVector(len(cards))
+	ShedHandStart(b)
+	ShedHandAddTableId(b, tableID)
+	ShedHandAddCards(b, vec)
+	return finish(b, MessageShedHand, ShedHandEnd(b))
+}
+
+func TestRoundTripShedHand(t *testing.T) {
+	for ci, w := range [][]shedCard{
+		{
+			{ShedColourOne, ShedSymbolZero}, {ShedColourTwo, ShedSymbolNine}, {ShedColourThree, ShedSymbolSkip},
+			{ShedColourFour, ShedSymbolReverse}, {ShedColourOne, ShedSymbolDrawTwo},
+			{ShedColourNone, ShedSymbolWild}, {ShedColourNone, ShedSymbolWildDrawFour},
+		},
+		{{ShedColourFour, ShedSymbolFive}},
+		nil,
+	} {
+		buf := buildShedHand(uint16(ci+1), w)
+
+		var m ShedHand
+		tbl := open(t, buf, MessageShedHand)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.TableId() != uint16(ci+1) {
+			t.Fatalf("case %d: table id %d", ci, m.TableId())
+		}
+		var got []shedCard
+		var c ShedCard
+		for i := 0; i < m.CardsLength(); i++ {
+			if !m.Cards(&c, i) {
+				t.Fatalf("case %d: card %d missing", ci, i)
+			}
+			got = append(got, shedCard{c.Colour(), c.Symbol()})
+		}
+		if !reflect.DeepEqual(got, w) {
+			t.Fatalf("case %d: got %+v, want %+v", ci, got, w)
+		}
+	}
+}
+
+// Each extra card in a hand adds exactly 2 bytes, so ShedCard stays 2 bytes.
+func TestShedCardIsTwoBytes(t *testing.T) {
+	hand := func(n int) []byte {
+		cards := make([]shedCard, n)
+		for i := range cards {
+			cards[i] = shedCard{ShedColourOne, ShedSymbolOne}
+		}
+		return buildShedHand(1, cards)
+	}
+	// Compare two even counts so vector padding doesn't hide the size.
+	if d := len(hand(20)) - len(hand(10)); d != 20 {
+		t.Fatalf("ten more cards add %d bytes, want 20", d)
 	}
 }

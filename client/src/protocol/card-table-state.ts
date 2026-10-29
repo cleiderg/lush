@@ -72,8 +72,23 @@ winnerSeat():number {
   return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
 }
 
+ready(index: number):boolean|null {
+  const offset = this.bb!.__offset(this.bb_pos, 20);
+  return offset ? !!this.bb!.readInt8(this.bb!.__vector(this.bb_pos + offset) + index) : false;
+}
+
+readyLength():number {
+  const offset = this.bb!.__offset(this.bb_pos, 20);
+  return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
+}
+
+readyArray():Int8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 20);
+  return offset ? new Int8Array(this.bb!.bytes().buffer, this.bb!.bytes().byteOffset + this.bb!.__vector(this.bb_pos + offset), this.bb!.__vector_len(this.bb_pos + offset)) : null;
+}
+
 static startCardTableState(builder:flatbuffers.Builder) {
-  builder.startObject(8);
+  builder.startObject(9);
 }
 
 static addTableId(builder:flatbuffers.Builder, tableId:number) {
@@ -125,12 +140,28 @@ static addWinnerSeat(builder:flatbuffers.Builder, winnerSeat:number) {
   builder.addFieldInt8(7, winnerSeat, 0);
 }
 
+static addReady(builder:flatbuffers.Builder, readyOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(8, readyOffset, 0);
+}
+
+static createReadyVector(builder:flatbuffers.Builder, data:boolean[]):flatbuffers.Offset {
+  builder.startVector(1, data.length, 1);
+  for (let i = data.length - 1; i >= 0; i--) {
+    builder.addInt8(+data[i]!);
+  }
+  return builder.endVector();
+}
+
+static startReadyVector(builder:flatbuffers.Builder, numElems:number) {
+  builder.startVector(1, numElems, 1);
+}
+
 static endCardTableState(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createCardTableState(builder:flatbuffers.Builder, tableId:number, seatsOffset:flatbuffers.Offset, inProgress:boolean, turnSeat:number, reversed:boolean, turnTicksLeft:number, hasWinner:boolean, winnerSeat:number):flatbuffers.Offset {
+static createCardTableState(builder:flatbuffers.Builder, tableId:number, seatsOffset:flatbuffers.Offset, inProgress:boolean, turnSeat:number, reversed:boolean, turnTicksLeft:number, hasWinner:boolean, winnerSeat:number, readyOffset:flatbuffers.Offset):flatbuffers.Offset {
   CardTableState.startCardTableState(builder);
   CardTableState.addTableId(builder, tableId);
   CardTableState.addSeats(builder, seatsOffset);
@@ -140,6 +171,7 @@ static createCardTableState(builder:flatbuffers.Builder, tableId:number, seatsOf
   CardTableState.addTurnTicksLeft(builder, turnTicksLeft);
   CardTableState.addHasWinner(builder, hasWinner);
   CardTableState.addWinnerSeat(builder, winnerSeat);
+  CardTableState.addReady(builder, readyOffset);
   return CardTableState.endCardTableState(builder);
 }
 }

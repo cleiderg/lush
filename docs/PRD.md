@@ -95,7 +95,7 @@ Vertical (portrait) mobile browser layout, based on the interactive prototype:
 ### 5.2 Visual style (decided)
 
 - Low-poly, flat colors, no textures. Slim, OSRS-like character proportions.
-- Optional retro post-process: low internal resolution, dithering, grain, vignette.
+- Optional retro post-process: low internal resolution, dithering, grain, vignette. Off by default; players switch it with a Retro toggle in the HUD, remembered in the browser.
 
 ### 5.3 Core loop
 
@@ -268,7 +268,7 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 
 **Card tables** ([[card-tables]], stretch)
 - Table rules placeholders (seats 2 to 4, start when all seated players are Ready, 20 s turn timer, 3 missed turns forfeit, no house cut), tuned after playtests.
-- Table stake amounts (placeholders in server data), tuned after playtests.
+- Table stake amounts (placeholders: 10, 25, 50, 100 gold), tuned after playtests.
 
 **Client and art** ([[architecture]])
 - glTF model budgets per model type (placeholders from #82, enforced by the CI check in #86): `characters/` 1,500 triangles / 150 KB, `props/` 1,000 / 100 KB, `buildings/` 8,000 / 500 KB, anything else 3,000 / 200 KB. Tune after profiling on an iPhone 13.
