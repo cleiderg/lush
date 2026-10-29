@@ -1,8 +1,8 @@
-import type { EquipSlot, ItemActionKind } from '../protocol';
+import { type EquipSlot, type ItemActionKind, ShedColour } from '../protocol';
 import {
-  decode, encodeAttackTarget, encodeCardTableLeave, encodeCardTableSit, encodeChat, encodeHello, encodeItemAction, encodePickUp, encodeShopBuy, encodeShopSell,
-  encodeTradeAccept, encodeTradeCancel, encodeTradeOffer, encodeTradeRemove, encodeTradeRequest, encodeTradeSetGold,
-  type ServerMessage,
+  decode, encodeAttackTarget, encodeCardTableLeave, encodeCardTableReady, encodeCardTableSit, encodeChat, encodeHello, encodeItemAction, encodePickUp, encodeShedDraw, encodeShedPlay,
+  encodeShopBuy, encodeShopSell, encodeTradeAccept, encodeTradeCancel, encodeTradeOffer, encodeTradeRemove, encodeTradeRequest, encodeTradeSetGold,
+  type ServerMessage, type ShedCardValue,
 } from './codec';
 import type { Transport, TransportFactory } from './transport';
 
@@ -135,6 +135,21 @@ export class Session {
   /** Leave the card table you are seated at. */
   sendCardTableLeave(): void {
     this.send(encodeCardTableLeave());
+  }
+
+  /** Ready to start a game at the card table you are seated at. */
+  sendCardTableReady(): void {
+    this.send(encodeCardTableReady());
+  }
+
+  /** Play a Shed card; chosenColour is the colour to match next after a Wild. */
+  sendShedPlay(card: ShedCardValue, chosenColour: ShedColour = ShedColour.None): void {
+    this.send(encodeShedPlay(card, chosenColour));
+  }
+
+  /** Draw one Shed card; the turn passes. */
+  sendShedDraw(): void {
+    this.send(encodeShedDraw());
   }
 
   /** Sends a chat line; blank text is not sent. The server's echo puts it in the chat log. */
