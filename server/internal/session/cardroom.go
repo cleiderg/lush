@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/cardroom"
+	"github.com/cleiderg/lush/server/internal/systems/cardtable"
+	"github.com/cleiderg/lush/server/internal/systems/cardtable/shed"
 	"github.com/cleiderg/lush/server/internal/world"
 )
 
@@ -17,10 +20,105 @@ type potRef struct {
 }
 
 // SetCardRoom connects the card room, so that CommitCardRoom can report
-// results to it and a disconnected player is not removed while a stake,
-// payout or refund of theirs is being saved. The store must implement
-// store.CardPots. Call it before the world starts ticking.
+// results to it, a disconnected player is not removed while a stake, payout
+// or refund of theirs is being saved, a seated player's seat is marked
+// disconnected while they have no connection, and a seated player removed
+// after the logout time leaves their table (a forfeit mid-game; card-tables
+// spec, Table rules). The store must implement store.CardPots. Call it before
+// the world starts ticking.
 func (s *Server) SetCardRoom(c *cardroom.System) { s.cards = c }
+
+// cardResultCodes maps card room results to the wire's CardTableResultCode.
+// The rules module's reasons for rejecting a card all become IllegalMove, as
+// does a game that could not start. StakeFailed has no code: the
+// CardTableState that follows shows every Ready flag cleared.
+var cardResultCodes = map[cardroom.Result]protocol.CardTableResultCode{
+	cardroom.OK:            protocol.CardTableResultCodeOk,
+	cardroom.UnknownTable:  protocol.CardTableResultCodeUnknownTable,
+	cardroom.AlreadySeated: protocol.CardTableResultCodeAlreadySeated,
+	cardroom.TableFull:     protocol.CardTableResultCodeTableFull,
+	cardroom.InProgress:    protocol.CardTableResultCodeInProgress,
+	cardroom.NotSeated:     protocol.CardTableResultCodeNotSeated,
+	cardroom.NoGame:        protocol.CardTableResultCodeNoGame,
+	cardroom.NotYourTurn:   protocol.CardTableResultCodeNotYourTurn,
+	cardroom.NotInHand:     protocol.CardTableResultCodeIllegalMove,
+	cardroom.NoMatch:       protocol.CardTableResultCodeIllegalMove,
+	cardroom.BadColour:     protocol.CardTableResultCodeIllegalMove,
+	cardroom.IllegalMove:   protocol.CardTableResultCodeIllegalMove,
+	cardroom.StartFailed:   protocol.CardTableResultCodeIllegalMove,
+	cardroom.TooFar:        protocol.CardTableResultCodeTooFar,
+	cardroom.NotEnoughGold: protocol.CardTableResultCodeNotEnoughGold,
+}
+
+// sendCardResult sends r to player to as a CardTableResult, if they are
+// connected and r has a wire code.
+func (s *Server) sendCardResult(to world.PlayerID, r cardroom.Result) {
+	code, ok := cardResultCodes[r]
+	if !ok {
+		return
+	}
+	if g := s.live[to]; g != nil && g.conn != nil {
+		g.conn.Send(encodeCardTableResult(code))
+	}
+}
+
+// SitResult implements cardroom.Sink.
+func (s *Server) SitResult(to world.PlayerID, _ cardroom.TableID, _ cardtable.Seat, r cardroom.Result) {
+	s.sendCardResult(to, r)
+}
+
+// LeaveResult implements cardroom.Sink.
+func (s *Server) LeaveResult(to world.PlayerID, _ cardroom.TableID, r cardroom.Result) {
+	s.sendCardResult(to, r)
+}
+
+// ReadyResult implements cardroom.Sink.
+func (s *Server) ReadyResult(to world.PlayerID, _ cardroom.TableID, r cardroom.Result) {
+	s.sendCardResult(to, r)
+}
+
+// MoveResult implements cardroom.Sink: the result of a ShedPlay or ShedDraw.
+func (s *Server) MoveResult(to world.PlayerID, _ cardroom.TableID, r cardroom.Result) {
+	s.sendCardResult(to, r)
+}
+
+// StakeResult implements cardroom.Sink. Only NotEnoughGold, which unseats
+// the player, is sent as a CardTableResult; whether the game started (OK) or
+// the stakes failed to save shows in the CardTableState sent with it.
+func (s *Server) StakeResult(to world.PlayerID, _ cardroom.TableID, r cardroom.Result) {
+	if r == cardroom.NotEnoughGold {
+		s.sendCardResult(to, r)
+	}
+}
+
+// TableChanged implements cardroom.Sink. Every connected player with a view
+// gets the table's CardTableState. Once the table has had a Shed game, each
+// seated one also gets its ShedState and a ShedHand with only their own
+// cards (empty when no game is in progress); a player who just left gets
+// neither. Called on the tick goroutine.
+func (s *Server) TableChanged(id cardroom.TableID, snap cardroom.Snapshot, views []cardroom.PlayerView) {
+	var state, public []byte
+	for _, v := range views {
+		g := s.live[v.Player]
+		if g == nil || g.conn == nil {
+			continue
+		}
+		if state == nil {
+			state = encodeCardTableState(s.bld, id, snap)
+		}
+		g.conn.Send(state)
+		pub, ok := v.View.Public.(shed.PublicView)
+		if !v.View.Seated || !ok {
+			continue
+		}
+		if public == nil {
+			public = encodeShedState(s.bld, id, len(snap.Seats), pub)
+		}
+		g.conn.Send(public)
+		hand, _ := v.View.Private.([]shed.Card)
+		g.conn.Send(encodeShedHand(s.bld, id, hand))
+	}
+}
 
 // isCardRoom reports whether an economy event was recorded by the card room
 // for a gold movement CommitCardRoom already saved.
