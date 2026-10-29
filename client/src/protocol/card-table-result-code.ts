@@ -8,5 +8,10 @@ export enum CardTableResultCode {
   TableFull = 2,
   AlreadySeated = 3,
   NotSeated = 4,
-  InProgress = 5
+  InProgress = 5,
+  NotYourTurn = 6,
+  IllegalMove = 7,
+  NoGame = 8,
+  NotEnoughGold = 9,
+  TooFar = 10
 }

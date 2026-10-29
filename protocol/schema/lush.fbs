@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 10
+  Current = 11
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -394,11 +394,24 @@ table TradeResult {
   code: TradeResultCode;
 }
 
-// Card tables (D-016, docs/specs/card-tables.md). These messages are the
-// shared table system only: seats, turns, the turn timer and the winner.
-// They work for any game and never carry game-specific data (cards, hands,
-// moves or stakes); game state comes in a later, per-game message, and a
-// client is only ever sent its own cards.
+// Card tables (D-016, docs/specs/card-tables.md). The CardTable* messages
+// are the shared table system: the table catalog with stakes, seats, Ready,
+// turns, the turn timer and the winner. They work for any game and never
+// carry cards, hands or moves; each game has its own messages (Shed* below),
+// and a client is only ever sent its own cards.
+
+// One table inside CardTableCatalog. Packed to 8 bytes.
+struct CardTableInfo {
+  id: uint16;    // table id, as in CardTableSit.table_id
+  seats: uint8;  // number of seats at the table
+  stake: uint32; // gold each seated player puts into the pot when a game starts
+}
+
+// Server -> client: every card table with its seat count and stake, so the
+// stake can be shown before a player sits.
+table CardTableCatalog {
+  tables: [CardTableInfo];
+}
 
 // Client -> server: sit in the first free seat of a table. The server
 // replies with CardTableResult, and with CardTableState on success.
@@ -408,6 +421,13 @@ table CardTableSit {
 
 // Client -> server: leave the table you are seated at.
 table CardTableLeave {
+}
+
+// Client -> server: you are ready to start a game at the table you are
+// seated at. A game starts when at least 2 players are seated and all of
+// them are ready. The server replies with CardTableResult, and with
+// CardTableState on success.
+table CardTableReady {
 }
 
 // Server -> client: the public seat and turn state of one table, sent to
@@ -421,6 +441,7 @@ table CardTableState {
   turn_ticks_left: uint32; // world ticks until the turn times out
   has_winner: bool;        // the last game ended with a winner
   winner_seat: ubyte;      // seat index of the winner (has_winner only)
+  ready: [bool];           // per seat, as in seats: that player pressed Ready
 }
 
 // CardTableResult.code values.
@@ -430,12 +451,90 @@ enum CardTableResultCode : ubyte {
   TableFull = 2,      // every seat at the table is taken
   AlreadySeated = 3,  // you are already seated at a table
   NotSeated = 4,      // you are not seated at a table
-  InProgress = 5      // a game is in progress, so you can't sit or leave now
+  InProgress = 5,     // a game is in progress, so you can't sit or leave now
+  NotYourTurn = 6,    // the move was sent when it isn't your turn
+  IllegalMove = 7,    // the move breaks the game's rules (or names a card you don't hold)
+  NoGame = 8,         // no game is in progress at your table, so there is nothing to play
+  NotEnoughGold = 9,  // you don't have the gold for the table's stake
+  TooFar = 10         // you are too far from the table to sit at it
 }
 
-// Server -> client: the outcome of a CardTableSit or CardTableLeave.
+// Server -> client: the outcome of a CardTableSit, CardTableLeave,
+// CardTableReady or a game move (such as ShedPlay or ShedDraw).
 table CardTableResult {
   code: CardTableResultCode;
+}
+
+// Shed, the first card game (docs/specs/card-tables.md). A card is a
+// colour plus a symbol. Wild and WildDrawFour cards have colour None.
+
+// ShedCard.colour values. The client picks the campus-themed display names
+// and art for colours One to Four.
+enum ShedColour : ubyte {
+  None = 0,  // Wild and WildDrawFour cards
+  One = 1,
+  Two = 2,
+  Three = 3,
+  Four = 4
+}
+
+// ShedCard.symbol values. Zero to Nine are the number cards.
+enum ShedSymbol : ubyte {
+  Zero = 0,
+  One = 1,
+  Two = 2,
+  Three = 3,
+  Four = 4,
+  Five = 5,
+  Six = 6,
+  Seven = 7,
+  Eight = 8,
+  Nine = 9,
+  Skip = 10,
+  Reverse = 11,
+  DrawTwo = 12,
+  Wild = 13,
+  WildDrawFour = 14
+}
+
+// One Shed card. Packed to 2 bytes.
+struct ShedCard {
+  colour: ShedColour;
+  symbol: ShedSymbol;
+}
+
+// Client -> server: play a card from your hand on your turn. Identical
+// cards are interchangeable, so the card is named by value. For a Wild or
+// WildDrawFour, chosen_colour is the colour that must be matched next (not
+// None); for other cards it is ignored. The server replies with
+// CardTableResult, and on success sends new ShedState and ShedHand.
+table ShedPlay {
+  card: ShedCard;
+  chosen_colour: ShedColour;
+}
+
+// Client -> server: draw one card on your turn; the turn passes. The server
+// replies with CardTableResult, and on success sends new ShedState and
+// ShedHand.
+table ShedDraw {
+}
+
+// Server -> client: the public Shed state of one table, sent to everyone
+// seated at it whenever it changes. Turn order and the timer are in
+// CardTableState.
+table ShedState {
+  table_id: ushort;
+  top_card: ShedCard;      // the face-up top card of the discard pile
+  colour: ShedColour;      // the colour to match (the chosen colour after a Wild)
+  hand_counts: [ubyte];    // cards in each seat's hand, as in CardTableState.seats
+  draw_pile: ubyte;        // cards left in the draw pile
+}
+
+// Server -> client: the receiving player's own Shed hand. Sent only to
+// that player; other players' cards are never sent.
+table ShedHand {
+  table_id: ushort;
+  cards: [ShedCard];
 }
 
 union Message {
@@ -476,7 +575,13 @@ union Message {
   CardTableSit,
   CardTableLeave,
   CardTableState,
-  CardTableResult
+  CardTableResult,
+  CardTableReady,
+  CardTableCatalog,
+  ShedPlay,
+  ShedDraw,
+  ShedState,
+  ShedHand
 }
 
 table Envelope {

@@ -13,6 +13,11 @@ const (
 	CardTableResultCodeAlreadySeated CardTableResultCode = 3
 	CardTableResultCodeNotSeated     CardTableResultCode = 4
 	CardTableResultCodeInProgress    CardTableResultCode = 5
+	CardTableResultCodeNotYourTurn   CardTableResultCode = 6
+	CardTableResultCodeIllegalMove   CardTableResultCode = 7
+	CardTableResultCodeNoGame        CardTableResultCode = 8
+	CardTableResultCodeNotEnoughGold CardTableResultCode = 9
+	CardTableResultCodeTooFar        CardTableResultCode = 10
 )
 
 var EnumNamesCardTableResultCode = map[CardTableResultCode]string{
@@ -22,6 +27,11 @@ var EnumNamesCardTableResultCode = map[CardTableResultCode]string{
 	CardTableResultCodeAlreadySeated: "AlreadySeated",
 	CardTableResultCodeNotSeated:     "NotSeated",
 	CardTableResultCodeInProgress:    "InProgress",
+	CardTableResultCodeNotYourTurn:   "NotYourTurn",
+	CardTableResultCodeIllegalMove:   "IllegalMove",
+	CardTableResultCodeNoGame:        "NoGame",
+	CardTableResultCodeNotEnoughGold: "NotEnoughGold",
+	CardTableResultCodeTooFar:        "TooFar",
 }
 
 var EnumValuesCardTableResultCode = map[string]CardTableResultCode{
@@ -31,6 +41,11 @@ var EnumValuesCardTableResultCode = map[string]CardTableResultCode{
 	"AlreadySeated": CardTableResultCodeAlreadySeated,
 	"NotSeated":     CardTableResultCodeNotSeated,
 	"InProgress":    CardTableResultCodeInProgress,
+	"NotYourTurn":   CardTableResultCodeNotYourTurn,
+	"IllegalMove":   CardTableResultCodeIllegalMove,
+	"NoGame":        CardTableResultCodeNoGame,
+	"NotEnoughGold": CardTableResultCodeNotEnoughGold,
+	"TooFar":        CardTableResultCodeTooFar,
 }
 
 func (v CardTableResultCode) String() string {
