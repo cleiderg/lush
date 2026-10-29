@@ -7,6 +7,9 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 
 	"github.com/cleiderg/lush/server/internal/protocol"
+	"github.com/cleiderg/lush/server/internal/systems/cardroom"
+	"github.com/cleiderg/lush/server/internal/systems/cardtable"
+	"github.com/cleiderg/lush/server/internal/systems/cardtable/shed"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/grounditems"
 	"github.com/cleiderg/lush/server/internal/systems/items"
@@ -292,6 +295,10 @@ type message struct {
 	screen  uint8  // TradeAccept
 	target  uint16 // AttackTarget entity id
 	ground  uint16 // PickUp ground item id
+	// Card room messages.
+	tableID uint16     // CardTableSit
+	card    *shed.Card // ShedPlay; nil when the message names no card
+	chosen  shed.Colour
 }
 
 // gameSlots maps wire equipment slots to game data slots. EquipSlotNone is
@@ -303,13 +310,13 @@ var gameSlots = map[protocol.EquipSlot]gamedata.Slot{
 	protocol.EquipSlotShield: gamedata.SlotShield,
 }
 
-// command turns a decoded ItemAction, ShopBuy, ShopSell, trade or PickUp
-// message into the world command for player id. It returns nil for other
+// command turns a decoded ItemAction, ShopBuy, ShopSell, trade, PickUp, card
+// table or Shed message into the world command for player id. It returns nil for other
 // messages and for values the protocol doesn't define (an unknown action or
 // equipment slot, a trade request naming no player, an accept of a screen
-// other than 1 or 2, an offer of nothing, a pick-up of ground item 0); those
-// are ignored, not fatal. Everything else is checked
-// by the systems.
+// other than 1 or 2, an offer of nothing, a pick-up of ground item 0, a Shed
+// play naming no card); those are ignored, not fatal. Everything else is
+// checked by the systems.
 func (m message) command(id world.PlayerID) world.Command {
 	switch m.typ {
 	case protocol.MessageItemAction:
@@ -349,6 +356,18 @@ func (m message) command(id world.PlayerID) world.Command {
 		if m.ground != 0 {
 			return grounditems.PickUpCommand{Player: id, ID: grounditems.ID(m.ground)}
 		}
+	case protocol.MessageCardTableSit:
+		return cardroom.SitCommand{Player: id, TableID: cardroom.TableID(m.tableID)}
+	case protocol.MessageCardTableLeave:
+		return cardroom.LeaveCommand{Player: id}
+	case protocol.MessageCardTableReady:
+		return cardroom.ReadyCommand{Player: id, Ready: true}
+	case protocol.MessageShedPlay:
+		if m.card != nil {
+			return cardroom.PlayCommand{Player: id, Card: *m.card, Chosen: m.chosen}
+		}
+	case protocol.MessageShedDraw:
+		return cardroom.DrawCommand{Player: id}
 	}
 	return nil
 }
@@ -435,6 +454,19 @@ func decode(buf []byte) (m message, err error) {
 		var pu protocol.PickUp
 		pu.Init(tbl.Bytes, tbl.Pos)
 		m.ground = pu.GroundItemId()
+	case protocol.MessageCardTableSit:
+		var cs protocol.CardTableSit
+		cs.Init(tbl.Bytes, tbl.Pos)
+		m.tableID = cs.TableId()
+	case protocol.MessageCardTableLeave, protocol.MessageCardTableReady, protocol.MessageShedDraw:
+		// No fields.
+	case protocol.MessageShedPlay:
+		var sp protocol.ShedPlay
+		sp.Init(tbl.Bytes, tbl.Pos)
+		if c := sp.Card(nil); c != nil {
+			m.card = &shed.Card{Colour: shed.Colour(c.Colour()), Symbol: shed.Symbol(c.Symbol())}
+		}
+		m.chosen = shed.Colour(sp.ChosenColour())
 	}
 	return m, nil
 }
@@ -541,4 +573,90 @@ func encodeNpcCatalog(d *gamedata.Data) []byte {
 	protocol.NpcCatalogStart(b)
 	protocol.NpcCatalogAddNpcs(b, npcs)
 	return finish(b, protocol.MessageNpcCatalog, protocol.NpcCatalogEnd(b))
+}
+
+// encodeCardTableCatalog builds a CardTableCatalog of every card table in d,
+// in table order.
+func encodeCardTableCatalog(d *gamedata.Data) []byte {
+	b := flatbuffers.NewBuilder(64)
+	protocol.CardTableCatalogStartTablesVector(b, len(d.CardTables))
+	for i := len(d.CardTables) - 1; i >= 0; i-- {
+		c := d.CardTables[i]
+		protocol.CreateCardTableInfo(b, clampU16(int(c.ID)), clampU8(c.Seats), clampU32(c.Stake))
+	}
+	tables := b.EndVector(len(d.CardTables))
+	protocol.CardTableCatalogStart(b)
+	protocol.CardTableCatalogAddTables(b, tables)
+	return finish(b, protocol.MessageCardTableCatalog, protocol.CardTableCatalogEnd(b))
+}
+
+func encodeCardTableResult(code protocol.CardTableResultCode) []byte {
+	b := flatbuffers.NewBuilder(32)
+	protocol.CardTableResultStart(b)
+	protocol.CardTableResultAddCode(b, code)
+	return finish(b, protocol.MessageCardTableResult, protocol.CardTableResultEnd(b))
+}
+
+// encodeCardTableState builds table id's public seat and turn state. b is
+// reused across calls.
+func encodeCardTableState(b *flatbuffers.Builder, id cardroom.TableID, snap cardroom.Snapshot) []byte {
+	b.Reset()
+	protocol.CardTableStateStartReadyVector(b, len(snap.Seats))
+	for i := len(snap.Seats) - 1; i >= 0; i-- {
+		b.PrependBool(snap.Seats[i].Ready)
+	}
+	ready := b.EndVector(len(snap.Seats))
+	protocol.CardTableStateStartSeatsVector(b, len(snap.Seats))
+	for i := len(snap.Seats) - 1; i >= 0; i-- {
+		var ent uint16
+		if snap.Seats[i].Occupied {
+			ent = uint16(snap.Seats[i].Player)
+		}
+		b.PrependUint16(ent)
+	}
+	seats := b.EndVector(len(snap.Seats))
+	protocol.CardTableStateStart(b)
+	protocol.CardTableStateAddTableId(b, clampU16(int(id)))
+	protocol.CardTableStateAddSeats(b, seats)
+	protocol.CardTableStateAddInProgress(b, snap.InProgress)
+	protocol.CardTableStateAddTurnSeat(b, clampU8(int(snap.Turn)))
+	protocol.CardTableStateAddReversed(b, snap.Reversed)
+	protocol.CardTableStateAddTurnTicksLeft(b, uint32(min(snap.TicksLeft, math.MaxUint32)))
+	protocol.CardTableStateAddHasWinner(b, snap.HasWinner)
+	protocol.CardTableStateAddWinnerSeat(b, clampU8(int(snap.Winner)))
+	protocol.CardTableStateAddReady(b, ready)
+	return finish(b, protocol.MessageCardTableState, protocol.CardTableStateEnd(b))
+}
+
+// encodeShedState builds table id's public Shed state, with one hand count
+// per seat of a table with seats seats. b is reused across calls.
+func encodeShedState(b *flatbuffers.Builder, id cardroom.TableID, seats int, v shed.PublicView) []byte {
+	b.Reset()
+	protocol.ShedStateStartHandCountsVector(b, seats)
+	for i := seats - 1; i >= 0; i-- {
+		b.PrependByte(clampU8(v.HandCounts[cardtable.Seat(i)]))
+	}
+	counts := b.EndVector(seats)
+	protocol.ShedStateStart(b)
+	protocol.ShedStateAddTableId(b, clampU16(int(id)))
+	protocol.ShedStateAddTopCard(b, protocol.CreateShedCard(b, protocol.ShedColour(v.Top.Colour), protocol.ShedSymbol(v.Top.Symbol)))
+	protocol.ShedStateAddColour(b, protocol.ShedColour(v.Colour))
+	protocol.ShedStateAddHandCounts(b, counts)
+	protocol.ShedStateAddDrawPile(b, clampU8(v.DrawPile))
+	return finish(b, protocol.MessageShedState, protocol.ShedStateEnd(b))
+}
+
+// encodeShedHand builds one player's own Shed hand at table id. b is reused
+// across calls.
+func encodeShedHand(b *flatbuffers.Builder, id cardroom.TableID, hand []shed.Card) []byte {
+	b.Reset()
+	protocol.ShedHandStartCardsVector(b, len(hand))
+	for i := len(hand) - 1; i >= 0; i-- {
+		protocol.CreateShedCard(b, protocol.ShedColour(hand[i].Colour), protocol.ShedSymbol(hand[i].Symbol))
+	}
+	cards := b.EndVector(len(hand))
+	protocol.ShedHandStart(b)
+	protocol.ShedHandAddTableId(b, clampU16(int(id)))
+	protocol.ShedHandAddCards(b, cards)
+	return finish(b, protocol.MessageShedHand, protocol.ShedHandEnd(b))
 }

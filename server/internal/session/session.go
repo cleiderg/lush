@@ -161,7 +161,7 @@ type op struct {
 }
 
 // Server is the session layer. It implements world.System, chat.Sink,
-// shop.Sink, trade.Sink, trade.Committer, cardroom.Committer, pvp.HitSink, pvp.DropSink,
+// shop.Sink, trade.Sink, trade.Committer, cardroom.Sink, cardroom.Committer, pvp.HitSink, pvp.DropSink,
 // combat.EventSink and transport.Handler (via ServeConn).
 type Server struct {
 	cfg   Config
@@ -173,6 +173,7 @@ type Server struct {
 
 	catalog  []byte                 // encoded ItemCatalog, shared by every connection
 	npcCat   []byte                 // encoded NpcCatalog, shared by every connection
+	cardCat  []byte                 // encoded CardTableCatalog, shared by every connection
 	newToken func() (string, error) // replaced by tests
 
 	mu     sync.Mutex
@@ -246,7 +247,7 @@ func New(cfg Config, w *world.World, clock world.Clock, players store.Players, l
 		data = d
 	}
 	return &Server{saver: newSaver(players, log), cfg: cfg, w: w, log: log, clock: clock, store: players,
-		data: data, catalog: encodeItemCatalog(data), npcCat: encodeNpcCatalog(data), newToken: newToken,
+		data: data, catalog: encodeItemCatalog(data), npcCat: encodeNpcCatalog(data), cardCat: encodeCardTableCatalog(data), newToken: newToken,
 		pots: map[cardroom.CommitID]*potRef{}, guests: map[int64]*guest{}, idle: list.New(), conns: map[transport.Conn]struct{}{},
 		live: map[world.PlayerID]*guest{}, gone: map[world.PlayerID]*guest{}, grid: interest.NewGrid(), npcsIn: map[world.PlayerID]uint64{}, bld: flatbuffers.NewBuilder(1024)}
 }
@@ -334,7 +335,8 @@ func (s *Server) ServeConn(c transport.Conn) {
 		case protocol.MessageItemAction, protocol.MessageShopBuy, protocol.MessageShopSell,
 			protocol.MessageTradeRequest, protocol.MessageTradeOffer, protocol.MessageTradeRemove,
 			protocol.MessageTradeSetGold, protocol.MessageTradeAccept, protocol.MessageTradeCancel,
-			protocol.MessagePickUp:
+			protocol.MessagePickUp, protocol.MessageCardTableSit, protocol.MessageCardTableLeave,
+			protocol.MessageCardTableReady, protocol.MessageShedPlay, protocol.MessageShedDraw:
 			if cmd := m.command(g.id); cmd != nil {
 				s.w.Enqueue(cmd)
 			}
@@ -801,7 +803,8 @@ func (s *Server) inView(id world.PlayerID) bool {
 }
 
 func (s *Server) join(g *guest, c transport.Conn, token string) {
-	if g.conn != nil && g.conn != c {
+	tookOver := g.conn != nil && g.conn != c
+	if tookOver {
 		go g.conn.Close() // same token reconnected: replace the old connection
 	}
 	g.conn = c
@@ -815,6 +818,16 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 		delete(s.gone, g.id)
 		c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate, s.cfg.MoveSpeed, s.cfg.RunSpeed))
 		s.sendInitial(g, p)
+		if s.cards != nil {
+			if tookOver {
+				// The old connection's leave will be ignored, so mark the
+				// seat here: the reconnect below must still change it.
+				s.cards.Handle(cardroom.DisconnectCommand{Player: g.id}, p)
+			}
+			// Clears the seat's disconnected mark; the table's state goes
+			// out to everyone seated, this player included.
+			s.cards.Handle(cardroom.ReconnectCommand{Player: g.id}, p)
+		}
 		return
 	}
 	s.mu.Lock()
@@ -833,11 +846,12 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 	s.log.Info("player joined", "player", g.id, "transport", "websocket")
 }
 
-// sendInitial sends a newly connected client the item catalog and NPC
-// catalog, then the player's stats and inventory.
+// sendInitial sends a newly connected client the item, NPC and card table
+// catalogs, then the player's stats and inventory.
 func (s *Server) sendInitial(g *guest, p *world.Player) {
 	g.conn.Send(s.catalog)
 	g.conn.Send(s.npcCat)
+	g.conn.Send(s.cardCat)
 	g.sentStats = statsOf(s.data.Rules, p)
 	g.conn.Send(encodePlayerStats(s.bld, g.sentStats))
 	g.sentInv = cloneInventory(p.Inv)
@@ -869,6 +883,9 @@ func (s *Server) leave(g *guest, c transport.Conn) {
 	g.conn = nil
 	g.goneAt = s.clock.Now()
 	s.gone[g.id] = g
+	if p := s.w.Player(g.id); p != nil && s.cards != nil {
+		s.cards.Handle(cardroom.DisconnectCommand{Player: g.id}, p)
+	}
 	s.log.Info("player disconnected", "player", g.id)
 }
 
@@ -881,6 +898,10 @@ func (s *Server) remove(g *guest) {
 	req := saveReq{storeID: g.storeID, x: g.pos.X, z: g.pos.Y, xp: int64(g.xp), ver: g.ver}
 	s.mu.Unlock()
 	if p := s.w.Player(g.id); p != nil {
+		if s.cards != nil {
+			// A seated player leaves their table: mid-game a forfeit.
+			s.cards.Handle(cardroom.LeaveCommand{Player: g.id}, p)
+		}
 		s.saver.submitEconomy(s.appendEconomy(nil, g, p)...)
 	}
 	s.saver.submit([]saveReq{req})
