@@ -4,9 +4,11 @@
 # Cloudflare Pages. Skips each half until that part of the repo exists.
 #
 # Repository secrets: DEPLOY_SSH_KEY, DEPLOY_HOST, DEPLOY_USER,
-#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, DISCORD_WEBHOOK_URL
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, DISCORD_WEBHOOK_URL,
+#   SENTRY_AUTH_TOKEN
 # Repository variables: CLOUDFLARE_PAGES_PROJECT,
-#   STAGING_SERVER_URL, PRODUCTION_SERVER_URL (wss://.../ws, baked into the client)
+#   STAGING_SERVER_URL, PRODUCTION_SERVER_URL (wss://.../ws, baked into the client),
+#   SENTRY_CLIENT_DSN, SENTRY_ORG, SENTRY_CLIENT_PROJECT
 name: deploy
 
 on:
@@ -95,7 +97,17 @@ jobs:
         env:
           VITE_SERVER_URL: ${{ inputs.environment == 'production' && vars.PRODUCTION_SERVER_URL || vars.STAGING_SERVER_URL }}
           VITE_RELEASE: ${{ inputs.sha }}
+          VITE_SENTRY_DSN: ${{ vars.SENTRY_CLIENT_DSN }}
+          VITE_SENTRY_ENVIRONMENT: ${{ inputs.environment }}
         run: npm ci && npm run build
+      # Uploads the hidden source maps and deletes them from dist, so Pages never serves them.
+      - name: Upload source maps to Sentry
+        if: steps.has.outputs.client == 'true'
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_CLIENT_PROJECT }}
+        run: make sentry-sourcemaps SENTRY_DIST=client/dist SENTRY_RELEASE=${{ inputs.sha }}
       - name: Publish client to Cloudflare Pages
         if: steps.has.outputs.client == 'true'
         working-directory: client
