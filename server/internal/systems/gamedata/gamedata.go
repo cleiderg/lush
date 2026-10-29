@@ -1,5 +1,5 @@
 // Package gamedata loads the Phase 1 gameplay tables (items, NPC types, the
-// shop list and rule constants) from embedded JSON files and validates them.
+// shop list, rule constants and the card tables) from embedded JSON files and validates them.
 //
 // Every number comes from docs/specs/gameplay.md and is a placeholder to tune
 // after playtests (D-047, PRD 13). Systems read the numbers from here instead
@@ -25,6 +25,8 @@ const (
 	NPCsFile  = "npcs.json"
 	ShopFile  = "shop.json"
 	RulesFile = "rules.json"
+	// CardTablesFile lists the card room's tables (docs/specs/card-tables.md).
+	CardTablesFile = "cardtables.json"
 )
 
 // ItemID identifies an item type. 0 is never a valid id.
@@ -197,12 +199,33 @@ func (r Rules) LogoutCombatLock() time.Duration { return seconds(r.LogoutCombatL
 
 func seconds(n int) time.Duration { return time.Duration(n) * time.Second }
 
+// Card table seat limits (docs/specs/card-tables.md: 2 to 4 seats).
+const (
+	MinCardTableSeats = 2
+	MaxCardTableSeats = 4
+)
+
+// CardTableID identifies a card table. 0 is never a valid id.
+type CardTableID uint32
+
+// CardTable is one table in the card room. Its game is Shed.
+type CardTable struct {
+	ID               CardTableID `json:"id"`
+	Seats            int         `json:"seats"`
+	TurnTimerSeconds int         `json:"turn_timer_s"`
+}
+
+// TurnTimer is how long a seat has to move before its turn times out.
+func (c CardTable) TurnTimer() time.Duration { return seconds(c.TurnTimerSeconds) }
+
 // Data is the loaded, validated set of tables. Treat it as read-only.
 type Data struct {
 	Items []Item
 	NPCs  []NPCType
 	Shop  Shop
 	Rules Rules
+	// CardTables are the card room's tables, in file order.
+	CardTables []CardTable
 
 	itemByID  map[ItemID]int
 	itemByKey map[string]int
@@ -263,14 +286,15 @@ func Default() (*Data, error) {
 	return Load(sub)
 }
 
-// Load reads items.json, npcs.json, shop.json and rules.json from fsys and
+// Load reads items.json, npcs.json, shop.json, rules.json and
+// cardtables.json from fsys and
 // validates them. Unknown fields are rejected.
 func Load(fsys fs.FS) (*Data, error) {
 	d := &Data{}
 	for _, f := range []struct {
 		name string
 		v    any
-	}{{ItemsFile, &d.Items}, {NPCsFile, &d.NPCs}, {ShopFile, &d.Shop}, {RulesFile, &d.Rules}} {
+	}{{ItemsFile, &d.Items}, {NPCsFile, &d.NPCs}, {ShopFile, &d.Shop}, {RulesFile, &d.Rules}, {CardTablesFile, &d.CardTables}} {
 		if err := decode(fsys, f.name, f.v); err != nil {
 			return nil, err
 		}
@@ -435,6 +459,29 @@ func (d *Data) index() error {
 			return fmt.Errorf("gamedata: %s: starting kit item %q needs a quantity of at least 1", RulesFile, s.ItemKey)
 		}
 		s.Item = id
+	}
+	return d.validateCardTables()
+}
+
+// validateCardTables checks every card table has a unique non-zero id, 2 to 4
+// seats and a positive turn timer.
+func (d *Data) validateCardTables() error {
+	seen := map[CardTableID]bool{}
+	for _, c := range d.CardTables {
+		where := fmt.Sprintf("%s: table %d", CardTablesFile, c.ID)
+		if c.ID == 0 {
+			return fmt.Errorf("gamedata: %s: id must be at least 1", where)
+		}
+		if seen[c.ID] {
+			return fmt.Errorf("gamedata: %s: duplicate id %d", where, c.ID)
+		}
+		seen[c.ID] = true
+		if c.Seats < MinCardTableSeats || c.Seats > MaxCardTableSeats {
+			return fmt.Errorf("gamedata: %s: seats %d must be %d to %d", where, c.Seats, MinCardTableSeats, MaxCardTableSeats)
+		}
+		if c.TurnTimerSeconds <= 0 {
+			return fmt.Errorf("gamedata: %s: turn_timer_s %d must be positive", where, c.TurnTimerSeconds)
+		}
 	}
 	return nil
 }
