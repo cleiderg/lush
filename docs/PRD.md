@@ -95,7 +95,7 @@ Vertical (portrait) mobile browser layout, based on the interactive prototype:
 ### 5.2 Visual style (decided)
 
 - Low-poly, flat colors, no textures. Slim, OSRS-like character proportions.
-- Optional retro post-process: low internal resolution, dithering, grain, vignette.
+- Optional retro post-process: low internal resolution, dithering, grain, vignette. Off by default; players switch it with a Retro toggle in the HUD, remembered in the browser.
 
 ### 5.3 Core loop
 
