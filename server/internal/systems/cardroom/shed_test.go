@@ -55,9 +55,15 @@ func newRoom(t *testing.T) *room {
 // roomGold is the gold each player in a room starts with.
 const roomGold = 1000
 
-// run enqueues cmds and runs one world tick.
+// run enqueues cmds and runs one world tick. A player who sits is first
+// moved to the table's centre, so the sit is in reach.
 func (r *room) run(cmds ...world.Command) {
 	for _, c := range cmds {
+		if sit, ok := c.(SitCommand); ok {
+			if pos, ok := r.sys.Position(sit.TableID); ok {
+				r.world.Player(sit.Player).Pos = pos
+			}
+		}
 		r.world.Enqueue(c)
 	}
 	r.world.Tick()
@@ -193,6 +199,10 @@ func TestFromDataRejectsBadInput(t *testing.T) {
 		{"nil sink", good, time.Millisecond, nil, "sink is nil"},
 		{"no seats", &gamedata.Data{CardTables: []gamedata.CardTable{{ID: 1, Seats: 0, TurnTimerSeconds: 1}}},
 			time.Millisecond, &fakeSink{}, "table 1"},
+		{"table without position", &gamedata.Data{CardTables: []gamedata.CardTable{{ID: 9, Seats: 2, TurnTimerSeconds: 1}}},
+			time.Millisecond, &fakeSink{}, "table 9 has no position"},
+		{"position without table", &gamedata.Data{CardTables: []gamedata.CardTable{{ID: 1, Seats: 2, TurnTimerSeconds: 1}}},
+			time.Millisecond, &fakeSink{}, "4 table positions for 1 card tables"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

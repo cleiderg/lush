@@ -203,11 +203,11 @@ func TestNewRejectsBadInput(t *testing.T) {
 		sink      Sink
 		committer Committer
 	}{
-		{"nil sink", []Entry{{1, tb, 0}}, nil, nil},
-		{"nil table", []Entry{{1, nil, 0}}, &fakeSink{}, nil},
-		{"duplicate id", []Entry{{1, tb, 0}, {1, tb, 0}}, &fakeSink{}, nil},
-		{"negative stake", []Entry{{1, tb, -1}}, &fakeSink{}, &fakeCommitter{}},
-		{"stake without committer", []Entry{{1, tb, 10}}, &fakeSink{}, nil},
+		{"nil sink", []Entry{{ID: 1, Table: tb}}, nil, nil},
+		{"nil table", []Entry{{ID: 1}}, &fakeSink{}, nil},
+		{"duplicate id", []Entry{{ID: 1, Table: tb}, {ID: 1, Table: tb}}, &fakeSink{}, nil},
+		{"negative stake", []Entry{{ID: 1, Table: tb, Stake: -1}}, &fakeSink{}, &fakeCommitter{}},
+		{"stake without committer", []Entry{{ID: 1, Table: tb, Stake: 10}}, &fakeSink{}, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
