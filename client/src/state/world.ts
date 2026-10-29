@@ -102,6 +102,12 @@ export class GameState {
       this.cardTables.setState(msg, this.playerId);
     } else if (msg.type === 'cardTableResult') {
       this.cardTables.setResult(msg.code);
+    } else if (msg.type === 'cardTableCatalog') {
+      this.cardTables.setCatalog(msg.tables);
+    } else if (msg.type === 'shedState') {
+      this.cardTables.setShedState(msg);
+    } else if (msg.type === 'shedHand') {
+      this.cardTables.setHand(msg);
     } else if (msg.type === 'combatHit') {
       this.hits.push(msg.tick, msg.hits);
     } else if (msg.type === 'chat') {

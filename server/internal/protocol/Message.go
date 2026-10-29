@@ -46,6 +46,12 @@ const (
 	MessageCardTableLeave     Message = 36
 	MessageCardTableState     Message = 37
 	MessageCardTableResult    Message = 38
+	MessageCardTableReady     Message = 39
+	MessageCardTableCatalog   Message = 40
+	MessageShedPlay           Message = 41
+	MessageShedDraw           Message = 42
+	MessageShedState          Message = 43
+	MessageShedHand           Message = 44
 )
 
 var EnumNamesMessage = map[Message]string{
@@ -88,6 +94,12 @@ var EnumNamesMessage = map[Message]string{
 	MessageCardTableLeave:     "CardTableLeave",
 	MessageCardTableState:     "CardTableState",
 	MessageCardTableResult:    "CardTableResult",
+	MessageCardTableReady:     "CardTableReady",
+	MessageCardTableCatalog:   "CardTableCatalog",
+	MessageShedPlay:           "ShedPlay",
+	MessageShedDraw:           "ShedDraw",
+	MessageShedState:          "ShedState",
+	MessageShedHand:           "ShedHand",
 }
 
 var EnumValuesMessage = map[string]Message{
@@ -130,6 +142,12 @@ var EnumValuesMessage = map[string]Message{
 	"CardTableLeave":     MessageCardTableLeave,
 	"CardTableState":     MessageCardTableState,
 	"CardTableResult":    MessageCardTableResult,
+	"CardTableReady":     MessageCardTableReady,
+	"CardTableCatalog":   MessageCardTableCatalog,
+	"ShedPlay":           MessageShedPlay,
+	"ShedDraw":           MessageShedDraw,
+	"ShedState":          MessageShedState,
+	"ShedHand":           MessageShedHand,
 }
 
 func (v Message) String() string {
