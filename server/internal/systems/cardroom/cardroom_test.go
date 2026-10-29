@@ -56,6 +56,8 @@ type fakeSink struct {
 	sits    []sitResult
 	leaves  []leaveResult
 	changes []change
+	readies []leaveResult
+	moves   []leaveResult
 }
 
 func (f *fakeSink) SitResult(to world.PlayerID, id TableID, seat cardtable.Seat, r Result) {
@@ -68,7 +70,14 @@ func (f *fakeSink) TableChanged(id TableID, snap Snapshot, views []PlayerView) {
 	f.changes = append(f.changes, change{id, snap, views})
 }
 
-func (f *fakeSink) reset() { f.sits, f.leaves, f.changes = nil, nil, nil }
+func (f *fakeSink) ReadyResult(to world.PlayerID, id TableID, r Result) {
+	f.readies = append(f.readies, leaveResult{to, id, r})
+}
+func (f *fakeSink) MoveResult(to world.PlayerID, id TableID, r Result) {
+	f.moves = append(f.moves, leaveResult{to, id, r})
+}
+
+func (f *fakeSink) reset() { f.sits, f.leaves, f.changes, f.readies, f.moves = nil, nil, nil, nil, nil }
 
 type spec struct {
 	id      TableID
@@ -324,7 +333,7 @@ func TestLeaveMidGameForfeits(t *testing.T) {
 	if snap.InProgress || !snap.HasWinner || snap.Winner != 1 {
 		t.Errorf("snapshot %+v, want game over with winner seat 1", snap)
 	}
-	if !reflect.DeepEqual(snap.Seats, []SeatInfo{{}, {true, 2}}) {
+	if !reflect.DeepEqual(snap.Seats, []SeatInfo{{}, {Occupied: true, Player: 2}}) {
 		t.Errorf("seats %v, want only player 2 seated", snap.Seats)
 	}
 }
@@ -342,7 +351,7 @@ func TestSitAndLeaveSucceed(t *testing.T) {
 	if len(f.sink.changes) != 2 {
 		t.Fatalf("got %d table changes, want 2", len(f.sink.changes))
 	}
-	if got := f.sink.changes[0].snap.Seats; !reflect.DeepEqual(got, []SeatInfo{{true, 8}, {}, {}}) {
+	if got := f.sink.changes[0].snap.Seats; !reflect.DeepEqual(got, []SeatInfo{{Occupied: true, Player: 8}, {}, {}}) {
 		t.Errorf("after sit seats = %v", got)
 	}
 	if got := f.sink.changes[1].snap.Seats; !reflect.DeepEqual(got, []SeatInfo{{}, {}, {}}) {
@@ -381,7 +390,7 @@ func TestTurnPassesAfterTimeout(t *testing.T) {
 	}
 	c := f.sink.changes[0]
 	want := Snapshot{
-		Seats:      []SeatInfo{{true, 1}, {true, 2}, {}},
+		Seats:      []SeatInfo{{Occupied: true, Player: 1}, {Occupied: true, Player: 2}, {}},
 		InProgress: true,
 		Turn:       1,
 		TicksLeft:  timeout,
