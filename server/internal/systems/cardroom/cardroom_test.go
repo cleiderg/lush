@@ -17,10 +17,11 @@ type stubRules struct {
 	timeouts []cardtable.Seat
 	over     bool
 	winner   cardtable.Seat
+	startErr error // returned by Start
 }
 
 func (r *stubRules) MinPlayers() int                  { return 2 }
-func (r *stubRules) Start([]cardtable.Seat) error     { r.over = false; return nil }
+func (r *stubRules) Start([]cardtable.Seat) error     { r.over = false; return r.startErr }
 func (r *stubRules) PublicView() any                  { return "public" }
 func (r *stubRules) PrivateView(s cardtable.Seat) any { return fmt.Sprintf("hand-%d", s) }
 func (r *stubRules) Over() (cardtable.Seat, bool)     { return r.winner, r.over }
@@ -197,7 +198,7 @@ func TestNewRejectsBadInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	tests := []struct {
-		name    string
+		name      string
 		entries   []Entry
 		sink      Sink
 		committer Committer
