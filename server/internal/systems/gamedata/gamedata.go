@@ -213,6 +213,9 @@ type CardTable struct {
 	ID               CardTableID `json:"id"`
 	Seats            int         `json:"seats"`
 	TurnTimerSeconds int         `json:"turn_timer_s"`
+	// Stake is the gold each seated player puts into the pot when a game
+	// starts (placeholder amounts, PRD 13 Q2). 0 is a table without stakes.
+	Stake int `json:"stake"`
 }
 
 // TurnTimer is how long a seat has to move before its turn times out.
@@ -464,7 +467,7 @@ func (d *Data) index() error {
 }
 
 // validateCardTables checks every card table has a unique non-zero id, 2 to 4
-// seats and a positive turn timer.
+// seats, a positive turn timer and a stake that is not negative.
 func (d *Data) validateCardTables() error {
 	seen := map[CardTableID]bool{}
 	for _, c := range d.CardTables {
@@ -481,6 +484,9 @@ func (d *Data) validateCardTables() error {
 		}
 		if c.TurnTimerSeconds <= 0 {
 			return fmt.Errorf("gamedata: %s: turn_timer_s %d must be positive", where, c.TurnTimerSeconds)
+		}
+		if c.Stake < 0 {
+			return fmt.Errorf("gamedata: %s: stake %d must not be negative", where, c.Stake)
 		}
 	}
 	return nil
