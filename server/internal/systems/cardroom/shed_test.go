@@ -14,11 +14,14 @@ import (
 )
 
 // room is the card room built from the shipped game data, registered in a
-// world whose players 1 to 9 exist, so commands can go through the queue.
+// world whose players 1 to 9 exist, each carrying roomGold, so commands can go
+// through the queue. Its committer saves every request straight away unless
+// commit.auto is cleared.
 type room struct {
-	sys   *System
-	sink  *fakeSink
-	world *world.World
+	sys    *System
+	sink   *fakeSink
+	commit *fakeCommitter
+	world  *world.World
 	// lastTurn is the player whose turn it was before the latest command
 	// under test.
 	lastTurn world.PlayerID
@@ -30,21 +33,27 @@ func newRoom(t *testing.T) *room {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &room{sink: &fakeSink{}, world: world.New(world.DefaultConfig())}
-	r.sys, err = FromData(data, r.world.TickInterval(), r.sink)
+	r := &room{sink: &fakeSink{}, commit: &fakeCommitter{auto: true}, world: world.New(world.DefaultConfig())}
+	r.sys, err = FromData(data, r.world.TickInterval(), r.sink, r.commit)
 	if err != nil {
 		t.Fatalf("FromData: %v", err)
 	}
+	r.commit.sys = r.sys
 	if err := r.world.Register(r.sys); err != nil {
 		t.Fatal(err)
 	}
 	for p := world.PlayerID(1); p <= 9; p++ {
-		if err := r.world.AddPlayer(&world.Player{ID: p}); err != nil {
+		inv := world.NewInventory(data)
+		inv.Gold = roomGold
+		if err := r.world.AddPlayer(&world.Player{ID: p, Inv: inv}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	return r
 }
+
+// roomGold is the gold each player in a room starts with.
+const roomGold = 1000
 
 // run enqueues cmds and runs one world tick. A player who sits is first
 // moved to the table's centre, so the sit is in reach.
@@ -77,7 +86,8 @@ func (r *room) lastChange(t *testing.T) change {
 	return r.sink.changes[len(r.sink.changes)-1]
 }
 
-// start seats players at table 1 and readies them all on one tick.
+// start seats players at table 1, readies them all on one tick and runs
+// one more tick, in which the saved stakes start the game.
 func (r *room) start(t *testing.T, players ...world.PlayerID) {
 	t.Helper()
 	var cmds []world.Command
@@ -90,6 +100,7 @@ func (r *room) start(t *testing.T, players ...world.PlayerID) {
 		cmds = append(cmds, ReadyCommand{Player: p, Ready: true})
 	}
 	r.run(cmds...)
+	r.run()
 	if !r.table(t, 1).InProgress() {
 		t.Fatal("game did not start")
 	}
@@ -165,7 +176,7 @@ func TestFromDataBuildsShedTables(t *testing.T) {
 	public(t, tb.View(1)) // Shed is the rules module
 	// 20 s at 20 Hz is 400 ticks.
 	d, _ := tb.Deadline()
-	if want := r.world.TickCount() - 1 + 400; d != want {
+	if want := r.world.TickCount() + 400; d != want {
 		t.Errorf("deadline %d, want %d (a 400-tick turn timer)", d, want)
 	}
 }
@@ -182,6 +193,7 @@ func TestFromDataRejectsBadInput(t *testing.T) {
 		sink     Sink
 		wantErr  string
 	}{
+		{"nil committer", good, time.Millisecond, &fakeSink{}, "committer is nil"},
 		{"nil data", nil, time.Millisecond, &fakeSink{}, "game data is nil"},
 		{"zero interval", good, 0, &fakeSink{}, "tick interval"},
 		{"nil sink", good, time.Millisecond, nil, "sink is nil"},
@@ -194,7 +206,11 @@ func TestFromDataRejectsBadInput(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := FromData(tt.data, tt.interval, tt.sink)
+			c := Committer(&fakeCommitter{})
+			if tt.wantErr == "committer is nil" {
+				c = nil
+			}
+			_, err := FromData(tt.data, tt.interval, tt.sink, c)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Errorf("error = %v, want it to contain %q", err, tt.wantErr)
 			}
@@ -228,6 +244,7 @@ func TestReadyStartsGame(t *testing.T) {
 				cmds = append(cmds, ReadyCommand{Player: p, Ready: true})
 			}
 			r.run(cmds...)
+			r.run() // applies the saved stakes
 			tick := r.world.TickCount()
 			for _, res := range r.sink.readies {
 				if res.r != OK || res.id != 1 {
@@ -246,9 +263,9 @@ func TestReadyStartsGame(t *testing.T) {
 				t.Errorf("snapshot ready flags %v, want %v", ready, tt.wantReady)
 			}
 			if tt.wantStart {
-				// Started on the tick the last Ready was applied: the full
-				// turn timer is left.
-				if d, _ := r.table(t, 1).Deadline(); d != tick-1+400 {
+				// Started on the tick the stakes were saved: the full turn
+				// timer is left.
+				if d, _ := r.table(t, 1).Deadline(); d != tick+400 {
 					t.Errorf("deadline %d, want game started on tick %d", d, tick)
 				}
 			}
@@ -484,7 +501,7 @@ func BenchmarkTickShed(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	sys, err := FromData(data, 50*time.Millisecond, &fakeSink{})
+	sys, err := FromData(data, 50*time.Millisecond, &fakeSink{}, &fakeCommitter{})
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -499,6 +516,9 @@ func BenchmarkTickShed(b *testing.B) {
 			if err := tb.SetReady(world.PlayerID(int(id)*4+p), true, 0); err != nil {
 				b.Fatal(err)
 			}
+		}
+		if err := tb.Start(0); err != nil {
+			b.Fatal(err)
 		}
 	}
 	w := world.New(world.DefaultConfig())

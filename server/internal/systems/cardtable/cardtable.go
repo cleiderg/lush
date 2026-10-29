@@ -98,6 +98,8 @@ type Table struct {
 
 	hasResult bool
 	winner    Seat
+
+	manualStart bool // SetReady never starts a game; the caller calls Start
 }
 
 // New builds a table with the given seat count and turn timeout in world
@@ -199,9 +201,9 @@ func (t *Table) Leave(p world.PlayerID, now uint64) error {
 
 // SetReady sets or clears player p's Ready flag at tick now. Once at least
 // MinPlayers are seated and every seated player is ready, the game starts
-// straight away and every Ready flag clears. It is rejected while a game is
-// in progress. A start the rules module rejects is returned as an error with
-// the flag left set.
+// straight away and every Ready flag clears, unless SetManualStart is on. It
+// is rejected while a game is in progress. A start the rules module rejects
+// is returned as an error with the flag left set.
 func (t *Table) SetReady(p world.PlayerID, ready bool, now uint64) error {
 	if t.inProgress {
 		return ErrInProgress
@@ -211,6 +213,50 @@ func (t *Table) SetReady(p world.PlayerID, ready bool, now uint64) error {
 		return ErrNotSeated
 	}
 	t.seats[s].ready = ready
+	if t.manualStart {
+		return nil
+	}
+	return t.tryStart(now)
+}
+
+// SetManualStart turns manual start on or off. While on, SetReady only sets
+// the flag, and the caller starts the game with Start once StartSeats reports
+// one can start (the card room does so once every stake is saved).
+func (t *Table) SetManualStart(on bool) { t.manualStart = on }
+
+// StartSeats returns the seats a game would start with, in seat order: every
+// seated player, when no game is in progress, at least MinPlayers (and 2)
+// are seated and all of them are ready.
+func (t *Table) StartSeats() ([]Seat, bool) {
+	if t.inProgress {
+		return nil, false
+	}
+	var order []Seat
+	for i, s := range t.seats {
+		if !s.occupied {
+			continue
+		}
+		if !s.ready {
+			return nil, false
+		}
+		order = append(order, Seat(i))
+	}
+	if len(order) < t.rules.MinPlayers() || len(order) < 2 {
+		return nil, false
+	}
+	return order, true
+}
+
+// Start begins a game at tick now with the seats StartSeats reports. It
+// returns ErrInProgress during a game, and an error without starting when
+// StartSeats reports none or the rules module rejects the start.
+func (t *Table) Start(now uint64) error {
+	if t.inProgress {
+		return ErrInProgress
+	}
+	if _, ok := t.StartSeats(); !ok {
+		return errors.New("cardtable: start game: not every seated player is ready")
+	}
 	return t.tryStart(now)
 }
 
@@ -229,17 +275,8 @@ func (t *Table) SetDisconnected(p world.PlayerID, disconnected bool) error {
 // tryStart begins a game at tick now if enough players are seated and all of
 // them are ready.
 func (t *Table) tryStart(now uint64) error {
-	var order []Seat
-	for i, s := range t.seats {
-		if !s.occupied {
-			continue
-		}
-		if !s.ready {
-			return nil
-		}
-		order = append(order, Seat(i))
-	}
-	if len(order) < t.rules.MinPlayers() || len(order) < 2 {
+	order, ok := t.StartSeats()
+	if !ok {
 		return nil
 	}
 	if err := t.rules.Start(append([]Seat(nil), order...)); err != nil {

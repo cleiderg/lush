@@ -100,8 +100,11 @@ func TestLoadRejectsBadData(t *testing.T) {
 			`"id": 1,`, `"id": 0,`,
 			`cardtables.json: table 0: id must be at least 1`},
 		{"card table unknown field", gamedata.CardTablesFile,
-			`"turn_timer_s": 20}`, `"turn_timer_s": 20, "stake": 10}`,
-			`unknown field "stake"`},
+			`"stake": 10}`, `"stake": 10, "rake": 1}`,
+			`unknown field "rake"`},
+		{"card table with negative stake", gamedata.CardTablesFile,
+			`"stake": 25}`, `"stake": -25}`,
+			`cardtables.json: table 2: stake -25 must not be negative`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
