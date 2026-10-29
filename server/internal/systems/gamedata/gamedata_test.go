@@ -264,3 +264,26 @@ func TestStartingKit(t *testing.T) {
 		t.Errorf("inventory = %d × %q, want 3 × Boba", kit.Inventory[0].Quantity, it.Name)
 	}
 }
+
+// TestCardTablesMatchSpec checks the card room's tables: 4 tables, ids 1 to
+// 4, each with 4 seats and a 20 s turn timer (docs/specs/card-tables.md).
+func TestCardTablesMatchSpec(t *testing.T) {
+	d := load(t)
+	want := []gamedata.CardTable{
+		{ID: 1, Seats: 4, TurnTimerSeconds: 20},
+		{ID: 2, Seats: 4, TurnTimerSeconds: 20},
+		{ID: 3, Seats: 4, TurnTimerSeconds: 20},
+		{ID: 4, Seats: 4, TurnTimerSeconds: 20},
+	}
+	if len(d.CardTables) != len(want) {
+		t.Fatalf("got %d card tables, want %d", len(d.CardTables), len(want))
+	}
+	for i, w := range want {
+		if got := d.CardTables[i]; got != w {
+			t.Errorf("card table %d = %+v, want %+v", i, got, w)
+		}
+		if got := d.CardTables[i].TurnTimer(); got != 20*time.Second {
+			t.Errorf("card table %d turn timer = %v, want 20s", w.ID, got)
+		}
+	}
+}

@@ -14,7 +14,7 @@ import (
 func fixture(t *testing.T, file, old, new string) fstest.MapFS {
 	t.Helper()
 	fsys := fstest.MapFS{}
-	for _, name := range []string{gamedata.ItemsFile, gamedata.NPCsFile, gamedata.ShopFile, gamedata.RulesFile} {
+	for _, name := range []string{gamedata.ItemsFile, gamedata.NPCsFile, gamedata.ShopFile, gamedata.RulesFile, gamedata.CardTablesFile} {
 		b, err := os.ReadFile(filepath.Join("data", name))
 		if err != nil {
 			t.Fatal(err)
@@ -84,6 +84,24 @@ func TestLoadRejectsBadData(t *testing.T) {
 		{"unknown field", gamedata.RulesFile,
 			`"starting_gold": 100`, `"starting_gems": 100`,
 			`unknown field "starting_gems"`},
+		{"card table with 1 seat", gamedata.CardTablesFile,
+			`"id": 2, "seats": 4`, `"id": 2, "seats": 1`,
+			`cardtables.json: table 2: seats 1 must be 2 to 4`},
+		{"card table with 5 seats", gamedata.CardTablesFile,
+			`"id": 3, "seats": 4`, `"id": 3, "seats": 5`,
+			`cardtables.json: table 3: seats 5 must be 2 to 4`},
+		{"card table with zero turn timer", gamedata.CardTablesFile,
+			`"id": 4, "seats": 4, "turn_timer_s": 20`, `"id": 4, "seats": 4, "turn_timer_s": 0`,
+			`cardtables.json: table 4: turn_timer_s 0 must be positive`},
+		{"duplicate card table id", gamedata.CardTablesFile,
+			`"id": 2,`, `"id": 1,`,
+			`cardtables.json: table 1: duplicate id 1`},
+		{"card table id zero", gamedata.CardTablesFile,
+			`"id": 1,`, `"id": 0,`,
+			`cardtables.json: table 0: id must be at least 1`},
+		{"card table unknown field", gamedata.CardTablesFile,
+			`"turn_timer_s": 20}`, `"turn_timer_s": 20, "stake": 10}`,
+			`unknown field "stake"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

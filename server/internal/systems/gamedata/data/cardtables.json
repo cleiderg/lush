@@ -1,0 +1,6 @@
+[
+  {"id": 1, "seats": 4, "turn_timer_s": 20},
+  {"id": 2, "seats": 4, "turn_timer_s": 20},
+  {"id": 3, "seats": 4, "turn_timer_s": 20},
+  {"id": 4, "seats": 4, "turn_timer_s": 20}
+]
