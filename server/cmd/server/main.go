@@ -104,6 +104,12 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		return 1
 	}
 	sess := session.New(sessionConfig(cfg, grid, data, reporter.Recovered), w, clock, players, log)
+	// Stakes of a card game cut short by the last shutdown go back before
+	// anyone can join (card-tables spec, Stakes).
+	if err := sess.RefundCardPots(ctx); err != nil {
+		log.Error("refund card pots", "err", err)
+		return 1
+	}
 	lookup, err := areas.Load()
 	if err != nil {
 		log.Error("areas", "err", err)

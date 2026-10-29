@@ -27,6 +27,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/interest"
 	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/store"
+	"github.com/cleiderg/lush/server/internal/systems/cardroom"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
 	"github.com/cleiderg/lush/server/internal/systems/combat"
 	"github.com/cleiderg/lush/server/internal/systems/emote"
@@ -160,7 +161,7 @@ type op struct {
 }
 
 // Server is the session layer. It implements world.System, chat.Sink,
-// shop.Sink, trade.Sink, trade.Committer, pvp.HitSink, pvp.DropSink,
+// shop.Sink, trade.Sink, trade.Committer, cardroom.Committer, pvp.HitSink, pvp.DropSink,
 // combat.EventSink and transport.Handler (via ServeConn).
 type Server struct {
 	cfg   Config
@@ -183,8 +184,12 @@ type Server struct {
 
 	saver *saver
 
+	potMu sync.Mutex
+	pots  map[cardroom.CommitID]*potRef // open pots by game; saver goroutine
+
 	// Tick-goroutine only.
 	trades   *trade.System       // set by SetTrades; nil without trading
+	cards    *cardroom.System    // set by SetCardRoom; nil without the card room
 	pvp      *pvp.Combat         // set by SetPvP; nil without PvP
 	pve      *combat.System      // set by SetPvE; nil without PvE
 	ground   *grounditems.System // set by SetGroundItems; where PvP drops spawn
@@ -242,7 +247,7 @@ func New(cfg Config, w *world.World, clock world.Clock, players store.Players, l
 	}
 	return &Server{saver: newSaver(players, log), cfg: cfg, w: w, log: log, clock: clock, store: players,
 		data: data, catalog: encodeItemCatalog(data), npcCat: encodeNpcCatalog(data), newToken: newToken,
-		guests: map[int64]*guest{}, idle: list.New(), conns: map[transport.Conn]struct{}{},
+		pots: map[cardroom.CommitID]*potRef{}, guests: map[int64]*guest{}, idle: list.New(), conns: map[transport.Conn]struct{}{},
 		live: map[world.PlayerID]*guest{}, gone: map[world.PlayerID]*guest{}, grid: interest.NewGrid(), npcsIn: map[world.PlayerID]uint64{}, bld: flatbuffers.NewBuilder(1024)}
 }
 
@@ -585,6 +590,9 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		if p != nil && s.trades != nil && s.trades.Committing(id) {
 			continue // the trade's result must reach the player first
 		}
+		if p != nil && s.cards != nil && s.cards.Committing(id) {
+			continue // so must a card room stake, payout or refund
+		}
 		s.remove(g)
 	}
 
@@ -914,12 +922,16 @@ func (s *Server) ShopResult(to world.PlayerID, r shop.Result) {
 }
 
 // appendEconomy drains p's economy outbox and appends one store write per
-// event, except completed trades, which CommitTrade already saved: the holdings from the event's inventory copy and an audit entry per
+// event, except completed trades and card room gold movements, which
+// CommitTrade and CommitCardRoom already saved: the holdings from the event's inventory copy and an audit entry per
 // change, tagged with the event's reason. Tick goroutine only.
 func (s *Server) appendEconomy(dst []econReq, g *guest, p *world.Player) []econReq {
 	for _, ev := range p.DrainEconomy() {
 		if ev.Reason == trade.ReasonTrade {
 			continue // saved by the trade's own transaction (CommitTrade)
+		}
+		if isCardRoom(ev.Reason) {
+			continue // saved by the card room's own transaction (CommitCardRoom)
 		}
 		h, err := toHoldings(ev.Inv)
 		if err != nil {

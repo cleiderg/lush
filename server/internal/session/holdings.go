@@ -89,6 +89,9 @@ type auditPayload struct {
 	Item   int    `json:"item,omitempty"`
 	Qty    int    `json:"qty,omitempty"`
 	Gold   int    `json:"gold,omitempty"`
+	// Table and Pot identify a card room table and its stored pot.
+	Table int64 `json:"table,omitempty"`
+	Pot   int64 `json:"pot,omitempty"`
 }
 
 // auditEntries turns world changes into audit entries, one per change. The
