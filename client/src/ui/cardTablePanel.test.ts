@@ -1,12 +1,15 @@
 // @vitest-environment happy-dom
 import * as flatbuffers from 'flatbuffers';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { encodeCardTableLeave, encodeCardTableReady, encodeCardTableSit, type CardTableView } from '../net/codec';
-import { CardTableResultCode, CardTableSit, Envelope, Message } from '../protocol';
+import {
+  encodeCardTableLeave, encodeCardTableReady, encodeCardTableSit, encodeShedDraw, encodeShedPlay, type CardTableView, type ShedCardValue,
+} from '../net/codec';
+import { CardTableResultCode, CardTableSit, Envelope, Message, ShedColour, ShedPlay, ShedSymbol } from '../protocol';
 import { CardTableStore, cardTableResultText } from '../state/cardTables';
 import { ItemState } from '../state/items';
 import { CardTablePanel, type CardTableSender } from './cardTablePanel';
 import { hudLayout, inside, intersects } from './hudLayout';
+import { shedCardElement, shedCardName, shedColourName, shedSymbolLabel } from './shedCards';
 import { ShopPanel } from './shopPanel';
 
 const ME = 42;
@@ -22,6 +25,12 @@ class FakeSession implements CardTableSender {
   }
   sendCardTableLeave(): void {
     this.sent.push(encodeCardTableLeave());
+  }
+  sendShedPlay(card: ShedCardValue, chosenColour: ShedColour = ShedColour.None): void {
+    this.sent.push(encodeShedPlay(card, chosenColour));
+  }
+  sendShedDraw(): void {
+    this.sent.push(encodeShedDraw());
   }
 }
 
@@ -194,5 +203,160 @@ describe('open, close and layout (AC4)', () => {
     expect(panel.panel.style.height).toBe(`${r.h}px`);
     expect(inside(r, { x: 0, y: 0, w: 390, h: 844 })).toBe(true);
     expect(intersects(r, l.controls)).toBe(false);
+  });
+});
+
+const GREEN_7: ShedCardValue = { colour: ShedColour.One, symbol: ShedSymbol.Seven };
+const RED_SKIP: ShedCardValue = { colour: ShedColour.Four, symbol: ShedSymbol.Skip };
+const WILD: ShedCardValue = { colour: ShedColour.None, symbol: ShedSymbol.Wild };
+const WILD4: ShedCardValue = { colour: ShedColour.None, symbol: ShedSymbol.WildDrawFour };
+
+/** Table 1 with ME in seat 1 (index 1) and a game running on turnSeat. */
+function game(turnSeat: number) {
+  const s = setup();
+  s.panel.open(1);
+  s.tables.setState({ ...view(1, [7, ME, 9, 0], [true, true, true, false], true), turnSeat }, ME);
+  s.tables.setShedState({ tableId: 1, topCard: { colour: ShedColour.Two, symbol: ShedSymbol.Three }, colour: ShedColour.Two,
+    handCounts: [5, 3, 1, 0], drawPile: 61 });
+  s.tables.setHand({ tableId: 1, cards: [GREEN_7, RED_SKIP, WILD, WILD4] });
+  return s;
+}
+
+function handCards(p: CardTablePanel): HTMLButtonElement[] {
+  return [...p.hand.querySelectorAll<HTMLButtonElement>('.lush-shed-card')];
+}
+
+function plays(session: FakeSession): { colour: number; symbol: number; chosen: number }[] {
+  return session.sent.map(envelope).filter((e) => e.msgType() === Message.ShedPlay).map((e) => {
+    const m = e.msg(new ShedPlay()) as ShedPlay;
+    const c = m.card();
+    return { colour: c?.colour() ?? -1, symbol: c?.symbol() ?? -1, chosen: m.chosenColour() };
+  });
+}
+
+function picker(p: CardTablePanel, name: string): HTMLButtonElement {
+  const b = [...p.picker.querySelectorAll<HTMLButtonElement>('button')].find((x) => x.textContent === name);
+  if (!b) throw new Error(`no ${name} button`);
+  return b;
+}
+
+describe('Shed game view (#324 AC1)', () => {
+  it('shows the top card, colour, turn, hand counts, draw pile and the local hand from the store', () => {
+    const { tables, panel } = game(0);
+    expect(panel.game.hidden).toBe(false);
+    const top = panel.topCard.querySelector<HTMLElement>('.lush-shed-card');
+    expect(top?.textContent).toBe('3');
+    expect(top?.getAttribute('aria-label')).toBe('Anteater Blue 3');
+    expect(panel.colour.textContent).toBe('Colour: Anteater Blue');
+    expect(panel.turn.textContent).toBe("Seat 1's turn");
+    expect(panel.drawPile.textContent).toBe('Draw pile: 61');
+    expect(seats(panel)).toEqual(['Seat 1: Player 75 cards', 'Seat 2: You3 cards', 'Seat 3: Player 91 card', 'Seat 4: Empty']);
+    expect(handCards(panel).map((b) => b.getAttribute('aria-label'))).toEqual(['Aldrich Green 7', 'Brick Red Skip', 'Wild', 'Wild +4']);
+
+    tables.setState({ ...view(1, [7, ME, 9, 0], [true, true, true, false], true), turnSeat: 1 }, ME);
+    tables.setShedState({ tableId: 1, topCard: WILD, colour: ShedColour.Three, handCounts: [4, 3, 1, 0], drawPile: 60 });
+    expect(panel.turn.textContent).toBe('Your turn');
+    expect(panel.colour.textContent).toBe('Colour: Golden Hour Yellow');
+    expect(panel.topCard.textContent).toBe('Wild');
+    expect(panel.drawPile.textContent).toBe('Draw pile: 60');
+    expect(seats(panel)[0]).toBe('Seat 1: Player 74 cards');
+  });
+
+  it('is hidden outside a game', () => {
+    const { tables, panel } = game(0);
+    tables.setState(view(1, [7, ME, 9, 0], [false, false, false, false]), ME);
+    expect(panel.game.hidden).toBe(true);
+  });
+});
+
+describe('Play and Draw (#324 AC2)', () => {
+  it('on your turn tapping a card sends ShedPlay with it, and Draw sends ShedDraw', () => {
+    const { session, panel } = game(1);
+    handCards(panel)[1].click();
+    expect(plays(session)).toEqual([{ colour: ShedColour.Four, symbol: ShedSymbol.Skip, chosen: ShedColour.None }]);
+    panel.drawBtn.click();
+    expect(session.sent.map((b) => envelope(b).msgType())).toEqual([Message.ShedPlay, Message.ShedDraw]);
+  });
+
+  it('sends nothing when it is not your turn', () => {
+    const { session, panel } = game(0);
+    expect(panel.drawBtn.disabled).toBe(true);
+    expect(handCards(panel).every((b) => b.disabled)).toBe(true);
+    handCards(panel)[0].click();
+    panel.drawBtn.click();
+    panel.play(GREEN_7);
+    panel.draw();
+    expect(session.sent).toEqual([]);
+  });
+});
+
+describe('Wild colour choice (#324 AC3)', () => {
+  it('a Wild asks for a colour, then sends ShedPlay with it', () => {
+    const { session, panel } = game(1);
+    expect(panel.picker.hidden).toBe(true);
+    handCards(panel)[2].click();
+    expect(session.sent).toEqual([]);
+    expect(panel.picker.hidden).toBe(false);
+    expect([...panel.picker.querySelectorAll('.lush-shed-pick')].map((b) => b.textContent))
+      .toEqual(['Aldrich Green', 'Anteater Blue', 'Golden Hour Yellow', 'Brick Red']);
+    picker(panel, 'Golden Hour Yellow').click();
+    expect(plays(session)).toEqual([{ colour: ShedColour.None, symbol: ShedSymbol.Wild, chosen: ShedColour.Three }]);
+    expect(panel.picker.hidden).toBe(true);
+  });
+
+  it('a Wild Draw Four asks for a colour too', () => {
+    const { session, panel } = game(1);
+    handCards(panel)[3].click();
+    picker(panel, 'Brick Red').click();
+    expect(plays(session)).toEqual([{ colour: ShedColour.None, symbol: ShedSymbol.WildDrawFour, chosen: ShedColour.Four }]);
+  });
+
+  it('Cancel closes the choice without sending', () => {
+    const { session, panel } = game(1);
+    handCards(panel)[3].click();
+    picker(panel, 'Cancel').click();
+    expect(panel.picker.hidden).toBe(true);
+    expect(session.sent).toEqual([]);
+  });
+
+  it('the choice closes when the turn passes', () => {
+    const { tables, session, panel } = game(1);
+    handCards(panel)[2].click();
+    tables.setState({ ...view(1, [7, ME, 9, 0], [true, true, true, false], true), turnSeat: 2 }, ME);
+    expect(panel.picker.hidden).toBe(true);
+    panel.chooseColour(ShedColour.One);
+    expect(session.sent).toEqual([]);
+  });
+});
+
+describe('card faces (#324 AC4)', () => {
+  it('names each colour as agreed in Q1', () => {
+    expect([ShedColour.One, ShedColour.Two, ShedColour.Three, ShedColour.Four].map(shedColourName))
+      .toEqual(['Aldrich Green', 'Anteater Blue', 'Golden Hour Yellow', 'Brick Red']);
+  });
+
+  it('labels each symbol kind with text symbols', () => {
+    const symbols = Object.values(ShedSymbol).filter((v): v is ShedSymbol => typeof v === 'number');
+    expect(symbols.map(shedSymbolLabel))
+      .toEqual(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'Skip', 'Reverse', '+2', 'Wild', 'Wild +4']);
+  });
+
+  it('draws flat-colour DOM cards with the label and no Uno name or artwork', () => {
+    const bgs = new Set<string>();
+    for (const colour of [ShedColour.One, ShedColour.Two, ShedColour.Three, ShedColour.Four]) {
+      for (const symbol of [ShedSymbol.Zero, ShedSymbol.Nine, ShedSymbol.Skip, ShedSymbol.Reverse, ShedSymbol.DrawTwo]) {
+        const e = shedCardElement('div', { colour, symbol });
+        expect(e.textContent).toBe(shedSymbolLabel(symbol));
+        expect(e.getAttribute('aria-label')).toBe(`${shedColourName(colour)} ${shedSymbolLabel(symbol)}`);
+        expect(e.querySelector('img, svg, canvas')).toBeNull();
+        expect(e.style.backgroundImage).toBe('');
+        expect(`${e.textContent} ${e.title}`.toLowerCase()).not.toContain('uno');
+        bgs.add(e.style.backgroundColor);
+      }
+    }
+    expect(bgs.size).toBe(4);
+    expect(shedCardName(WILD)).toBe('Wild');
+    expect(shedCardName(WILD4)).toBe('Wild +4');
+    expect(shedCardElement('div', WILD4).textContent).toBe('Wild +4');
   });
 });
