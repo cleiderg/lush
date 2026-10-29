@@ -179,9 +179,9 @@ func TestNewRejectsBadInput(t *testing.T) {
 		entries []Entry
 		sink    Sink
 	}{
-		{"nil sink", []Entry{{1, tb}}, nil},
-		{"nil table", []Entry{{1, nil}}, &fakeSink{}},
-		{"duplicate id", []Entry{{1, tb}, {1, tb}}, &fakeSink{}},
+		{"nil sink", []Entry{{ID: 1, Table: tb}}, nil},
+		{"nil table", []Entry{{ID: 1}}, &fakeSink{}},
+		{"duplicate id", []Entry{{ID: 1, Table: tb}, {ID: 1, Table: tb}}, &fakeSink{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

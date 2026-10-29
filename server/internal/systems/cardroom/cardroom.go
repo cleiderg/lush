@@ -49,10 +49,12 @@ const (
 	// StartFailed: every seated player is ready but the rules module could
 	// not start the game. The sender's Ready flag stays set.
 	StartFailed Result = 12
+	// TooFar: a sit from further than Reach from the table's centre.
+	TooFar Result = 13
 )
 
 var resultNames = [...]string{"ok", "unknown_table", "already_seated", "table_full", "in_progress", "not_seated",
-	"no_game", "not_your_turn", "not_in_hand", "no_match", "bad_colour", "illegal_move", "start_failed"}
+	"no_game", "not_your_turn", "not_in_hand", "no_match", "bad_colour", "illegal_move", "start_failed", "too_far"}
 
 func (r Result) String() string {
 	if int(r) < len(resultNames) {
@@ -119,10 +121,12 @@ type ReconnectCommand struct {
 
 func (c ReconnectCommand) Target() world.PlayerID { return c.Player }
 
-// Entry is one table the caller supplies to New.
+// Entry is one table the caller supplies to New. Pos is the table's centre in
+// world metres; a player must be within Reach of it to sit.
 type Entry struct {
 	ID    TableID
 	Table *cardtable.Table
+	Pos   world.Vec2
 }
 
 // SeatInfo is who sits in one seat, and their flags.
@@ -185,6 +189,7 @@ type hosted struct {
 type System struct {
 	tables []hosted // in the order supplied, for deterministic iteration
 	byID   map[TableID]*cardtable.Table
+	pos    map[TableID]world.Vec2
 	sink   Sink
 	now    uint64 // tick of the latest Tick call
 }
@@ -194,7 +199,11 @@ func New(tables []Entry, sink Sink) (*System, error) {
 	if sink == nil {
 		return nil, errors.New("cardroom: sink is nil")
 	}
-	s := &System{byID: make(map[TableID]*cardtable.Table, len(tables)), sink: sink}
+	s := &System{
+		byID: make(map[TableID]*cardtable.Table, len(tables)),
+		pos:  make(map[TableID]world.Vec2, len(tables)),
+		sink: sink,
+	}
 	for _, e := range tables {
 		if e.Table == nil {
 			return nil, fmt.Errorf("cardroom: table %d is nil", e.ID)
@@ -203,13 +212,16 @@ func New(tables []Entry, sink Sink) (*System, error) {
 			return nil, fmt.Errorf("cardroom: duplicate table id %d", e.ID)
 		}
 		s.byID[e.ID] = e.Table
+		s.pos[e.ID] = e.Pos
 		s.tables = append(s.tables, hosted{id: e.ID, table: e.Table})
 	}
 	return s, nil
 }
 
 // FromData builds a System hosting one table per entry in data.CardTables,
-// each playing Shed. tickInterval is the world tick interval; each table's
+// each playing Shed and placed at its position in the embedded copy of
+// shared/map/cardtables.json. Every table must have exactly one position and
+// every position a table. tickInterval is the world tick interval; each table's
 // turn timer is rounded up to whole ticks.
 func FromData(data *gamedata.Data, tickInterval time.Duration, sink Sink) (*System, error) {
 	if data == nil {
@@ -218,14 +230,25 @@ func FromData(data *gamedata.Data, tickInterval time.Duration, sink Sink) (*Syst
 	if tickInterval <= 0 {
 		return nil, fmt.Errorf("cardroom: tick interval %v must be positive", tickInterval)
 	}
+	positions, err := Positions()
+	if err != nil {
+		return nil, err
+	}
 	entries := make([]Entry, 0, len(data.CardTables))
 	for _, c := range data.CardTables {
+		pos, ok := positions[TableID(c.ID)]
+		if !ok {
+			return nil, fmt.Errorf("cardroom: table %d has no position", c.ID)
+		}
 		ticks := uint64((c.TurnTimer() + tickInterval - 1) / tickInterval)
 		t, err := cardtable.New(c.Seats, ticks, shed.New())
 		if err != nil {
 			return nil, fmt.Errorf("cardroom: table %d: %w", c.ID, err)
 		}
-		entries = append(entries, Entry{ID: TableID(c.ID), Table: t})
+		entries = append(entries, Entry{ID: TableID(c.ID), Table: t, Pos: pos})
+	}
+	if len(positions) != len(entries) {
+		return nil, fmt.Errorf("cardroom: %d table positions for %d card tables", len(positions), len(entries))
 	}
 	return New(entries, sink)
 }
@@ -252,7 +275,7 @@ func (s *System) TableOf(p world.PlayerID) (TableID, bool) {
 func (s *System) Handle(cmd world.Command, p *world.Player) {
 	switch c := cmd.(type) {
 	case SitCommand:
-		s.sit(p.ID, c.TableID)
+		s.sit(p, c.TableID)
 	case LeaveCommand:
 		s.leave(p.ID)
 	case ReadyCommand:
@@ -268,10 +291,21 @@ func (s *System) Handle(cmd world.Command, p *world.Player) {
 	}
 }
 
-func (s *System) sit(p world.PlayerID, id TableID) {
+// Position returns the centre of the table with the given id.
+func (s *System) Position(id TableID) (world.Vec2, bool) {
+	pos, ok := s.pos[id]
+	return pos, ok
+}
+
+func (s *System) sit(pl *world.Player, id TableID) {
+	p := pl.ID
 	t, ok := s.byID[id]
 	if !ok {
 		s.sink.SitResult(p, id, 0, UnknownTable)
+		return
+	}
+	if !inReach(pl.Pos, s.pos[id]) {
+		s.sink.SitResult(p, id, 0, TooFar)
 		return
 	}
 	if _, seated := s.TableOf(p); seated {
