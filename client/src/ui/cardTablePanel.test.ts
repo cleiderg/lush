@@ -360,3 +360,33 @@ describe('card faces (#324 AC4)', () => {
     expect(shedCardElement('div', WILD4).textContent).toBe('Wild +4');
   });
 });
+
+describe('closing out of reach (#325 AC4)', () => {
+  it('update() closes the panel once the player is beyond the reach of the open table, and only then', () => {
+    const tables = new CardTableStore();
+    const pos = { x: 10, z: 0 };
+    const positions = [{ id: 1, x: 10, z: 0 }, { id: 2, x: 30, z: 0 }];
+    panel = new CardTablePanel({ parent: document.body, tables, session: new FakeSession(), position: () => pos, positions });
+    panel.update();
+    expect(panel.isOpen).toBe(false);
+    panel.open(1);
+    pos.x = 11.9;
+    panel.update();
+    expect(panel.isOpen).toBe(true);
+    // In reach of table 1 but the panel shows table 2: it closes.
+    panel.open(2);
+    panel.update();
+    expect(panel.isOpen).toBe(false);
+    panel.open(1);
+    pos.x = 12.1;
+    panel.update();
+    expect(panel.isOpen).toBe(false);
+  });
+
+  it('without a position, update() leaves the panel open', () => {
+    const { panel } = setup();
+    panel.open(1);
+    panel.update();
+    expect(panel.isOpen).toBe(true);
+  });
+});

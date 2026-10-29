@@ -1,5 +1,6 @@
 import areas from '../../../shared/map/areas.json';
 import { EntityKind } from '../protocol';
+import { CARD_TABLE_POSITIONS, inCardTableReach, type CardTablePosition } from './cardTables';
 import { nearShop, TILE_METRES, type Point } from './shop';
 
 /**
@@ -72,11 +73,14 @@ export interface InteractInput {
    * so every listed item is one the player may take.
    */
   groundItems?: readonly InteractGroundItem[];
+  /** Card table centres in metres; CARD_TABLE_POSITIONS when omitted. */
+  cardTables?: readonly CardTablePosition[];
   pvpZones?: readonly Polygon[];
 }
 
 export type InteractTarget =
   | { type: 'shop' }
+  | { type: 'cardTable'; id: number }
   | { type: 'pickUp'; id: number }
   | { type: 'attack'; id: number }
   | { type: 'trade'; id: number };
@@ -111,14 +115,24 @@ function nearest<T extends { id: number; x: number; z: number }>(pos: Point, lis
   return best;
 }
 
+/** The nearest card table within reach of pos, ties to the lower id; null if none. */
+export function nearestCardTable(
+  pos: Point,
+  tables: readonly CardTablePosition[] = CARD_TABLE_POSITIONS,
+): CardTablePosition | null {
+  return nearest(pos, tables.filter((t) => inCardTableReach(pos, t)));
+}
+
 /**
  * What the Interact button does (gameplay spec, Interact button): the shop stall within shop
- * distance; else the nearest ground item within pick-up range (pick up); else the nearest NPC within attack range (attack); else the nearest player within
+ * distance; else the nearest card table within reach (open its panel); else the nearest ground item within pick-up range (pick up); else the nearest NPC within attack range (attack); else the nearest player within
  * trade distance (a trade request outside the PvP zone, an attack inside it). Null: nothing.
  */
 export function pickInteractTarget(input: InteractInput): InteractTarget | null {
   const { pos } = input;
   if (nearShop(pos, input.stall)) return { type: 'shop' };
+  const table = nearestCardTable(pos, input.cardTables);
+  if (table) return { type: 'cardTable', id: table.id };
   const item = nearestPickUp(pos, input.groundItems ?? []);
   if (item) return { type: 'pickUp', id: item.id };
   const npc = nearest(

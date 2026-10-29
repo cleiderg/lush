@@ -12,6 +12,7 @@ import collisionUrl from '../../shared/map/collision.bin?url';
 import { CollisionGrid } from './state/collision';
 import { GameState } from './state/world';
 import { ChatLog, anyOpen } from './ui/chatLog';
+import { CardTablePanel } from './ui/cardTablePanel';
 import { Controls } from './ui/controls';
 import { Hud } from './ui/hud';
 import { PvpWarning } from './ui/pvpWarning';
@@ -39,6 +40,7 @@ const controls = new Controls({
   onInteract: () =>
     interact(game, performance.now(), SHOP_STALL, {
       openShop: () => shop.tryOpen(),
+      openCardTable: (id) => cardTable.open(id),
       sendPickUp: (id) => session.sendPickUp(id),
       sendAttackTarget: (id) => session.sendAttackTarget(id),
       sendTradeRequest: (id) => session.sendTradeRequest(id),
@@ -56,13 +58,40 @@ fetch(collisionUrl)
   .catch((err: unknown) => console.error('collision grid not loaded', err));
 const banner = new RestartBanner(document.body);
 const send = (bytes: Uint8Array): void => session.send(bytes);
-const hud = new Hud({ parent: document.body, items: game.items, send, onOpen: () => shop.close() });
+const hud = new Hud({
+  parent: document.body,
+  items: game.items,
+  send,
+  onOpen: () => {
+    shop.close();
+    cardTable.close();
+  },
+});
 const shop = new ShopPanel({
   parent: document.body,
   items: game.items,
   send,
   position: () => game.prediction.pos,
-  onOpen: () => hud.setOpen(false),
+  onOpen: () => {
+    hud.setOpen(false);
+    cardTable.close();
+  },
+});
+const cardTable = new CardTablePanel({
+  parent: document.body,
+  tables: game.cardTables,
+  session: {
+    sendCardTableSit: (id) => session.sendCardTableSit(id),
+    sendCardTableReady: () => session.sendCardTableReady(),
+    sendCardTableLeave: () => session.sendCardTableLeave(),
+    sendShedPlay: (card, colour) => session.sendShedPlay(card, colour),
+    sendShedDraw: () => session.sendShedDraw(),
+  },
+  position: () => game.prediction.pos,
+  onOpen: () => {
+    hud.setOpen(false);
+    shop.close();
+  },
 });
 const pvpWarning = new PvpWarning({ parent: document.body, position: () => game.prediction.pos });
 const trade = new TradePanel({
@@ -73,13 +102,14 @@ const trade = new TradePanel({
   onOpen: () => {
     hud.setOpen(false);
     shop.close();
+    cardTable.close();
   },
 });
 const chatLog = new ChatLog({
   parent: document.body,
   lines: () => game.chat.log,
   playerId: () => game.playerId,
-  covered: () => anyOpen([hud, shop, trade]),
+  covered: () => anyOpen([hud, shop, trade, cardTable]),
 });
 const session = new Session({
   factory: () => new WebSocketTransport(),
@@ -95,6 +125,7 @@ session.start();
 new GameLoop({
   update: (stepMs) => {
     shop.update();
+    cardTable.update();
     pvpWarning.update();
     const m = controls.worldMove();
     // Inputs the server will never see would pile up unacknowledged; Welcome resets prediction anyway.
