@@ -22,6 +22,7 @@ package cardroom
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -240,6 +241,10 @@ type Request struct {
 	ID    CommitID
 	Kind  Kind
 	Table TableID
+	// Game identifies the pot: the ID of the stake request that opened it,
+	// so a payout or refund closes the right pot even once a later game at
+	// the same table has opened another.
+	Game CommitID
 	// Pot is the gold the request moves into (KindStake) or out of the pot.
 	Pot   int
 	Sides []Side
@@ -256,6 +261,7 @@ type Committer interface {
 type credit struct {
 	kind   Kind
 	table  TableID
+	game   CommitID
 	player world.PlayerID
 	gold   int
 }
@@ -280,6 +286,7 @@ type hosted struct {
 	staking CommitID         // the stake request in flight, or 0
 	leaving []world.PlayerID // leaves held back while staking
 	pot     int              // gold in the pot of the game in progress
+	game    CommitID         // the stake request that opened the pot
 }
 
 // System hosts card tables. Only the world tick may call its methods, except
@@ -371,6 +378,20 @@ func (s *System) Stake(id TableID) (int, bool) {
 		return 0, false
 	}
 	return h.stake, true
+}
+
+// Committing reports whether a stake, payout or refund request holding p's
+// inventory is being saved. The session keeps p in the world until it is not,
+// so the result reaches them first.
+func (s *System) Committing(p world.PlayerID) bool {
+	for _, c := range s.commits {
+		for _, side := range c.req.Sides {
+			if side.Player == p {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Staking reports whether table id's stakes are being saved. Sit and Ready
@@ -471,7 +492,9 @@ func (s *System) leave(p world.PlayerID) {
 	}
 	if h.staking != 0 {
 		// Applied once the stakes are saved or not: mid-game it forfeits.
-		h.leaving = append(h.leaving, p)
+		if !slices.Contains(h.leaving, p) {
+			h.leaving = append(h.leaving, p)
+		}
 		return
 	}
 	if err := h.table.Leave(p, s.now); err != nil {
@@ -638,7 +661,7 @@ func (s *System) ended(h *hosted) {
 	}
 	seat, _ := h.table.Winner()
 	winner, _ := h.table.Occupant(seat)
-	s.credits = append(s.credits, credit{kind: KindPayout, table: h.id, player: winner, gold: h.pot})
+	s.credits = append(s.credits, credit{kind: KindPayout, table: h.id, game: h.game, player: winner, gold: h.pot})
 	h.pot = 0
 }
 
@@ -679,7 +702,7 @@ func (s *System) stake(w *world.World, h *hosted) {
 		return
 	}
 	s.nextID++
-	req := Request{ID: s.nextID, Kind: KindStake, Table: h.id, Pot: h.stake * len(players)}
+	req := Request{ID: s.nextID, Kind: KindStake, Table: h.id, Game: s.nextID, Pot: h.stake * len(players)}
 	for _, p := range players {
 		inv := p.Inv.Clone()
 		ch, err := inv.SpendGold(h.stake)
@@ -709,7 +732,7 @@ func (s *System) pay(w *world.World) {
 			continue
 		}
 		s.nextID++
-		req := Request{ID: s.nextID, Kind: c.kind, Table: c.table, Pot: c.gold,
+		req := Request{ID: s.nextID, Kind: c.kind, Table: c.table, Game: c.game, Pot: c.gold,
 			Sides: []Side{{Player: p.ID, Inv: inv, Changes: ch}}}
 		s.send(&inflight{req: req, players: []*world.Player{p}, credit: c})
 	}
@@ -780,11 +803,11 @@ func (s *System) finish(w *world.World, id CommitID, ok bool) {
 		// The stakes are saved but the game can't start: give them back.
 		s.unready(h)
 		for _, side := range c.req.Sides {
-			s.credits = append(s.credits, credit{kind: KindRefund, table: h.id, player: side.Player, gold: h.stake})
+			s.credits = append(s.credits, credit{kind: KindRefund, table: h.id, game: c.req.ID, player: side.Player, gold: h.stake})
 			s.sink.StakeResult(side.Player, h.id, StartFailed)
 		}
 	default:
-		h.pot = c.req.Pot
+		h.pot, h.game = c.req.Pot, c.req.ID
 		for _, side := range c.req.Sides {
 			s.sink.StakeResult(side.Player, h.id, OK)
 		}

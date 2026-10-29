@@ -100,8 +100,8 @@ func TestStakeCommittedBeforeStart(t *testing.T) {
 		t.Fatalf("%d requests, want 1", len(r.commit.reqs))
 	}
 	req := r.commit.reqs[0]
-	if req.Kind != KindStake || req.Table != 1 || req.Pot != 3*stake1 || len(req.Sides) != 3 {
-		t.Fatalf("request %+v, want one stake of %d from 3 players at table 1", req, 3*stake1)
+	if req.Kind != KindStake || req.Table != 1 || req.Game != req.ID || req.Pot != 3*stake1 || len(req.Sides) != 3 {
+		t.Fatalf("request %+v, want one stake of %d from 3 players at table 1 opening game %d", req, 3*stake1, req.ID)
 	}
 	for i, side := range req.Sides {
 		before := []int{100, stake1, 57}[i]
@@ -117,6 +117,11 @@ func TestStakeCommittedBeforeStart(t *testing.T) {
 	}
 	if got := r.locked(t, players...); !reflect.DeepEqual(got, repeatBool(true, 3)) {
 		t.Errorf("locked %v, want all locked while in flight", got)
+	}
+	for _, p := range append(players, 4) {
+		if got, want := r.sys.Committing(p), p != 4; got != want {
+			t.Errorf("player %d committing %v while in flight, want %v", p, got, want)
+		}
 	}
 
 	// While in flight: no new request, no game, no new seat or Ready change,
@@ -150,6 +155,9 @@ func TestStakeCommittedBeforeStart(t *testing.T) {
 		t.Errorf("locked %v, want all unlocked", got)
 	}
 	for _, p := range players {
+		if r.sys.Committing(p) {
+			t.Errorf("player %d still committing after Resolve", p)
+		}
 		if got := r.reasons(t, p); !reflect.DeepEqual(got, []string{ReasonStake}) {
 			t.Errorf("player %d economy events %v, want [%s]", p, got, ReasonStake)
 		}
@@ -240,8 +248,8 @@ func TestPotPaidToWinner(t *testing.T) {
 	}
 	pay := r.commit.reqs[1]
 	pot := 3 * stake2
-	if pay.Kind != KindPayout || pay.Table != 2 || pay.Pot != pot || len(pay.Sides) != 1 {
-		t.Fatalf("payout %+v, want the pot of %d at table 2 to one player", pay, pot)
+	if pay.Kind != KindPayout || pay.Table != 2 || pay.Game != r.commit.reqs[0].ID || pay.Pot != pot || len(pay.Sides) != 1 {
+		t.Fatalf("payout %+v, want the pot of %d of game %d at table 2 to one player", pay, pot, r.commit.reqs[0].ID)
 	}
 	side := pay.Sides[0]
 	if side.Player != 1 || side.Inv.Gold != afterStake+pot {
@@ -253,6 +261,9 @@ func TestPotPaidToWinner(t *testing.T) {
 	if got := r.golds(t, 1); got[0] != afterStake || !r.player(t, 1).Inv.Locked() {
 		t.Errorf("winner gold %d, locked %v before Resolve; want %d and locked", got[0], r.player(t, 1).Inv.Locked(), afterStake)
 	}
+	if !r.sys.Committing(1) || r.sys.Committing(2) {
+		t.Errorf("committing %v, %v; want only the winner", r.sys.Committing(1), r.sys.Committing(2))
+	}
 
 	// A failed save changes nothing and is retried on the next Tick.
 	r.sys.Resolve(pay.ID, false)
@@ -260,7 +271,7 @@ func TestPotPaidToWinner(t *testing.T) {
 	if got := r.golds(t, 1); got[0] != afterStake {
 		t.Errorf("winner gold %d after a failed payout, want %d", got[0], afterStake)
 	}
-	if len(r.commit.reqs) != 3 || r.commit.reqs[2].Kind != KindPayout || r.commit.reqs[2].Pot != pot {
+	if len(r.commit.reqs) != 3 || r.commit.reqs[2].Kind != KindPayout || r.commit.reqs[2].Pot != pot || r.commit.reqs[2].Game != pay.Game {
 		t.Fatalf("requests %+v, want the payout retried", r.commit.reqs)
 	}
 
@@ -347,6 +358,9 @@ func TestRefundWhenStartFails(t *testing.T) {
 	var kinds []Kind
 	for _, req := range r.commit.reqs {
 		kinds = append(kinds, req.Kind)
+		if req.Game != r.commit.reqs[0].ID {
+			t.Errorf("request %+v, want game %d", req, r.commit.reqs[0].ID)
+		}
 	}
 	if want := []Kind{KindStake, KindRefund, KindRefund}; !reflect.DeepEqual(kinds, want) {
 		t.Errorf("request kinds %v, want %v", kinds, want)
@@ -449,12 +463,13 @@ func TestStakeWaitsForLockedInventory(t *testing.T) {
 }
 
 // TestLeaveWhileStaking checks that a leave sent while the stakes are being
-// saved is applied once they are: after a successful save it forfeits, so
-// the other player wins the whole pot.
+// saved is applied once they are, however often it is sent: after a
+// successful save it forfeits, so the other player wins the whole pot.
 func TestLeaveWhileStaking(t *testing.T) {
 	r := newRoom(t)
 	r.readyAt(t, 1, 1, 2)
 	r.sink.reset()
+	r.run(LeaveCommand{Player: 2}, LeaveCommand{Player: 2})
 	r.run(LeaveCommand{Player: 2})
 	if len(r.sink.leaves) != 0 {
 		t.Fatalf("leave results %v while staking, want none yet", r.sink.leaves)
