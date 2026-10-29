@@ -401,6 +401,30 @@ func TestSeatedPlayerDisconnectAndReconnect(t *testing.T) {
 	}
 }
 
+// AC4: a seated player whose new connection takes over one the server has
+// not yet seen end (wifi to cellular) gets the table and their hand again.
+func TestSeatedPlayerTakeoverGetsTableAgain(t *testing.T) {
+	r := newCardWire(t)
+	a, tok, ca := r.join()
+	_, _, cb := r.join()
+	r.startGame(ca, cb)
+
+	c2 := r.dial(hello(uint16(protocol.ProtocolVersionCurrent), tok))
+	if id, _ := r.expectWelcome(c2); world.PlayerID(id) != a {
+		t.Fatalf("reconnect got id %d, want %d", id, a)
+	}
+	if st := r.state(c2); !st.inProgress {
+		t.Fatalf("state after takeover = %+v, want the game in progress", st)
+	}
+	if _, h := r.hand(c2); !reflect.DeepEqual(h, r.serverHand(a)) {
+		t.Fatalf("hand after takeover %v, want %v", h, r.serverHand(a))
+	}
+	tb, _ := r.cards.Table(wireTable)
+	if seat, _ := tb.SeatOf(a); tb.Disconnected(seat) {
+		t.Fatal("seat left marked disconnected after the takeover")
+	}
+}
+
 // AC5 (Q4): a seated player removed from the world after the logout time
 // leaves their table; mid-game this is a forfeit, so the other player wins.
 func TestSeatedPlayerRemovedAfterLogoutForfeits(t *testing.T) {

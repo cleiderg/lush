@@ -803,7 +803,8 @@ func (s *Server) inView(id world.PlayerID) bool {
 }
 
 func (s *Server) join(g *guest, c transport.Conn, token string) {
-	if g.conn != nil && g.conn != c {
+	tookOver := g.conn != nil && g.conn != c
+	if tookOver {
 		go g.conn.Close() // same token reconnected: replace the old connection
 	}
 	g.conn = c
@@ -818,6 +819,11 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 		c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate, s.cfg.MoveSpeed, s.cfg.RunSpeed))
 		s.sendInitial(g, p)
 		if s.cards != nil {
+			if tookOver {
+				// The old connection's leave will be ignored, so mark the
+				// seat here: the reconnect below must still change it.
+				s.cards.Handle(cardroom.DisconnectCommand{Player: g.id}, p)
+			}
 			// Clears the seat's disconnected mark; the table's state goes
 			// out to everyone seated, this player included.
 			s.cards.Handle(cardroom.ReconnectCommand{Player: g.id}, p)
