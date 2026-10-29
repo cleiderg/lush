@@ -4,8 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AttackTarget, EntityKind, Envelope, Message, PickUp, TradeRequest, Vec2, Welcome } from '../protocol';
 import { Session } from '../net/session';
 import type { Transport } from '../net/transport';
+import { CARD_TABLE_POSITIONS } from '../state/cardTables';
 import { PVP_ZONES } from '../state/interact';
 import { GameState } from '../state/world';
+import { CardTablePanel } from '../ui/cardTablePanel';
 import { ShopPanel, SHOP_STALL } from '../ui/shopPanel';
 import { interact } from './interact';
 
@@ -21,6 +23,7 @@ class FakeTransport implements Transport {
 const NOW = 10_000;
 const NO_EQUIPMENT = { weapon: 0, head: 0, body: 0, shield: 0 };
 let shop: ShopPanel | null = null;
+let cardTable: CardTablePanel | null = null;
 
 /** A game whose local player (id 1) stands at pos, with the given other entities around. */
 function setup(
@@ -49,17 +52,25 @@ function setup(
 
   const send = vi.fn<(bytes: Uint8Array) => void>();
   shop = new ShopPanel({ parent: document.body, items: game.items, send, position: () => game.prediction.pos });
+  cardTable = new CardTablePanel({
+    parent: document.body,
+    tables: game.cardTables,
+    session,
+    position: () => game.prediction.pos,
+    onOpen: () => shop?.close(),
+  });
   const attack = vi.spyOn(session, 'sendAttackTarget');
   const trade = vi.spyOn(session, 'sendTradeRequest');
   const pickUp = vi.spyOn(session, 'sendPickUp');
   const press = () =>
     interact(game, NOW, SHOP_STALL, {
       openShop: () => shop?.tryOpen(),
+      openCardTable: (id) => cardTable?.open(id),
       sendPickUp: (id) => session.sendPickUp(id),
       sendAttackTarget: (id) => session.sendAttackTarget(id),
       sendTradeRequest: (id) => session.sendTradeRequest(id),
     });
-  return { t, attack, trade, pickUp, press, shop };
+  return { game, t, attack, trade, pickUp, press, shop, cardTable };
 }
 
 function envelope(bytes: Uint8Array): Envelope {
@@ -75,6 +86,8 @@ beforeEach(() => document.body.replaceChildren());
 afterEach(() => {
   shop?.dispose();
   shop = null;
+  cardTable?.dispose();
+  cardTable = null;
 });
 
 describe('Interact button', () => {
@@ -154,5 +167,38 @@ describe('Interact button', () => {
     expect(s.trade).not.toHaveBeenCalled();
     expect(s.shop.isOpen).toBe(false);
     expect(s.t.sent).toEqual([]);
+  });
+
+  it('opens CardTablePanel for the table in reach, before a ground item or NPC, and sends nothing (#325 AC3)', () => {
+    const table = CARD_TABLE_POSITIONS[1];
+    const pos = { x: table.x + 1, z: table.z };
+    const s = setup(pos, [{ id: 5, x: pos.x + 1, z: pos.z, kind: EntityKind.Npc }], [{ id: 10, x: pos.x, z: pos.z }]);
+    expect(s.cardTable.isOpen).toBe(false);
+    expect(s.press()).toEqual({ type: 'cardTable', id: table.id });
+    expect(s.cardTable.isOpen).toBe(true);
+    expect(s.cardTable.table).toBe(table.id);
+    expect(s.cardTable.title.textContent).toBe(`Card table ${table.id}`);
+    expect(s.pickUp).not.toHaveBeenCalled();
+    expect(s.attack).not.toHaveBeenCalled();
+    expect(s.t.sent).toEqual([]);
+  });
+
+  it('closes the card table panel once the player walks out of reach, as the shop panel does (#325 AC4)', () => {
+    const table = CARD_TABLE_POSITIONS[0];
+    const s = setup({ x: table.x, z: table.z + 1.5 }, []);
+    s.press();
+    expect(s.cardTable.isOpen).toBe(true);
+    // Still within reach: the panel stays open.
+    s.game.prediction.pos.z = table.z + 2;
+    s.cardTable.update();
+    expect(s.cardTable.isOpen).toBe(true);
+    // Out of reach: it closes.
+    s.game.prediction.pos.z = table.z + 2.1;
+    s.cardTable.update();
+    expect(s.cardTable.isOpen).toBe(false);
+    // Walking back does not reopen it; Interact does.
+    s.game.prediction.pos.z = table.z + 1;
+    s.cardTable.update();
+    expect(s.cardTable.isOpen).toBe(false);
   });
 });

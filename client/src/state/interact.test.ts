@@ -2,14 +2,24 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { EntityKind } from '../protocol';
+import { CARD_TABLE_POSITIONS, CARD_TABLE_REACH_TILES, inCardTableReach } from './cardTables';
+import { TILE_METRES } from './shop';
 import {
-  ATTACK_RANGE_TILES, inPickUpRange, inPolygon, inPvpZone, nearestPickUp, pickInteractTarget, PICKUP_RANGE_TILES, PVP_ZONES,
+  ATTACK_RANGE_TILES, inPickUpRange, inPolygon, inPvpZone, nearestCardTable, nearestPickUp, pickInteractTarget, PICKUP_RANGE_TILES, PVP_ZONES,
   TRADE_DISTANCE_TILES, type InteractEntity, type InteractGroundItem, type Polygon,
 } from './interact';
 
 const repo = resolve(__dirname, '../../..');
 const rules = JSON.parse(readFileSync(resolve(repo, 'server/internal/systems/gamedata/data/rules.json'), 'utf8'));
 const areas = JSON.parse(readFileSync(resolve(repo, 'shared/map/areas.json'), 'utf8'));
+const cardTablesFile = JSON.parse(readFileSync(resolve(repo, 'shared/map/cardtables.json'), 'utf8'));
+const cardroomPositions = readFileSync(resolve(repo, 'server/internal/systems/cardroom/positions.go'), 'utf8');
+/** A numeric Go constant from server/internal/systems/cardroom/positions.go. */
+function goConst(name: string): number {
+  const m = new RegExp(`^const ${name} = ([0-9.]+)$`, 'm').exec(cardroomPositions);
+  if (!m) throw new Error(`const ${name} not found in positions.go`);
+  return Number(m[1]);
+}
 
 const STALL = { x: 0, z: 0 };
 const FAR = { x: 100.5, z: 100.5 };
@@ -139,6 +149,68 @@ describe('the full Interact order from the gameplay spec (#243 AC3)', () => {
 
   it('5. nothing with no target', () => {
     expect(pickInteractTarget({ pos: FAR, stall: STALL, entities: [], groundItems: [] })).toBeNull();
+  });
+});
+
+describe('card table reach matches the server sit reach (#325 AC2)', () => {
+  it('CARD_TABLE_REACH_TILES equals cardroom ReachTiles, with tiles of the same size', () => {
+    expect(CARD_TABLE_REACH_TILES).toBe(goConst('ReachTiles'));
+    expect(TILE_METRES).toBe(goConst('TileSize'));
+  });
+
+  it('the server checks straight-line distance from the centre, as inCardTableReach does', () => {
+    expect(cardroomPositions).toContain('return dx*dx+dy*dy <= Reach*Reach');
+  });
+
+  it('CARD_TABLE_POSITIONS are the cardtables.json tables in metres', () => {
+    expect(cardTablesFile.units).toBe('decimetres');
+    expect(CARD_TABLE_POSITIONS).toEqual(
+      cardTablesFile.tables.map((t: { id: number; x: number; z: number }) => ({ id: t.id, x: t.x / 10, z: t.z / 10 })),
+    );
+    expect(CARD_TABLE_POSITIONS.length).toBeGreaterThan(0);
+  });
+});
+
+describe('card tables in the Interact order (#325 AC1)', () => {
+  const T = CARD_TABLE_POSITIONS[0];
+  const reach = CARD_TABLE_REACH_TILES * TILE_METRES;
+  const far = { x: 500.5, z: 500.5 };
+
+  it('picks a table from cardtables.json within reach', () => {
+    const pos = { x: T.x + reach, z: T.z };
+    expect(pickInteractTarget({ pos, stall: far, entities: [] })).toEqual({ type: 'cardTable', id: T.id });
+    const diag = { x: T.x + 1.4, z: T.z + 1.4 };
+    expect(inCardTableReach(diag, T)).toBe(true);
+    expect(pickInteractTarget({ pos: diag, stall: far, entities: [] })).toEqual({ type: 'cardTable', id: T.id });
+  });
+
+  it('does not pick a table out of reach, including two tiles on both axes', () => {
+    for (const pos of [{ x: T.x + reach + 0.01, z: T.z }, { x: T.x + reach, z: T.z + reach }]) {
+      expect(inCardTableReach(pos, T)).toBe(false);
+      expect(nearestCardTable(pos, [T])).toBeNull();
+      expect(pickInteractTarget({ pos, stall: far, entities: [], cardTables: [T] })).toBeNull();
+    }
+  });
+
+  it('picks the nearest table in reach, ties to the lower id', () => {
+    const tables = [{ id: 7, x: 10, z: 0 }, { id: 3, x: 12, z: 0 }, { id: 2, x: 12, z: 0 }];
+    expect(nearestCardTable({ x: 10.5, z: 0 }, tables)?.id).toBe(7);
+    expect(nearestCardTable({ x: 12, z: 0.5 }, tables)?.id).toBe(2);
+  });
+
+  it('the shop wins over a table; a table wins over a ground item, NPC and player', () => {
+    const pos = { x: T.x + 1, z: T.z };
+    const entities = [npc(5, pos.x, pos.z), player(6, pos.x, pos.z)];
+    const groundItems = [ground(10, pos.x, pos.z)];
+    expect(pickInteractTarget({ pos, stall: pos, entities, groundItems })).toEqual({ type: 'shop' });
+    expect(pickInteractTarget({ pos, stall: far, entities, groundItems })).toEqual({ type: 'cardTable', id: T.id });
+  });
+
+  it('a ground item is picked once the table is out of reach', () => {
+    const tables = [{ id: 1, x: 0, z: 0 }];
+    const groundItems = [ground(10, 3.5, 0.5)];
+    expect(pickInteractTarget({ pos: { x: 2.5, z: 0.5 }, stall: far, entities: [], groundItems, cardTables: tables }))
+      .toEqual({ type: 'pickUp', id: 10 });
   });
 });
 

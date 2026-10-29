@@ -1,7 +1,36 @@
+import cardTablesData from '../../../shared/map/cardtables.json';
 import type { CardTableInfoState, CardTableView, ShedCardValue, ShedHandState, ShedPublicState } from '../net/codec';
 import { CardTableResultCode } from '../protocol';
+import { TILE_METRES, type Point } from './shop';
 
 export type { CardTableInfoState, CardTableView, ShedCardValue, ShedHandState, ShedPublicState };
+
+/**
+ * How close (in tiles, straight-line from the table's centre) a player must be to a card table
+ * for Interact to open it (docs/specs/gameplay.md, Interact button). Must equal ReachTiles in
+ * server/internal/systems/cardroom/positions.go, the server's sit reach; a test fails if they differ.
+ */
+export const CARD_TABLE_REACH_TILES = 2;
+
+/** A card table's id and centre in metres. */
+export interface CardTablePosition {
+  id: number;
+  x: number;
+  z: number;
+}
+
+/** The card tables from shared/map/cardtables.json, in metres (the file is in decimetres). */
+export const CARD_TABLE_POSITIONS: readonly CardTablePosition[] = cardTablesData.tables.map((t) => ({
+  id: t.id,
+  x: t.x / 10,
+  z: t.z / 10,
+}));
+
+/** Whether pos is within CARD_TABLE_REACH_TILES of the table centre, as the server's sit check. */
+export function inCardTableReach(pos: Point, table: Point): boolean {
+  const reach = CARD_TABLE_REACH_TILES * TILE_METRES;
+  return (pos.x - table.x) ** 2 + (pos.z - table.z) ** 2 <= reach * reach;
+}
 
 /** The table and seat index the local player sits in. */
 export interface CardTableSeat {
