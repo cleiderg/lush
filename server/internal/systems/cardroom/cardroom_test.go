@@ -17,10 +17,11 @@ type stubRules struct {
 	timeouts []cardtable.Seat
 	over     bool
 	winner   cardtable.Seat
+	startErr error // returned by Start
 }
 
 func (r *stubRules) MinPlayers() int                  { return 2 }
-func (r *stubRules) Start([]cardtable.Seat) error     { r.over = false; return nil }
+func (r *stubRules) Start([]cardtable.Seat) error     { r.over = false; return r.startErr }
 func (r *stubRules) PublicView() any                  { return "public" }
 func (r *stubRules) PrivateView(s cardtable.Seat) any { return fmt.Sprintf("hand-%d", s) }
 func (r *stubRules) Over() (cardtable.Seat, bool)     { return r.winner, r.over }
@@ -58,6 +59,7 @@ type fakeSink struct {
 	changes []change
 	readies []leaveResult
 	moves   []leaveResult
+	stakes  []leaveResult
 }
 
 func (f *fakeSink) SitResult(to world.PlayerID, id TableID, seat cardtable.Seat, r Result) {
@@ -73,11 +75,32 @@ func (f *fakeSink) TableChanged(id TableID, snap Snapshot, views []PlayerView) {
 func (f *fakeSink) ReadyResult(to world.PlayerID, id TableID, r Result) {
 	f.readies = append(f.readies, leaveResult{to, id, r})
 }
+func (f *fakeSink) StakeResult(to world.PlayerID, id TableID, r Result) {
+	f.stakes = append(f.stakes, leaveResult{to, id, r})
+}
+
 func (f *fakeSink) MoveResult(to world.PlayerID, id TableID, r Result) {
 	f.moves = append(f.moves, leaveResult{to, id, r})
 }
 
-func (f *fakeSink) reset() { f.sits, f.leaves, f.changes, f.readies, f.moves = nil, nil, nil, nil, nil }
+func (f *fakeSink) reset() {
+	f.sits, f.leaves, f.changes, f.readies, f.moves, f.stakes = nil, nil, nil, nil, nil, nil
+}
+
+// fakeCommitter records every request. With auto set it reports each one
+// saved straight away, so it is applied on the next Tick.
+type fakeCommitter struct {
+	sys  *System
+	auto bool
+	reqs []Request
+}
+
+func (c *fakeCommitter) CommitCardRoom(req Request) {
+	c.reqs = append(c.reqs, req)
+	if c.auto {
+		c.sys.Resolve(req.ID, true)
+	}
+}
 
 type spec struct {
 	id      TableID
@@ -106,7 +129,7 @@ func newFixture(t *testing.T, specs ...spec) *fixture {
 		f.tables[sp.id], f.rules[sp.id] = tb, r
 		entries = append(entries, Entry{ID: sp.id, Table: tb})
 	}
-	sys, err := New(entries, f.sink)
+	sys, err := New(entries, f.sink, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,17 +198,20 @@ func TestNewRejectsBadInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	tests := []struct {
-		name    string
-		entries []Entry
-		sink    Sink
+		name      string
+		entries   []Entry
+		sink      Sink
+		committer Committer
 	}{
-		{"nil sink", []Entry{{ID: 1, Table: tb}}, nil},
-		{"nil table", []Entry{{ID: 1}}, &fakeSink{}},
-		{"duplicate id", []Entry{{ID: 1, Table: tb}, {ID: 1, Table: tb}}, &fakeSink{}},
+		{"nil sink", []Entry{{ID: 1, Table: tb}}, nil, nil},
+		{"nil table", []Entry{{ID: 1}}, &fakeSink{}, nil},
+		{"duplicate id", []Entry{{ID: 1, Table: tb}, {ID: 1, Table: tb}}, &fakeSink{}, nil},
+		{"negative stake", []Entry{{ID: 1, Table: tb, Stake: -1}}, &fakeSink{}, &fakeCommitter{}},
+		{"stake without committer", []Entry{{ID: 1, Table: tb, Stake: 10}}, &fakeSink{}, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := New(tt.entries, tt.sink); err == nil {
+			if _, err := New(tt.entries, tt.sink, tt.committer); err == nil {
 				t.Fatal("New succeeded, want error")
 			}
 		})
@@ -517,7 +543,7 @@ func BenchmarkTick(b *testing.B) {
 		}
 		entries = append(entries, Entry{ID: TableID(i), Table: tb})
 	}
-	sys, err := New(entries, &fakeSink{})
+	sys, err := New(entries, &fakeSink{}, nil)
 	if err != nil {
 		b.Fatal(err)
 	}

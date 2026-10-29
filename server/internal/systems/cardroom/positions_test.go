@@ -134,7 +134,7 @@ func TestSitNeedsReach(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sink := &fakeSink{}
-			sys, err := FromData(data, world.New(world.DefaultConfig()).TickInterval(), sink)
+			sys, err := FromData(data, world.New(world.DefaultConfig()).TickInterval(), sink, &fakeCommitter{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -144,7 +144,7 @@ func TestSitNeedsReach(t *testing.T) {
 			}
 			tb, _ := sys.Table(id)
 			pos := world.Vec2{X: centre.X + tt.offset.X, Y: centre.Y + tt.offset.Y}
-			sys.Handle(SitCommand{Player: 7, TableID: id}, &world.Player{ID: 7, Pos: pos})
+			sys.Handle(SitCommand{Player: 7, TableID: id}, &world.Player{ID: 7, Pos: pos, Inv: world.Inventory{Gold: roomGold}})
 			if len(sink.sits) != 1 || sink.sits[0].r != tt.want {
 				t.Fatalf("sit results %+v, want one %v", sink.sits, tt.want)
 			}

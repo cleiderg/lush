@@ -266,14 +266,15 @@ func TestStartingKit(t *testing.T) {
 }
 
 // TestCardTablesMatchSpec checks the card room's tables: 4 tables, ids 1 to
-// 4, each with 4 seats and a 20 s turn timer (docs/specs/card-tables.md).
+// 4, each with 4 seats and a 20 s turn timer, staking 10, 25, 50 and 100
+// gold (docs/specs/card-tables.md, PRD 13 Q2).
 func TestCardTablesMatchSpec(t *testing.T) {
 	d := load(t)
 	want := []gamedata.CardTable{
-		{ID: 1, Seats: 4, TurnTimerSeconds: 20},
-		{ID: 2, Seats: 4, TurnTimerSeconds: 20},
-		{ID: 3, Seats: 4, TurnTimerSeconds: 20},
-		{ID: 4, Seats: 4, TurnTimerSeconds: 20},
+		{ID: 1, Seats: 4, TurnTimerSeconds: 20, Stake: 10},
+		{ID: 2, Seats: 4, TurnTimerSeconds: 20, Stake: 25},
+		{ID: 3, Seats: 4, TurnTimerSeconds: 20, Stake: 50},
+		{ID: 4, Seats: 4, TurnTimerSeconds: 20, Stake: 100},
 	}
 	if len(d.CardTables) != len(want) {
 		t.Fatalf("got %d card tables, want %d", len(d.CardTables), len(want))
