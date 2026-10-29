@@ -16,6 +16,7 @@ import { Controls } from './ui/controls';
 import { Hud } from './ui/hud';
 import { PvpWarning } from './ui/pvpWarning';
 import { RestartBanner } from './ui/restartBanner';
+import { localRetroStore, RetroToggle } from './ui/retroToggle';
 import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
 import { TradePanel } from './ui/tradePanel';
 
@@ -27,6 +28,8 @@ new AudioManager({ factory: () => new AudioContext(), window, document });
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const renderer = createRenderer(canvas);
 window.addEventListener('resize', () => renderer.resize());
+// Applies the saved Retro choice (off when nothing is saved) before the first frame.
+new RetroToggle({ parent: document.body, target: renderer, store: localRetroStore() });
 
 const controls = new Controls({
   onWave: () => sendWave(session),
