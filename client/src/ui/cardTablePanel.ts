@@ -1,5 +1,6 @@
 import { ShedColour } from '../protocol';
-import type { CardTableStore, ShedCardValue } from '../state/cardTables';
+import { CARD_TABLE_POSITIONS, inCardTableReach, type CardTablePosition, type CardTableStore, type ShedCardValue } from '../state/cardTables';
+import type { Point } from '../state/shop';
 import { hudLayout, place } from './hudLayout';
 import { SHED_COLOURS, isWild, shedCardElement, shedColourCss, shedColourName } from './shedCards';
 
@@ -16,6 +17,10 @@ export interface CardTablePanelOptions {
   parent: HTMLElement;
   tables: CardTableStore;
   session: CardTableSender;
+  /** The local player's position in metres; with it, update() closes the panel out of reach. */
+  position?: () => Point;
+  /** Card table centres in metres; CARD_TABLE_POSITIONS when omitted. */
+  positions?: readonly CardTablePosition[];
   viewport?: () => { width: number; height: number };
   /** Called when the panel opens, so other panels in its place can close. */
   onOpen?: () => void;
@@ -150,6 +155,13 @@ export class CardTablePanel {
   close(): void {
     this.panel.hidden = true;
     this.pendingWild = null;
+  }
+
+  /** Call each frame: closes the panel once the player walks out of reach of its table, as the shop panel does. */
+  update(): void {
+    if (!this.isOpen || !this.opts.position) return;
+    const table = (this.opts.positions ?? CARD_TABLE_POSITIONS).find((t) => t.id === this.tableId);
+    if (!table || !inCardTableReach(this.opts.position(), table)) this.close();
   }
 
   /** True when the local player is seated here, a game runs and it is their turn. */

@@ -5,6 +5,8 @@ import type { GameState } from '../state/world';
 export interface InteractActions {
   /** Opens the shop panel (ShopPanel.tryOpen). */
   openShop: () => void;
+  /** Opens the card table panel for that table (CardTablePanel.open). */
+  openCardTable: (tableId: number) => void;
   sendPickUp: (groundItemId: number) => void;
   sendAttackTarget: (targetId: number) => void;
   sendTradeRequest: (targetId: number) => void;
@@ -16,10 +18,11 @@ export function interactTarget(game: GameState, now: number, stall: Point): Inte
   return pickInteractTarget({ pos: game.prediction.pos, stall, entities, groundItems: game.items.groundItems });
 }
 
-/** Runs the Interact button: opens the shop, picks up a ground item, attacks, or sends a trade request; nothing without a target. */
+/** Runs the Interact button: opens the shop or a card table's panel, picks up a ground item, attacks, or sends a trade request; nothing without a target. */
 export function interact(game: GameState, now: number, stall: Point, actions: InteractActions): InteractTarget | null {
   const target = interactTarget(game, now, stall);
   if (target?.type === 'shop') actions.openShop();
+  else if (target?.type === 'cardTable') actions.openCardTable(target.id);
   else if (target?.type === 'pickUp') actions.sendPickUp(target.id);
   else if (target?.type === 'attack') actions.sendAttackTarget(target.id);
   else if (target?.type === 'trade') actions.sendTradeRequest(target.id);
