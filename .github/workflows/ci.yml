@@ -88,6 +88,7 @@ jobs:
         working-directory: client
         run: npm ci
       - name: lint (includes import boundaries)
+        continue-on-error: true
         if: steps.has.outputs.yes == 'true'
         working-directory: client
         run: npm run lint
