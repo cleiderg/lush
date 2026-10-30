@@ -1,0 +1,89 @@
+# Blocks pull requests that weaken CI: removed or renamed jobs, removed test
+# commands, continue-on-error, checks switched off, new write permissions or
+# secrets (scripts/ci/check_workflow_changes.py has the full list).
+#
+# Runs on pull_request_target so the check always uses the workflow and script
+# from main, never a version modified by the pull request. It never runs code
+# from the pull request: it downloads the changed workflow files through the
+# API and parses them as data.
+#
+# Like path-guard, it reports a commit status ("workflow-guard") on the PR's
+# head commit. Every PR gets one; PRs that don't touch workflows pass at once.
+# The owner lets a deliberate change through with the workflow-override label.
+name: workflow-guard
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: workflow-guard-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SHA: ${{ github.event.pull_request.head.sha }}
+      PR: ${{ github.event.pull_request.number }}
+      URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      OVERRIDE: ${{ contains(github.event.pull_request.labels.*.name, 'workflow-override') }}
+    steps:
+      - name: Mark workflow-guard pending
+        run: gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=pending -f context=workflow-guard -f description="Checking workflow changes" -f target_url="$URL" > /dev/null
+
+      - name: Check out main (not the pull request)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+
+      - name: Collect changed workflow files
+        id: files
+        run: |
+          mkdir -p base head
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" \
+            --jq '.[] | [.filename, (.previous_filename // "")] | @tsv' > changed.tsv
+          n=0
+          while IFS=$'\t' read -r file prev; do
+            for f in "$file" "$prev"; do
+              case "$f" in .github/workflows/*) ;; *) continue ;; esac
+              name="${f#.github/workflows/}"
+              mkdir -p "base/$(dirname "$name")" "head/$(dirname "$name")"
+              [ -f "$f" ] && cp "$f" "base/$name"
+              gh api -H "Accept: application/vnd.github.raw" "repos/$GITHUB_REPOSITORY/contents/$f?ref=$SHA" > "head/$name" 2>/dev/null || rm -f "head/$name"
+              n=$((n + 1))
+            done
+          done < changed.tsv
+          echo "count=$n" >> "$GITHUB_OUTPUT"
+          echo "Changed workflow files: $n"
+
+      - name: Check the changes
+        id: check
+        if: steps.files.outputs.count != '0'
+        run: |
+          python3 -m pip install --quiet pyyaml==6.0.2
+          python3 -m unittest scripts/ci/test_check_workflow_changes.py
+          set +e
+          python3 scripts/ci/check_workflow_changes.py base head
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Report workflow-guard on the PR's head commit
+        if: always()
+        env:
+          COUNT: ${{ steps.files.outputs.count }}
+          CODE: ${{ steps.check.outputs.code }}
+        run: |
+          if [ "$COUNT" = "0" ]; then state=success; desc="No workflow changes"
+          elif [ "$CODE" = "0" ]; then state=success; desc="No checks removed, skipped or loosened"
+          elif [ "$CODE" = "1" ] && [ "$OVERRIDE" = "true" ]; then state=success; desc="Weakens CI, allowed by the owner's workflow-override label"
+          elif [ "$CODE" = "1" ]; then state=failure; desc="Weakens CI (see log). Owner can add workflow-override"
+          else state=error; desc="workflow-guard could not run (see log)"; fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state="$state" -f context=workflow-guard -f description="$desc" -f target_url="$URL" > /dev/null
+          [ "$state" = success ]
