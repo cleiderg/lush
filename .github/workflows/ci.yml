@@ -2,6 +2,7 @@
 # Jobs skip themselves until their part of the repo exists, so this file can be
 # committed on day one. Branch protection requires: server, client, protocol,
 # smoke, deploy, path-guard.
+# Test of workflow-guard (harmless comment); this PR will be closed.
 name: ci
 
 on:
