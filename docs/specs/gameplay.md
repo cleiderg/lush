@@ -15,6 +15,7 @@
 5. Sell loot to the NPC shop for gold, and buy food and better gear there.
 6. Enter the PvP zone for risk and reward.
 7. Bet gold at card tables (stretch).
+8. Train skills, bank valuables (milestone 9, [[skills]]), do quests (milestone 11, [[quests]]), and own a home (milestone 10, [[housing]]).
 
 ## Combat
 
@@ -95,6 +96,7 @@ Sources in Phase 1:
 
 ## Interact button
 
+- Milestones 8 and 10 add the bank booth, the grill, trees, fishing spots and talking NPCs to this order; see [[skills]] and [[quests]].
 - Interact picks, in order: the shop stall within shop distance; the nearest card table within 2 tiles (opens its table panel; the server only accepts a sit within 2 tiles of the table); the nearest ground item within pick-up range that the player may take (pick up); the nearest NPC within attack range (attack); the nearest player within trade distance (a trade request outside the PvP zone, an attack inside it). With no target it does nothing.
 
 ## Player trading
@@ -111,7 +113,7 @@ Sources in Phase 1:
 ## Death in the PvP zone
 
 - The player respawns at the safe spawn point with full HP.
-- They **drop everything except their 3 most valuable items** (by shop buy price), OSRS Wilderness style. Gold is never dropped in Phase 1, because there is no bank yet.
+- They **drop everything except their 3 most valuable items** (by shop buy price), OSRS Wilderness style. Gold is never dropped (it can't be banked yet). From milestone 9, banked items are always safe ([[skills]]).
 - Drops are reserved for the killer for 60 s, then anyone can take them. They disappear after 3 minutes.
 - While a drop is reserved, only the player it is reserved for sees it; other players see it once the reservation ends.
 - Trades and drops must be handled as single transactions so items can never be duplicated.
@@ -119,3 +121,5 @@ Sources in Phase 1:
 ## Death outside the PvP zone (PvE)
 
 Dying to NPCs costs nothing: the player respawns at the safe spawn point with full HP and keeps everything.
+
+**From milestone 13** every death leaves a body that must be carried to a revival point (or respawns alone after a wait, Weakened): see [[trust-and-death]]. The drop rules above stay the same.
