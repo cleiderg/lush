@@ -19,6 +19,7 @@ import { PvpWarning } from './ui/pvpWarning';
 import { RestartBanner } from './ui/restartBanner';
 import { localRetroStore, RetroToggle } from './ui/retroToggle';
 import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
+import { mountTimePanel } from './ui/timePanel';
 import { TradePanel } from './ui/tradePanel';
 
 initErrorReporting();
@@ -111,6 +112,8 @@ const chatLog = new ChatLog({
   playerId: () => game.playerId,
   covered: () => anyOpen([hud, shop, trade, cardTable]),
 });
+// Developer-only time control (?debug): overrides the shared time the sky follows.
+mountTimePanel(location.search, { parent: document.body, clock: game.clock });
 const session = new Session({
   factory: () => new WebSocketTransport(),
   store: localTokenStore(),
