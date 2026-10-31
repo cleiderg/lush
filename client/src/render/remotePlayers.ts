@@ -12,6 +12,7 @@ import {
   makePartGeometry,
   makePartMaterial,
   poseRoll,
+  smoothSpeed,
   swingAngle,
 } from './character';
 import { SLOTS, equipmentMaterial, itemColor, slotGeometry } from './equipment';
@@ -24,6 +25,7 @@ interface Track {
   z: number;
   phase: number;
   time: number;
+  speed: number;
 }
 
 /**
@@ -95,12 +97,13 @@ export class RemotePlayers {
       seen.add(p.id);
       let t = this.tracks.get(p.id);
       if (!t) {
-        t = { x: p.x, z: p.z, phase: 0, time };
+        t = { x: p.x, z: p.z, phase: 0, time, speed: 0 };
         this.tracks.set(p.id, t);
       }
       const d = Math.hypot(p.x - t.x, p.z - t.z);
       const moving = d > 1e-4;
-      const running = moving && isRunning(d, time - t.time);
+      t.speed = smoothSpeed(t.speed, d, time - t.time);
+      const running = moving && isRunning(t.speed);
       t.time = time;
       t.phase = moving ? t.phase + d * WALK_SPEED_RAD_PER_UNIT : 0;
       // Offset by id so a crowd doesn't breathe in step.

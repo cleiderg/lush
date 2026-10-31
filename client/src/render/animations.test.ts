@@ -88,6 +88,32 @@ describe('run cycle (AC1)', () => {
     }
   });
 
+  it('tells a walk from a run when the position moves in 20 Hz steps rendered at 30 fps', () => {
+    // The game loop (core/loop.ts) moves the local player in 50 ms steps and renders every other 60 Hz
+    // display frame, so most frames see one step (0.2 m in 33 ms when walking) and some see none.
+    const legs = (speed: number) => {
+      const c = new Character();
+      const leg = c.joint('legL')!;
+      let z = 0;
+      let last = 0;
+      let lastStep = 0;
+      const out: number[] = [];
+      for (let ms = 0; ms <= 3000; ms += 1000 / 60) {
+        while (ms - lastStep >= 50) {
+          lastStep += 50;
+          z += speed * 0.05;
+        }
+        if (Math.round(ms / (1000 / 60)) % 2 !== 0) continue;
+        c.update(0, z, 0, z - last, 0, ms / 1000);
+        last = z;
+        if (ms > 1000) out.push(leg.rotation.x);
+      }
+      return out;
+    };
+    expect(maxAbs(legs(WALK))).toBeLessThanOrEqual(WALK_SWING + 1e-9);
+    expect(maxAbs(legs(RUN))).toBeGreaterThan(WALK_SWING * 1.3);
+  });
+
   it('runs remote players too, from their speed between frames', () => {
     const legs = (speed: number) => {
       let t = 0;

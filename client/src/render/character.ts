@@ -108,9 +108,24 @@ export function swingAngle(phase: number, part: PartDef, running = false): numbe
   return Math.sin(phase) * (running ? RUN_SWING : WALK_SWING) * part.swing;
 }
 
-/** True when moving `distance` metres in `dt` seconds is a run. An unknown `dt` (0) counts as walking. */
-export function isRunning(distance: number, dt: number): boolean {
-  return dt > 0 && distance / dt > RUN_THRESHOLD;
+/**
+ * Time constant (s) of the ground-speed estimate. A single frame's speed is useless on its own: the local
+ * player moves in 20 Hz update steps while frames render at up to 30 fps, so a walk reads as 0 or 6+ m/s.
+ */
+export const SPEED_SMOOTHING = 0.15;
+
+/**
+ * The ground-speed estimate after moving `distance` metres in `dt` seconds, from the previous estimate
+ * `speed`. An unknown `dt` (0) keeps the estimate.
+ */
+export function smoothSpeed(speed: number, distance: number, dt: number): number {
+  if (!(dt > 0)) return speed;
+  return speed + (distance / dt - speed) * (1 - Math.exp(-dt / SPEED_SMOOTHING));
+}
+
+/** True when a ground-speed estimate from smoothSpeed is a run. */
+export function isRunning(speed: number): boolean {
+  return speed > RUN_THRESHOLD;
 }
 
 /** The arm the weapon hangs off (equipment SLOTS), which swings in an attack. */
@@ -251,6 +266,7 @@ export class Character {
   readonly attachments = new Map<EquipSlotName, THREE.Mesh>();
   private phase = 0;
   private lastTime: number | null = null;
+  private speed = 0;
 
   constructor() {
     // Yaw first, then the flinch tilt around the character's own X axis.
@@ -309,7 +325,8 @@ export class Character {
     this.root.rotation.y = heading;
     this.root.rotation.x = combat.flinch;
     const moving = distance > 1e-4;
-    const running = moving && isRunning(distance, this.lastTime === null ? 0 : time - this.lastTime);
+    this.speed = smoothSpeed(this.speed, distance, this.lastTime === null ? 0 : time - this.lastTime);
+    const running = moving && isRunning(this.speed);
     this.lastTime = time;
     this.phase = moving ? this.phase + distance * WALK_SPEED_RAD_PER_UNIT : 0;
     const b = moving ? 0 : breath(time);
