@@ -507,6 +507,7 @@ export class CampusMap {
     this.group.name = 'campus-map';
     const glow = { value: this.windowGlow };
     this.material.onBeforeCompile = (shader) => addWindowGlow(shader, glow);
+    this.material.customProgramCacheKey = () => 'campus-window-glow';
     const { builders, surfaces, extruded, landmarks, facades } = buildChunks(data);
 
     let triangles = 0;
@@ -535,9 +536,9 @@ export class CampusMap {
     this.stats = { chunks: builders.size, triangles, extruded: [...extruded], landmarks: [...landmarks], facades: new Map(facades) };
   }
 
-  /** Light the windows while the sun is below the horizon (DEFAULT_SKY when `sky` is missing). */
+  /** Light the windows from sunset to sunrise, as the lamps (DEFAULT_SKY when `sky` is missing). */
   updateSky(sky: SkyView | undefined): void {
-    const night = (sky ?? DEFAULT_SKY).elevation < 0;
+    const night = (sky ?? DEFAULT_SKY).elevation <= 0;
     this.windowGlow.setHex(night ? WINDOW_GLOW : 0).multiplyScalar(night ? WINDOW_GLOW_INTENSITY : 1);
   }
 

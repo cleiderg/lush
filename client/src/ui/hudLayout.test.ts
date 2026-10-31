@@ -78,3 +78,23 @@ describe('hudLayout portrait', () => {
     });
   }
 });
+
+describe('hudLayout minimap', () => {
+  for (const [w, h] of [[390, 844], [1600, 1000]]) {
+    it(`at ${w}×${h} sits at the top right of the app column, clear of the top band, portrait, prompt and controls`, () => {
+      const l = hudLayout(w, h);
+      const m = l.minimap;
+      const appRight = l.controls.x + l.controls.w;
+      expect(m.w).toBeGreaterThan(0);
+      expect(m.w).toBe(m.h);
+      expect(m.x + m.w).toBeLessThanOrEqual(appRight);
+      expect(m.x + m.w).toBeGreaterThanOrEqual(appRight - 16);
+      expect(m.x).toBeGreaterThan(l.controls.x + l.controls.w / 2);
+      expect(inside(m, { x: 0, y: 0, w, h: h / 3 })).toBe(true);
+      for (const name of ['location', 'hud', 'toggle', 'retro', 'portrait', 'interact', 'pvp', 'controls'] as const) {
+        expect(intersects(m, l[name]), name).toBe(false);
+      }
+      expect(l.map).toEqual(l.panel);
+    });
+  }
+});

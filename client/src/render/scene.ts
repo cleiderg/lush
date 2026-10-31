@@ -13,7 +13,8 @@ import { AreaMarkers, loadAreas } from './gameAreas';
 import { CardTables, loadCardTables } from './cardTables';
 import { Nature } from './nature';
 import { Props, loadProps } from './propKit';
-import { SkyRig } from './sky';
+import { DEFAULT_SKY, SkyRig } from './sky';
+import { LampLights, lampSources } from './lights';
 import type { CampusData } from './mapData';
 import type { WorldView } from './worldView';
 
@@ -47,6 +48,8 @@ export class WorldScene {
   readonly props = new Props(loadProps());
   /** Sun, ambient, sky colour and fog, following WorldView.sky. */
   readonly sky = new SkyRig();
+  /** Warm point lights and glowing heads for lamp posts and lanterns, lit from sunset to sunrise. */
+  readonly lamps = new LampLights(lampSources(loadProps()), this.props.glow);
   private readonly player = new Character();
   private readonly remotes = new RemotePlayers();
   readonly healthBars = new HealthBars();
@@ -68,7 +71,8 @@ export class WorldScene {
     this.sky.update(undefined, 0, 0);
     this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.areas.group, this.player.root, this.remotes.group, this.shadows.group, this.healthBars.group);
     // After the players: tests find the remote-player instanced meshes as the first ones in the scene.
-    this.scene.add(this.cardTables.group, this.props.group, this.nature.group);
+    this.scene.add(this.cardTables.group, this.props.group, this.nature.group, this.lamps.group);
+    this.lamps.update(DEFAULT_SKY.elevation, this.rig.camera.position, this.now());
     // Cull again for the camera actually rendering, in case its aspect changed since the last view.
     this.scene.onBeforeRender = (_renderer, _scene, camera) => this.nature.cull(camera);
     // The local player is drawn (at the origin) before the first view arrives, as a plain mesh would be.
@@ -113,6 +117,7 @@ export class WorldScene {
     this.rig.follow(local.x, local.z);
     this.nature.cull(this.rig.camera);
     this.sky.update(view.sky, local.x, local.z);
+    this.lamps.update((view.sky ?? DEFAULT_SKY).elevation, this.rig.camera.position, this.now());
     this.map.updateSky(view.sky);
     // Hitsplats join the scene with the first hit, so a view without hits leaves the graph as it was.
     if (view.hits?.length && !this.hitsplats.group.parent) this.scene.add(this.hitsplats.group);

@@ -19,7 +19,9 @@ import { Hud } from './ui/hud';
 import { InteractPrompt } from './ui/interactPrompt';
 import { PvpWarning } from './ui/pvpWarning';
 import { RestartBanner } from './ui/restartBanner';
+import { campusMapData } from './ui/campusMapData';
 import { LocationPanel } from './ui/locationPanel';
+import { BigMap, Minimap } from './ui/minimap';
 import { PlayerPortrait } from './ui/playerPortrait';
 import { localRetroStore, RetroToggle } from './ui/retroToggle';
 import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
@@ -74,6 +76,7 @@ const hud = new Hud({
   onOpen: () => {
     shop.close();
     cardTable.close();
+    bigMap.close();
   },
 });
 const shop = new ShopPanel({
@@ -84,6 +87,7 @@ const shop = new ShopPanel({
   onOpen: () => {
     hud.setOpen(false);
     cardTable.close();
+    bigMap.close();
   },
 });
 const cardTable = new CardTablePanel({
@@ -100,6 +104,7 @@ const cardTable = new CardTablePanel({
   onOpen: () => {
     hud.setOpen(false);
     shop.close();
+    bigMap.close();
   },
 });
 const locationPanel = new LocationPanel({ parent: document.body, position: () => game.prediction.pos, clock: game.clock });
@@ -119,13 +124,35 @@ const trade = new TradePanel({
     hud.setOpen(false);
     shop.close();
     cardTable.close();
+    bigMap.close();
   },
+});
+const remotePositions = () => game.remotes(performance.now());
+// Tapping the minimap opens the big map in the panel area.
+const bigMap = new BigMap({
+  parent: document.body,
+  data: campusMapData(),
+  position: () => game.prediction.pos,
+  remotes: remotePositions,
+  onOpen: () => {
+    hud.setOpen(false);
+    shop.close();
+    cardTable.close();
+  },
+});
+const minimap = new Minimap({
+  parent: document.body,
+  data: campusMapData(),
+  position: () => game.prediction.pos,
+  yaw: () => renderer.world.rig.yaw,
+  remotes: remotePositions,
+  onOpen: () => bigMap.toggle(),
 });
 const chatLog = new ChatLog({
   parent: document.body,
   lines: () => game.chat.log,
   playerId: () => game.playerId,
-  covered: () => anyOpen([hud, shop, trade, cardTable]),
+  covered: () => anyOpen([hud, shop, trade, cardTable, bigMap]),
 });
 // Developer-only time control (?debug): overrides the shared time the sky follows.
 mountTimePanel(location.search, { parent: document.body, clock: game.clock });
@@ -151,6 +178,8 @@ new GameLoop({
     locationPanel.update();
     portrait.update();
     interactPrompt.update();
+    minimap.update();
+    bigMap.update();
     const m = controls.worldMove();
     // Inputs the server will never see would pile up unacknowledged; Welcome resets prediction anyway.
     if (!session.connected) return;
