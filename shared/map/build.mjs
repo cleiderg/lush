@@ -34,6 +34,11 @@ const PATH_WIDTH_DM = {
   footway: 20, path: 15, steps: 15, cycleway: 25, pedestrian: 40, service: 40,
   living_street: 60, residential: 60, unclassified: 60, tertiary: 70,
 };
+/** Path surface kind (`s` in campus.json): 0 dirt, 1 stone, 2 paved. */
+const SURFACE = { dirt: 0, stone: 1, paved: 2 };
+const PATH_SURFACE = {
+  path: SURFACE.dirt, footway: SURFACE.stone, steps: SURFACE.stone, cycleway: SURFACE.stone, pedestrian: SURFACE.stone,
+};
 
 /** Project, drop consecutive duplicates, flatten to [x0,z0,x1,z1,...]. */
 function flat(pts, closed) {
@@ -47,8 +52,11 @@ function flat(pts, closed) {
   return out;
 }
 
+const isClosed = (pts) => pts.length > 3 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1];
+
 const buildings = [];
 const paths = [];
+const plazas = [];
 const green = [];
 const GREEN_KIND = { grass: 0, wood: 1, water: 2, pitch: 3 };
 
@@ -61,11 +69,15 @@ for (const w of src.ways) {
     if (!(h > 0)) h = parseFloat(t['building:levels']) * 3;
     if (!(h > 0)) h = 4 + Math.floor(rng(w.id)() * 5);
     buildings.push({ id: w.id, h: Math.round(Math.min(h, 40) * 10), p });
+  } else if (t.highway === 'pedestrian' && t.area === 'yes' && isClosed(w.pts)) {
+    const p = flat(w.pts, true);
+    if (p.length >= 6) plazas.push({ id: w.id, p });
   } else if (t.highway) {
     const width = PATH_WIDTH_DM[t.highway];
     const p = flat(w.pts, false);
     if (!width || p.length < 4) continue;
-    paths.push({ id: w.id, w: t.width && parseFloat(t.width) > 0 ? Math.round(parseFloat(t.width) * 10) : width, p });
+    const w10 = t.width && parseFloat(t.width) > 0 ? Math.round(parseFloat(t.width) * 10) : width;
+    paths.push({ id: w.id, w: w10, s: PATH_SURFACE[t.highway] ?? SURFACE.paved, p });
   } else {
     let kind;
     if (t.natural === 'water') kind = 'water';
@@ -96,6 +108,7 @@ const campus = {
   bounds: { minX, minZ, maxX, maxZ },
   buildings,
   paths,
+  plazas,
   green,
 };
 
@@ -184,4 +197,4 @@ writeFileSync(outDir + '/campus.json', JSON.stringify(campus) + '\n');
 writeFileSync(outDir + '/collision.bin', Buffer.concat([header, Buffer.from(bits)]));
 writeFileSync(outDir + '/areas.json', JSON.stringify(areas) + '\n');
 writeFileSync(outDir + '/cardtables.json', JSON.stringify(cardTables) + '\n');
-console.log(`buildings=${buildings.length} paths=${paths.length} green=${green.length} grid=${width}x${height}`);
+console.log(`buildings=${buildings.length} paths=${paths.length} plazas=${plazas.length} green=${green.length} grid=${width}x${height}`);
