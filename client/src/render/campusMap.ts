@@ -91,9 +91,13 @@ const STYLES: Record<WallKind, WallStyle> = {
 };
 
 /** Wall colours of each wall material. */
-export const WALL_COLORS: Readonly<Record<WallKind, readonly number[]>> = Object.fromEntries(
-  WALL_KINDS.map((k) => [k, STYLES[k].walls]),
-) as Record<WallKind, readonly number[]>;
+export const WALL_COLORS: Readonly<Record<WallKind, readonly number[]>> = {
+  brick: STYLES.brick.walls,
+  concrete: STYLES.concrete.walls,
+  stucco: STYLES.stucco.walls,
+  wood: STYLES.wood.walls,
+  glass: STYLES.glass.walls,
+};
 
 /** The wall material for a building, from its id alone, so every client draws the same one. */
 export function wallKind(id: number): WallKind {
@@ -386,9 +390,9 @@ export interface MapStats {
 }
 
 /** Warm light from inside a lit window. */
-export const WINDOW_GLOW = 0xffc46b;
+export const WINDOW_GLOW = 0xffb45a;
 /** Emissive intensity of window glass at night. */
-export const WINDOW_GLOW_INTENSITY = 0.9;
+export const WINDOW_GLOW_INTENSITY = 0.8;
 
 /**
  * Patch a Lambert shader so vertices with `glow` 1 (window glass) emit the `windowGlow` colour:
