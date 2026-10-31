@@ -25,6 +25,12 @@ export const PROP_TYPES = [
   { name: 'notice_board', r: 0.8, square: true },
   { name: 'crate', r: 0.5, shop: true },
   { name: 'sack', r: 0.4, shop: true },
+  // Food and fun (#428): placed by their own pass after the busy areas, never by the busy-area shuffle.
+  { name: 'food_cart', r: 1.3, square: true, food: true },
+  { name: 'string_lights', r: 0.3, food: true },
+  { name: 'coffee_cups', r: 0.15, food: true, top: true },
+  { name: 'plates', r: 0.2, food: true, top: true },
+  { name: 'pizza_box', r: 0.25, food: true, top: true },
 ];
 
 /** Edge of a busy-area density cell in metres; busy areas get a 3 x 3 block of them around their centre. */
@@ -39,3 +45,32 @@ export const SHOP_CLEAR = { x0: -3, z0: -2, x1: 3, z1: 4 };
 export const TABLE_CLEAR = 2;
 /** Types placed near the centre of a gameplay area that has no props yet. */
 export const AREA_CLUSTER = ['sign', 'bench', 'bin', 'lamp_post'];
+
+// ---------- Food and fun (#428) ----------
+
+/** Seed for the food-and-fun pass, so it doesn't reshuffle the props above. */
+export const FOOD_SEED = 428;
+/** Food carts per busy area, in the order of FOOD_AREAS. */
+export const FOOD_CARTS = 1;
+/** String lights per busy area. Each is two poles STRING_SPAN metres apart with bulbs hung between them. */
+export const STRING_LIGHTS = 1;
+/** Distance between a string light's two poles, metres; the prop's position is the midpoint. */
+export const STRING_SPAN = 6;
+/** Busy areas that get carts and string lights: the shop and the card table plaza (names from build.mjs). */
+export const FOOD_AREAS = ['shop', 'card plaza'];
+/** Food props stay at least this far (metres, plus their footprint) from the spawn, shop stall, bank booth and grill. */
+export const FOOD_CLEAR = 3;
+/** Food props stay at least this far (metres, plus their footprint) from every building wall, so never on a door cell. */
+export const WALL_CLEAR = 1.5;
+/** Height (metres) of a picnic table top and of a food cart's serving ledge: where cups, plates and pizza boxes sit. */
+export const TABLETOP_Y = 0.78;
+/**
+ * Where table-top items may sit, in the host's own frame (metres, before rotation): two spots on each picnic
+ * table and two on each cart's serving ledge (front, +z).
+ */
+export const TABLETOP_SPOTS = {
+  picnic_table: [[-0.45, 0], [0.45, 0]],
+  food_cart: [[-0.5, 0.75], [0.4, 0.75]],
+};
+/** Picnic tables nearer than this (metres) to a busy-area centre get table-top items. */
+export const TABLETOP_REACH = 25;

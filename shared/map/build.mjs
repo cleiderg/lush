@@ -8,6 +8,7 @@ import { BBOX, ORIGIN, CHUNK_SIZE, CELL_SIZE } from './config.mjs';
 import { ALDRICH_PARK_WAY, SPAWN, SAFE_RADIUS, SHOP, SOUTH_FIELDS, PVP_ZONE, CARD_PLAZA, CARD_TABLES } from './areas.mjs';
 import {
   PROP_SEED, PROP_TYPES, BUSY_CELL, BUSY_TYPES, SPAWN_CLEAR, SHOP_CLEAR, TABLE_CLEAR, AREA_CLUSTER,
+  FOOD_SEED, FOOD_CARTS, STRING_LIGHTS, STRING_SPAN, FOOD_AREAS, FOOD_CLEAR, WALL_CLEAR, TABLETOP_SPOTS, TABLETOP_REACH,
 } from './props.mjs';
 import {
   NATURE_SEED, NATURE_TYPES, NATURE_BLOCK, NATURE_COVER_SHARE, TREES_PER_BLOCK, BUSHES_PER_BLOCK, ROCKS_PER_BLOCK,
@@ -277,7 +278,7 @@ const busy = [
   { name: 'card plaza', c: plazaCentre, shop: false },
 ];
 for (const { name, c, shop } of busy) {
-  const pool = PROP_TYPES.map((_, i) => i).filter((i) => shop || !PROP_TYPES[i].shop);
+  const pool = PROP_TYPES.map((_, i) => i).filter((i) => (shop || !PROP_TYPES[i].shop) && !PROP_TYPES[i].food);
   for (let dz = -1; dz <= 1; dz++) {
     for (let dx = -1; dx <= 1; dx++) {
       const x0 = c.x - BUSY_CELL / 2 + dx * BUSY_CELL, z0 = c.z - BUSY_CELL / 2 + dz * BUSY_CELL;
@@ -315,6 +316,123 @@ for (const a of areas.areas) {
   }
   if (!done) throw new Error(`area ${a.id} has no room for props`);
 }
+placeFood();
+/**
+ * Food and fun (#428), with its own seeded generator: a food cart and a string light in each of FOOD_AREAS, then
+ * coffee cups, plates and pizza boxes on the picnic tables near the busy areas and on the carts' serving ledges.
+ * Every food prop keeps FOOD_CLEAR from the spawn, shop stall, bank booth and grill and WALL_CLEAR from building walls.
+ */
+function placeFood() {
+  const foodRand = rng(FOOD_SEED);
+  const edges = buildingBoxes.flatMap((b) => {
+    const out = [];
+    for (let i = 0; i < b.p.length; i += 2) {
+      const j = (i + 2) % b.p.length;
+      out.push([b.p[i] / 10, b.p[i + 1] / 10, b.p[j] / 10, b.p[j + 1] / 10]);
+    }
+    return out;
+  });
+  const segDist = ([x0, z0, x1, z1], x, z) => {
+    const dx = x1 - x0, dz = z1 - z0, len2 = dx * dx + dz * dz;
+    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - x0) * dx + (z - z0) * dz) / len2));
+    return Math.hypot(x0 + t * dx - x, z0 + t * dz - z);
+  };
+  const nearWall = (x, z, d) => edges.some((e) =>
+    x >= Math.min(e[0], e[2]) - d && x <= Math.max(e[0], e[2]) + d && z >= Math.min(e[1], e[3]) - d && z <= Math.max(e[1], e[3]) + d &&
+    segDist(e, x, z) < d);
+  /** A food prop of footprint r may stand at (x, z): walkable, clear of walls and of the spawn, shop, bank booth and grill. */
+  const clear = (x, z, r) => {
+    for (const [ox, oz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) if (blockedAt(x + ox, z + oz) || inBuilding(x + ox, z + oz)) return false;
+    if (nearWall(x, z, WALL_CLEAR + r)) return false;
+    if ([spawnM, BANK_BOOTH, GRILL].some((c) => Math.hypot(x - c.x, z - c.z) < FOOD_CLEAR + r)) return false;
+    const sx = x - shopM.x, sz = z - shopM.z, m = FOOD_CLEAR + r;
+    if (sx > SHOP_CLEAR.x0 - m && sx < SHOP_CLEAR.x1 + m && sz > SHOP_CLEAR.z0 - m && sz < SHOP_CLEAR.z1 + m) return false;
+    return !tablesM.some((c) => Math.abs(x - c.x) < TABLE_CLEAR + r && Math.abs(z - c.z) < TABLE_CLEAR + r);
+  };
+  const apart = (x, z, r) => footprints(placed).every((f) => Math.hypot(x - f.x, z - f.z) >= r + f.r);
+  const pick = (c) => [
+    Math.round((c.x - 1.5 * BUSY_CELL + foodRand() * 3 * BUSY_CELL) * 10) / 10,
+    Math.round((c.z - 1.5 * BUSY_CELL + foodRand() * 3 * BUSY_CELL) * 10) / 10,
+  ];
+  const t = (n) => typeId[n];
+  for (const name of FOOD_AREAS) {
+    const { c } = busy.find((b) => b.name === name);
+    for (let n = 0; n < FOOD_CARTS; n++) {
+      let ok = false;
+      for (let k = 0; k < 4000 && !ok; k++) {
+        const [x, z] = pick(c);
+        const r = PROP_TYPES[t('food_cart')].r;
+        if (!clear(x, z, r) || !apart(x, z, r)) continue;
+        placed.push({ t: t('food_cart'), x, z, rot: Math.floor(foodRand() * 4) * 90 });
+        ok = true;
+      }
+      if (!ok) throw new Error(`${name}: no room for a food cart`);
+    }
+    for (let n = 0; n < STRING_LIGHTS; n++) {
+      let ok = false;
+      for (let k = 0; k < 4000 && !ok; k++) {
+        const [x, z] = pick(c);
+        const rot = Math.floor(foodRand() * 180);
+        const p = { t: t('string_lights'), x, z, rot };
+        const [a, b] = poles(p);
+        const r = PROP_TYPES[p.t].r;
+        if (!clear(a.x, a.z, r) || !clear(b.x, b.z, r) || !apart(a.x, a.z, r) || !apart(b.x, b.z, r)) continue;
+        // The wire runs over open ground: no wall, and no lamp post or cart canopy under it.
+        const tall = placed.filter((q) => ['lamp_post', 'food_cart', 'umbrella'].includes(PROP_TYPES[q.t].name));
+        const wireOk = wire(p).every((w) => !blockedAt(w.x, w.z) && !nearWall(w.x, w.z, 0.5) &&
+          tall.every((q) => Math.hypot(w.x - q.x, w.z - q.z) >= PROP_TYPES[q.t].r + 0.3));
+        if (!wireOk) continue;
+        placed.push(p);
+        ok = true;
+      }
+      if (!ok) throw new Error(`${name}: no room for string lights`);
+    }
+  }
+  // Table-top items: the first spot of every host always, the second about half the time; types taken in turn.
+  const tops = PROP_TYPES.map((_, i) => i).filter((i) => PROP_TYPES[i].top);
+  for (let i = tops.length - 1; i > 0; i--) {
+    const j = Math.floor(foodRand() * (i + 1));
+    [tops[i], tops[j]] = [tops[j], tops[i]];
+  }
+  const hosts = placed.filter((p) => {
+    const name = PROP_TYPES[p.t].name;
+    if (name === 'food_cart') return true;
+    return name === 'picnic_table' && busy.some((b) => Math.hypot(p.x - b.c.x, p.z - b.c.z) < TABLETOP_REACH);
+  });
+  let next = 0;
+  for (const h of hosts) {
+    TABLETOP_SPOTS[PROP_TYPES[h.t].name].forEach(([lx, lz], s) => {
+      if (s > 0 && foodRand() < 0.5) return;
+      const ty = tops[next % tops.length];
+      const w = toWorld(h, lx, lz);
+      const x = Math.round(w.x * 10) / 10, z = Math.round(w.z * 10) / 10;
+      const jitter = Math.floor(foodRand() * 30) - 15;
+      if (!clear(x, z, PROP_TYPES[ty].r)) return;
+      placed.push({ t: ty, x, z, rot: (h.rot + jitter + 360) % 360 });
+      next++;
+    });
+  }
+}
+/** A point in a prop's own frame (metres) in world metres; rotation is clockwise seen from above, as in the client. */
+function toWorld(p, lx, lz) {
+  const a = (-p.rot * Math.PI) / 180;
+  return { x: p.x + lx * Math.cos(a) + lz * Math.sin(a), z: p.z - lx * Math.sin(a) + lz * Math.cos(a) };
+}
+/** The two poles of a string light. */
+function poles(p) {
+  return [toWorld(p, -STRING_SPAN / 2, 0), toWorld(p, STRING_SPAN / 2, 0)];
+}
+/** Points every half metre along a string light's wire. */
+function wire(p) {
+  return Array.from({ length: STRING_SPAN * 2 + 1 }, (_, i) => toWorld(p, -STRING_SPAN / 2 + i / 2, 0));
+}
+/** Ground footprints {x, z, r} of placed props: a string light stands on its two poles, every other prop on its centre. */
+function footprints(list) {
+  return list.flatMap((p) => (PROP_TYPES[p.t].name === 'string_lights'
+    ? poles(p).map((q) => ({ ...q, r: PROP_TYPES[p.t].r }))
+    : [{ x: p.x, z: p.z, r: PROP_TYPES[p.t].r }]));
+}
+
 const props = {
   version: 1,
   units: 'decimetres',
@@ -378,7 +496,11 @@ function placeNature() {
   /** Walkable park grass: in the park, on a walkable cell, off paths, plazas and the card plaza. The test uses the same rule. */
   const grassAt = (x, z) => insideDm(x, z, park.p) && !blockedAt(x, z) && pathClear(x, z, 0.01) > 0 && !onPaved(x, z);
 
-  const props = placed.map((p) => ({ x: p.x, z: p.z, r: PROP_TYPES[p.t].r }));
+  // Props, plus the ground under every string light's wire so no tree grows through it.
+  const props = [
+    ...footprints(placed),
+    ...placed.filter((p) => PROP_TYPES[p.t].name === 'string_lights').flatMap((p) => wire(p).map((w) => ({ ...w, r: 1.5 }))),
+  ];
   const items = []; // {t, x, z, rot, scale, stretch}, metres
   const CELL = 4;
   const hash = new Map();

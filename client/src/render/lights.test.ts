@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { FLAME_FLICKER, GLASS_GLOW, LampLights, MAX_POINT_LIGHTS, POINT_LIGHT_FADE_MS, lampSources, type LightSource } from './lights';
-import { LAMP_HEADS, Props, addLampGlow, loadProps } from './propKit';
+import { LAMP_HEADS, Props, addLampGlow, glassGeometry, loadProps } from './propKit';
 import { WorldScene, countDrawCalls } from './scene';
 
 const NIGHT = -0.4;
@@ -145,13 +145,17 @@ describe('lamps follow the sun (AC3)', () => {
     expect(l.sources.filter((_, i) => intensityOf(l, i) === 0).length).toBe(l.sources.length - MAX_POINT_LIGHTS);
     // One uniform colours the glass of every lamp, lit or not by a point light.
     expect(props.glow.value.getHex()).toBe(GLASS_GLOW);
-    // Every lamp's glass is marked to glow: glass triangles = lamps × the 10 triangles of a glass box (5 faces).
+    // Every lamp's glass is marked to glow: glass triangles = lamps × the 10 triangles of a glass box (5 faces),
+    // plus the bulbs of every string light (#428), which glow without a light source of their own.
     let glowing = 0;
     for (const c of props.group.children) {
       const g = (c as THREE.Mesh).geometry.getAttribute('glow');
       for (let i = 0; i < g.count; i++) glowing += g.getX(i);
     }
-    expect(glowing / 3).toBe(l.sources.length * 10);
+    const strings = data.props.filter(([t]) => data.types[t] === 'string_lights').length;
+    const bulbTris = glassGeometry('string_lights').getAttribute('position').count / 3;
+    expect(strings).toBeGreaterThan(0);
+    expect(glowing / 3).toBe(l.sources.length * 10 + strings * bulbTris);
     // The shared material adds `glow × lampGlow` to its emissive light.
     const shader = {
       uniforms: {} as Record<string, THREE.IUniform>,
