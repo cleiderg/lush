@@ -19,9 +19,13 @@ import { PvpWarning } from './ui/pvpWarning';
 import { RestartBanner } from './ui/restartBanner';
 import { localRetroStore, RetroToggle } from './ui/retroToggle';
 import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
+import { applyTheme } from './ui/theme';
 import { TradePanel } from './ui/tradePanel';
 
 initErrorReporting();
+
+// Theme properties and the self-hosted title font, before any panel is built.
+applyTheme();
 
 // Audio starts only after the first user gesture.
 new AudioManager({ factory: () => new AudioContext(), window, document });
