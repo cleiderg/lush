@@ -109,6 +109,15 @@ describe('grass tufts and flowers placement (AC1)', () => {
     for (const t of chunks.flatMap((c) => c.tufts)) expect(t.x <= 60 && t.z <= 60).toBe(true);
   });
 
+  it('keeps clear of extra polygons such as the card table plaza', () => {
+    const plaza = [300, 300, 380, 300, 380, 380, 300, 380];
+    const chunks = scatterNature(small, { tuftsPerM2: 4, flowersPerM2: 1, exclude: [plaza] });
+    const all = chunks.flatMap((c) => [...c.tufts, ...c.flowers]);
+    expect(all.filter((t) => inside(plaza, t.x, t.z))).toEqual([]);
+    const without = scatterNature(small, { tuftsPerM2: 4, flowersPerM2: 1 }).flatMap((c) => [...c.tufts, ...c.flowers]);
+    expect(without.some((t) => inside(plaza, t.x, t.z))).toBe(true);
+  });
+
   it('gives the same placement for a fixed seed, and a different one for another seed', () => {
     const data = loadCampus();
     const a = JSON.stringify(scatterNature(data, { seed: 7, tuftsPerM2: 0.1, flowersPerM2: 0.01 }));

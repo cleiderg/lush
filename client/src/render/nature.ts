@@ -15,8 +15,8 @@ const ANCHOR_PROBES = 4096;
 const MIN_SCALE = 0.7;
 const SCALE_RANGE = 0.6;
 
-const TUFT_BASE = 0x4f8a3a;
-const TUFT_TIP = 0x8cc56a;
+const TUFT_BASE = 0x3f7a2e;
+const TUFT_TIP = 0x8ccb5e;
 const STEM = 0x3d7a33;
 /** White, pink, lavender and red, like the dots of flowers on the day reference's grass. */
 export const FLOWER_COLORS = [0xf4f1ea, 0xe88fb4, 0xa98ad6, 0xd9534f];
@@ -25,6 +25,8 @@ export interface NatureOptions {
   tuftsPerM2?: number;
   flowersPerM2?: number;
   seed?: number;
+  /** More polygons to keep clear (decimetres, like campus.json), e.g. the card table plaza. */
+  exclude?: number[][];
 }
 
 /** One placed tuft or flower. Metres; `kind` is the tuft shape or the flower colour index. */
@@ -85,7 +87,8 @@ export function scatterNature(data: CampusData, opts: NatureOptions = {}): Chunk
   const tuftsPerM2 = opts.tuftsPerM2 ?? GRASS_TUFTS_PER_M2;
   const flowersPerM2 = opts.flowersPerM2 ?? FLOWERS_PER_M2;
   const seed = opts.seed ?? NATURE_SEED;
-  const key = `${tuftsPerM2}/${flowersPerM2}/${seed}`;
+  const exclude = opts.exclude ?? [];
+  const key = `${tuftsPerM2}/${flowersPerM2}/${seed}/${JSON.stringify(exclude)}`;
   let byKey = cache.get(data);
   if (!byKey) cache.set(data, (byKey = new Map()));
   const cached = byKey.get(key);
@@ -96,7 +99,7 @@ export function scatterNature(data: CampusData, opts: NatureOptions = {}): Chunk
   const { minX, minZ, maxX, maxZ } = data.bounds;
   const grass = polys(data.green.filter((g) => g.k === GREEN_GRASS));
   const water = polys(data.green.filter((g) => g.k === GREEN_WATER));
-  const buildings = polys(data.buildings);
+  const buildings = polys([...data.buildings, ...exclude.map((p) => ({ p }))]);
   const segs: Seg[] = [];
   for (const w of data.paths) {
     const r = w.w / 2 + PATH_MARGIN * 10;
@@ -149,9 +152,9 @@ export function scatterNature(data: CampusData, opts: NatureOptions = {}): Chunk
 type Blade = [number, number, number, number];
 const TUFT_SHAPES: Blade[][] = [
   // Tall and narrow: three blades.
-  [[0.3, 0.12, 0.34, 0.035], [2.4, 0.1, 0.3, 0.035], [4.4, 0.13, 0.36, 0.035]],
+  [[0.3, 0.16, 0.46, 0.05], [2.4, 0.14, 0.4, 0.05], [4.4, 0.17, 0.5, 0.05]],
   // Short and spread: five blades.
-  [[0, 0.16, 0.22, 0.03], [1.3, 0.18, 0.18, 0.03], [2.5, 0.15, 0.26, 0.03], [3.8, 0.17, 0.2, 0.03], [5.1, 0.16, 0.24, 0.03]],
+  [[0, 0.22, 0.3, 0.045], [1.3, 0.24, 0.25, 0.045], [2.5, 0.2, 0.34, 0.045], [3.8, 0.23, 0.27, 0.045], [5.1, 0.22, 0.32, 0.045]],
 ];
 
 /** Instance variants: one per tuft shape, then the flower. */
@@ -204,9 +207,9 @@ export function natureGeometry(): THREE.BufferGeometry {
     }
   });
   // A stem and a five-petal head; the white petals take the instance colour.
-  const h = 0.16, r = 0.055;
-  b.vertex(FLOWER_VARIANT, -0.012, 0, 0, STEM);
-  b.vertex(FLOWER_VARIANT, 0.012, 0, 0, STEM);
+  const h = 0.22, r = 0.09;
+  b.vertex(FLOWER_VARIANT, -0.015, 0, 0, STEM);
+  b.vertex(FLOWER_VARIANT, 0.015, 0, 0, STEM);
   b.vertex(FLOWER_VARIANT, 0, h, 0, STEM);
   for (let i = 0; i < 5; i++) {
     const a0 = (i / 5) * Math.PI * 2, a1 = ((i + 1) / 5) * Math.PI * 2;
@@ -224,6 +227,9 @@ function natureMaterial(): THREE.MeshLambertMaterial {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float part;\nattribute float variant;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nif (abs(part - variant) > 0.5) transformed = vec3(0.0);');
+    // Both sides of a blade face up, instead of the back side being flipped into the dark.
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\nnormal = normalize(vNormal);');
   };
   m.customProgramCacheKey = () => 'nature';
   return m;

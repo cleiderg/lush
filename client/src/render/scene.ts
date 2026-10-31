@@ -41,7 +41,7 @@ export class WorldScene {
   readonly areas = new AreaMarkers(loadAreas());
   readonly cardTables = new CardTables(loadCardTables());
   /** Grass tufts and flowers, instanced per map chunk. */
-  readonly nature = new Nature(loadCampus());
+  readonly nature = new Nature(loadCampus(), { exclude: [loadCardTables().plaza] });
   /** Sun, ambient, sky colour and fog, following WorldView.sky. */
   readonly sky = new SkyRig();
   private readonly player = new Character();
