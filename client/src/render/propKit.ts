@@ -31,6 +31,14 @@ const PAPER = [0xf4efe0, 0xf0d870, 0xa8d0e8, 0xf0b0b0];
 const BURLAP = 0xc8a876;
 const BURLAP_DARK = 0xa88a5c;
 const FRUIT = [0xd83a2a, 0xf09a28, 0xe8d040, 0x6cae3a];
+const CARDBOARD = 0xc89a62;
+const CHEESE = 0xf0c050;
+const PEPPERONI = 0xb8322a;
+const COFFEE = 0x5a3a24;
+const SLEEVE = 0xa8743c;
+const BUN = 0xd8a05a;
+const SAUSAGE = 0xa8442e;
+const FRIES = 0xf0d060;
 
 type V = number[];
 
@@ -131,6 +139,20 @@ export const LAMP_HEADS: Readonly<Record<string, LampHead>> = {
   lamp_post: { min: [-0.1, 2.72, 0.39], max: [0.1, 2.98, 0.59], flame: false },
   lantern: { min: [-0.08, 0.98, 0.18], max: [0.08, 1.18, 0.34], flame: true },
 };
+
+/** Height (metres) of a picnic table top and a food cart's serving ledge; table-top items stand on it (props.mjs, TABLETOP_Y). */
+export const TABLETOP_Y = 0.78;
+/** Distance between a string light's two poles (props.mjs, STRING_SPAN). */
+export const STRING_SPAN = 6;
+/** Height of the string-light wire at the poles and how far it sags in the middle. */
+const WIRE_Y = 3;
+const WIRE_SAG = 0.4;
+const wireY = (x: number) => WIRE_Y - WIRE_SAG * (1 - ((2 * x) / STRING_SPAN) ** 2);
+/** Centres of a string light's bulbs, every half metre along the wire. */
+export const STRING_BULBS: readonly (readonly [number, number, number])[] = Array.from({ length: STRING_SPAN * 2 - 1 }, (_, i) => {
+  const x = -STRING_SPAN / 2 + 0.5 + i * 0.5;
+  return [x, wireY(x) - 0.1, 0] as const;
+});
 
 function glass(b: MeshBuilder, type: string): void {
   const { min, max } = LAMP_HEADS[type];
@@ -302,17 +324,115 @@ function sacks(b: MeshBuilder): void {
   sack(b, 0.2, 0, 0.1, 0.85);
 }
 
+// ---------- Food and fun (#428). ----------
+
+function foodCart(b: MeshBuilder): void {
+  // Red-and-white cart, long side to the front, a serving ledge at table height, a striped canopy and a grill.
+  box(b, -0.9, 0.3, -0.5, 0.9, 0.95, 0.5, RED);
+  box(b, -0.92, 0.95, -0.52, 0.92, 1.0, 0.52, STEEL);
+  box(b, -0.6, 0.5, 0.5, 0.6, 0.85, 0.51, UCI_GOLD);
+  box(b, -0.85, TABLETOP_Y - 0.04, 0.5, 0.85, TABLETOP_Y, 0.95, WOOD_LIGHT);
+  for (const x of [-0.75, 0.75]) bar(b, [x, 0.5, 0.5], [x, TABLETOP_Y - 0.04, 0.85], 0.02, STEEL);
+  // Two wheels on one axle and a leg at the other end; a push handle at the left.
+  for (const z of [-0.53, 0.53]) wheel(b, -0.45, 0.3, z, 0.3, 0.03, TYRE);
+  box(b, 0.7, 0, -0.05, 0.8, 0.3, 0.05, IRON);
+  bar(b, [-0.9, 0.9, -0.3], [-1.2, 1.0, -0.3], 0.02, STEEL);
+  bar(b, [-0.9, 0.9, 0.3], [-1.2, 1.0, 0.3], 0.02, STEEL);
+  bar(b, [-1.2, 1.0, -0.32], [-1.2, 1.0, 0.32], 0.025, IRON);
+  // Grill plate with sausages, a coffee urn.
+  box(b, -0.7, 1.0, -0.35, 0.1, 1.04, 0.3, IRON);
+  for (let i = 0; i < 4; i++) box(b, -0.62 + i * 0.18, 1.04, -0.2, -0.52 + i * 0.18, 1.08, 0.15, SAUSAGE);
+  prism(b, 0.55, 0, 0.16, 0.14, 1.0, 1.4, 6, STEEL);
+  prism(b, 0.55, 0, 0.1, 0.02, 1.4, 1.48, 6, IRON);
+  // Canopy on four poles: alternating red and white stripes.
+  for (const [x, z] of [[-0.85, -0.45], [0.85, -0.45], [-0.85, 0.45], [0.85, 0.45]]) box(b, x - 0.02, 1.0, z - 0.02, x + 0.02, 2.2, z + 0.02, STEEL);
+  for (let i = 0; i < 5; i++) box(b, -1.05 + i * 0.42, 2.2, -0.7, -0.63 + i * 0.42, 2.26, 0.75, i % 2 ? WHITE : RED);
+  box(b, -1.05, 2.0, 0.74, 1.05, 2.2, 0.76, UCI_GOLD);
+}
+
+function stringLights(b: MeshBuilder, withGlass = true): void {
+  // Two poles with the wire sagging between them and warm bulbs hanging off it (bulbs lit at night).
+  const h = STRING_SPAN / 2;
+  for (const x of [-h, h]) {
+    prism(b, x, 0, 0.12, 0.1, 0, 0.15, 6, CONCRETE_DARK);
+    prism(b, x, 0, 0.05, 0.04, 0.15, WIRE_Y + 0.15, 6, WOOD_DARK);
+  }
+  for (let i = 0; i < STRING_SPAN * 2; i++) {
+    const x0 = -h + i * 0.5, x1 = x0 + 0.5;
+    bar(b, [x0, wireY(x0), 0], [x1, wireY(x1), 0], 0.008, IRON);
+  }
+  if (withGlass) bulbs(b);
+}
+
+function bulbs(b: MeshBuilder): void {
+  for (const [x, y, z] of STRING_BULBS) lump(b, x, y - 0.06, z, 0.05, 0.06, 0.05, GLOW);
+}
+
+function coffeeCups(b: MeshBuilder): void {
+  // Three takeaway cups: paper cup, sleeve, lid.
+  const y = TABLETOP_Y;
+  for (const [x, z] of [[-0.07, -0.04], [0.06, -0.06], [0, 0.07]]) {
+    prism(b, x, z, 0.035, 0.045, y, y + 0.13, 6, WHITE);
+    prism(b, x, z, 0.043, 0.046, y + 0.04, y + 0.09, 6, SLEEVE, false);
+    prism(b, x, z, 0.047, 0.04, y + 0.13, y + 0.15, 6, COFFEE);
+  }
+}
+
+function plates(b: MeshBuilder): void {
+  // Two plates: a hot dog on one, fries on the other.
+  const y = TABLETOP_Y;
+  prism(b, -0.08, 0, 0.1, 0.12, y, y + 0.02, 8, WHITE);
+  prism(b, 0.1, 0.02, 0.1, 0.12, y, y + 0.02, 8, WHITE);
+  box(b, -0.15, y + 0.02, -0.03, -0.01, y + 0.06, 0.03, BUN);
+  box(b, -0.17, y + 0.05, -0.015, 0.01, y + 0.08, 0.015, SAUSAGE);
+  for (let i = 0; i < 4; i++) box(b, 0.05 + i * 0.03, y + 0.02, -0.02 + (i % 2) * 0.03, 0.065 + i * 0.03, y + 0.05, 0.06 - (i % 2) * 0.03, FRIES);
+}
+
+function pizzaBox(b: MeshBuilder): void {
+  // A closed box under an open one: the pizza with pepperoni, the lid propped up behind.
+  const y = TABLETOP_Y;
+  box(b, -0.2, y, -0.2, 0.2, y + 0.05, 0.2, CARDBOARD);
+  box(b, -0.06, y + 0.05, 0.1, 0.06, y + 0.051, 0.16, RED);
+  box(b, -0.2, y + 0.05, -0.2, 0.2, y + 0.08, 0.2, CARDBOARD);
+  prism(b, 0, 0, 0.17, 0.17, y + 0.08, y + 0.09, 8, CHEESE);
+  for (const [x, z] of [[-0.08, -0.05], [0.07, -0.07], [0, 0.06], [-0.07, 0.08], [0.09, 0.06]]) {
+    prism(b, x, z, 0.025, 0.025, y + 0.09, y + 0.095, 5, PEPPERONI);
+  }
+  // Lid: hinged on the back edge, leaning back.
+  const l = [[-0.2, y + 0.08, -0.2], [0.2, y + 0.08, -0.2], [0.2, y + 0.45, -0.32], [-0.2, y + 0.45, -0.32]];
+  b.tri(l[0], l[1], l[2], [0, 0.3, 1], CARDBOARD);
+  b.tri(l[0], l[2], l[3], [0, 0.3, 1], CARDBOARD);
+  b.tri(l[0], l[2], l[1], [0, -0.3, -1], CARDBOARD);
+  b.tri(l[0], l[3], l[2], [0, -0.3, -1], CARDBOARD);
+}
+
 const MODELS: Record<string, (b: MeshBuilder, withGlass?: boolean) => void> = {
   bench, lamp_post: lampPost, bin, bike_rack: bikeRack, sign, planter, picnic_table: picnicTable, umbrella, scooter,
   fence, low_wall: lowWall, lantern, notice_board: noticeBoard, crate: crates, sack: sacks,
+  food_cart: foodCart, string_lights: stringLights, coffee_cups: coffeeCups, plates, pizza_box: pizzaBox,
 };
+
+/**
+ * The parts of each prop type that glow at night: lamp glass (LAMP_HEADS, which also get a point light) and
+ * string-light bulbs (emissive only, no point light).
+ */
+const GLOW_PARTS: Record<string, (b: MeshBuilder) => void> = {
+  lamp_post: (b) => glass(b, 'lamp_post'),
+  lantern: (b) => glass(b, 'lantern'),
+  string_lights: bulbs,
+};
+
+/** Whether a prop type has parts that glow from sunset to sunrise. */
+export function glowsAtNight(type: string): boolean {
+  return type in GLOW_PARTS;
+}
 
 /** Every prop type the kit can draw. */
 export const PROP_KIT = Object.keys(MODELS);
 
 /**
- * Builds the model for one prop type into `b` (at the origin, unrotated). With `withGlass` false, lamp heads
- * (LAMP_HEADS) are left out so they can be drawn with an emissive material.
+ * Builds the model for one prop type into `b` (at the origin, unrotated). With `withGlass` false, the parts that
+ * glow (lamp heads, string-light bulbs) are left out so they can be drawn with an emissive material.
  */
 export function buildProp(b: MeshBuilder, type: string, withGlass = true): void {
   const f = MODELS[type];
@@ -327,10 +447,10 @@ export function propGeometry(type: string, withGlass = true): THREE.BufferGeomet
   return b.geometry();
 }
 
-/** A lamp type's glass on its own, at the origin and unrotated. */
+/** A glowing type's glass or bulbs (GLOW_PARTS) on their own, at the origin and unrotated. */
 export function glassGeometry(type: string): THREE.BufferGeometry {
   const b = new MeshBuilder();
-  glass(b, type);
+  GLOW_PARTS[type](b);
   return b.geometry();
 }
 
@@ -352,7 +472,7 @@ export function addLampGlow(shader: THREE.WebGLProgramParametersWithUniforms, gl
  * The props from props.json. They never move, so every chunk's props are merged into one mesh with one
  * shared material: the props cost one draw call per 64 m chunk that has any, however many props it holds,
  * and chunks out of view are culled. Lamp glass is marked with a `glow` vertex attribute and shines with
- * `glow.value` (black by day; LampLights sets it at night).
+ * `glow.value` (black by day; LampLights sets it at night), and so are string-light bulbs.
  */
 export class Props {
   readonly group = new THREE.Group();
@@ -364,10 +484,10 @@ export class Props {
     this.group.name = 'props';
     this.material.onBeforeCompile = (shader) => addLampGlow(shader, this.glow);
     this.material.customProgramCacheKey = () => 'props-lamp-glow';
-    // Each type is its body (glow 0) plus, for lamps, its glass (glow 1).
+    // Each type is its body (glow 0) plus, for lamps and string lights, its glass or bulbs (glow 1).
     const models = data.types.map((t) => {
       const parts: [THREE.BufferGeometry, number][] = [[propGeometry(t, false), 0]];
-      if (LAMP_HEADS[t]) parts.push([glassGeometry(t), 1]);
+      if (glowsAtNight(t)) parts.push([glassGeometry(t), 1]);
       return parts;
     });
     const chunks = new Map<string, number[][]>();

@@ -1,14 +1,18 @@
 import * as THREE from 'three';
 import {
+  ATTACK_ARM,
   BREATH_PERIOD,
   Character,
+  type CombatAnims,
   PARTS,
   WALK_SPEED_RAD_PER_UNIT,
   breath,
   breathPose,
+  isRunning,
   makePartGeometry,
   makePartMaterial,
   poseRoll,
+  smoothSpeed,
   swingAngle,
 } from './character';
 import { SLOTS, equipmentMaterial, itemColor, slotGeometry } from './equipment';
@@ -20,6 +24,8 @@ interface Track {
   x: number;
   z: number;
   phase: number;
+  time: number;
+  speed: number;
 }
 
 /**
@@ -46,6 +52,7 @@ export class RemotePlayers {
   private readonly axisX = new THREE.Vector3(1, 0, 0);
   private readonly axisZ = new THREE.Vector3(0, 0, 1);
   private readonly axisY = new THREE.Vector3(0, 1, 0);
+  private readonly tilt = new THREE.Quaternion();
 
   constructor(capacity = MAX_REMOTE_PLAYERS) {
     this.capacity = capacity;
@@ -77,8 +84,11 @@ export class RemotePlayers {
     return mesh;
   }
 
-  /** `time` is the render clock in seconds; it drives idle breathing for players standing still. */
-  update(players: readonly PlayerView[], lookup?: EntityLookup, time = 0, local?: Character): void {
+  /**
+   * `time` is the render clock in seconds; it drives idle breathing for players standing still and tells
+   * a run from a walk. `combat`, when given, supplies attack swings and hit flinches.
+   */
+  update(players: readonly PlayerView[], lookup?: EntityLookup, time = 0, local?: Character, combat?: CombatAnims): void {
     for (const mesh of this.equipment.values()) mesh.count = 0;
     const n = Math.min(players.length, this.capacity);
     const seen = new Set<number>();
@@ -87,24 +97,30 @@ export class RemotePlayers {
       seen.add(p.id);
       let t = this.tracks.get(p.id);
       if (!t) {
-        t = { x: p.x, z: p.z, phase: 0 };
+        t = { x: p.x, z: p.z, phase: 0, time, speed: 0 };
         this.tracks.set(p.id, t);
       }
       const d = Math.hypot(p.x - t.x, p.z - t.z);
       const moving = d > 1e-4;
+      t.speed = smoothSpeed(t.speed, d, time - t.time);
+      const running = moving && isRunning(t.speed);
+      t.time = time;
       t.phase = moving ? t.phase + d * WALK_SPEED_RAD_PER_UNIT : 0;
       // Offset by id so a crowd doesn't breathe in step.
       const b = moving ? 0 : breath(time, (p.id * 0.618) % BREATH_PERIOD);
       t.x = p.x;
       t.z = p.z;
 
+      const pose = combat?.pose(p.id, time);
       this.q.setFromAxisAngle(this.axisY, p.heading);
+      if (pose && pose.flinch !== 0) this.q.multiply(this.tilt.setFromAxisAngle(this.axisX, pose.flinch));
       for (let k = 0; k < PARTS.length; k++) {
         const part = PARTS[k];
         const roll = poseRoll(part, p.animation ?? 0);
-        if (roll !== 0) this.qs.setFromAxisAngle(this.axisZ, roll);
-        else this.qs.setFromAxisAngle(this.axisX, swingAngle(t.phase, part));
-        // world = root(pos, yaw) * pivot translate * swing rotation * breathing scale
+        if (pose && pose.attack !== 0 && part.name === ATTACK_ARM) this.qs.setFromAxisAngle(this.axisX, pose.attack);
+        else if (roll !== 0) this.qs.setFromAxisAngle(this.axisZ, roll);
+        else this.qs.setFromAxisAngle(this.axisX, swingAngle(t.phase, part, running));
+        // world = root(pos, yaw, flinch tilt) * pivot translate * swing rotation * breathing scale
         const [px, py, pz] = part.pivot;
         const lift = breathPose(part, b, this.scale);
         this.pos.set(px, py + lift, pz).applyQuaternion(this.q);

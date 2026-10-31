@@ -30,6 +30,8 @@ const ROCKS = ['rock_boulder', 'rock_flat'];
 const PROP_R: Record<string, number> = {
   bench: 0.9, lamp_post: 0.35, bin: 0.35, bike_rack: 1.1, sign: 0.4, planter: 0.6, picnic_table: 1.1, umbrella: 1.1,
   scooter: 0.6, fence: 1.0, low_wall: 1.0, lantern: 0.3, notice_board: 0.8, crate: 0.5, sack: 0.4,
+  // Food and fun (#428). A string light's position is the middle of its wire; build.mjs keeps nature 1.5 m clear of the wire.
+  food_cart: 1.3, string_lights: 1.5, coffee_cups: 0.15, plates: 0.2, pizza_box: 0.25,
 };
 /** Places to keep 3 m clear of: spawn and shop from areas.json, bank booth and grill (M9) from docs/specs/map.md. */
 const CLEAR = {

@@ -12,7 +12,7 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 | `areas.json` | Gameplay areas for client and server |
 | `cardtables.json` | Card table plaza and its 4 tables |
 | `props.mjs` | Prop types, placement seed and busy-area rules; edit here, then rebuild |
-| `props.json` | Campus props (benches, lamp posts, bins, ...), visual only |
+| `props.json` | Campus props (benches, lamp posts, bins, ..., food carts, string lights and table-top cups, plates and pizza boxes), visual only |
 | `parknature.mjs` | Aldrich Park nature types, seed, densities and clearances; edit here, then rebuild |
 | `parknature.json` | Aldrich Park trees, rocks, bushes, flower beds, picnic blankets and birds, visual only |
 | `config.mjs` | Bounding box, origin, chunk size, cell size |
