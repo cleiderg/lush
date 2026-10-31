@@ -39,7 +39,12 @@ float hash(vec2 p) {
 }
 
 void main() {
-  vec4 texel = linearToOutputTexel(texture2D(tScene, vUv));
+  vec4 texel = texture2D(tScene, vUv);
+  #ifdef TONE_MAPPING
+  // three tone maps only when drawing to the canvas, so the low-res scene is tone mapped here.
+  texel.rgb = toneMapping(texel.rgb);
+  #endif
+  texel = linearToOutputTexel(texel);
   vec2 pixel = floor(vUv * resolution);
   vec3 c = texel.rgb + (hash(pixel + frame) - 0.5) * grain;
   vec2 d = vUv - 0.5;

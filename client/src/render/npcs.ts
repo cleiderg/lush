@@ -193,6 +193,7 @@ export class Npcs {
     mesh.name = `npc-${key}`;
     mesh.count = 0;
     mesh.frustumCulled = false;
+    mesh.castShadow = true;
     this.group.add(mesh);
     this.meshes.set(key, mesh);
     return mesh;

@@ -141,6 +141,8 @@ export class AreaMarkers {
     this.stall.position.set(data.shop.x * DM, 0, data.shop.z * DM);
     this.stall.updateMatrix();
     this.stall.matrixAutoUpdate = false;
+    this.stall.castShadow = true;
+    this.stall.receiveShadow = true;
     this.group.add(this.border, this.stall);
   }
 
