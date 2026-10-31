@@ -61,3 +61,20 @@ describe('hudLayout', () => {
     expect(inside({ x: 1, y: 1, w: 10, h: 9 }, a)).toBe(false);
   });
 });
+
+describe('hudLayout portrait', () => {
+  for (const [w, h] of [[390, 844], [1600, 1000]]) {
+    it(`at ${w}×${h} sits under the location panel in the top third, clear of the other top and bottom elements`, () => {
+      const l = hudLayout(w, h);
+      const p = l.portrait;
+      expect(p.w).toBeGreaterThan(0);
+      expect(p.h).toBeGreaterThan(0);
+      expect(p.x).toBe(l.location.x);
+      expect(p.y).toBeGreaterThanOrEqual(l.location.y + l.location.h);
+      expect(inside(p, { x: 0, y: 0, w, h: h / 3 })).toBe(true);
+      for (const name of ['location', 'hud', 'toggle', 'retro', 'interact', 'pvp', 'chat', 'controls'] as const) {
+        expect(intersects(p, l[name]), name).toBe(false);
+      }
+    });
+  }
+});
