@@ -87,6 +87,10 @@ const (
 	// ChangeRemoveWorn: one Item left its equipment slot without passing
 	// through the inventory (a PvP death drop).
 	ChangeRemoveWorn
+	// ChangeBankAdd: Qty of Item entered the player's bank.
+	ChangeBankAdd
+	// ChangeBankRemove: Qty of Item left the player's bank.
+	ChangeBankRemove
 )
 
 var changeKindNames = [...]string{
@@ -98,6 +102,8 @@ var changeKindNames = [...]string{
 	ChangeGold:    "gold",
 
 	ChangeRemoveWorn: "item_remove_worn",
+	ChangeBankAdd:    "bank_add",
+	ChangeBankRemove: "bank_remove",
 }
 
 func (k ChangeKind) String() string {

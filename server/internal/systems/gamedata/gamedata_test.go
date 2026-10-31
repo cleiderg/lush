@@ -228,6 +228,8 @@ func TestRulesMatchSpec(t *testing.T) {
 		{"PvP level gap", r.PvPLevelGap, 5},
 		{"shop distance tiles", r.ShopDistanceTiles, 2},
 		{"trade distance tiles", r.TradeDistanceTiles, 3},
+		{"bank slots", r.BankSlots, 200},
+		{"bank distance tiles", r.BankDistanceTiles, 2},
 		{"PvP items kept", r.PvPItemsKept, 3},
 		{"drop reservation", r.DropReservation(), 60 * time.Second},
 		{"drop despawn", r.DropDespawn(), 3 * time.Minute},
