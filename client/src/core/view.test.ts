@@ -111,7 +111,7 @@ describe('buildWorldView', () => {
     expect(buildWorldView(g, 0).groundItems).toEqual(g.items.groundItems);
   });
 
-  it('passes each hit batch once, flattened oldest first', () => {
+  it('passes each hit batch once with its attacker, flattened oldest first', () => {
     const g = new GameState();
     g.handle({ type: 'welcome', playerId: 7, tickRate: 20, spawn: { x: 0, z: 0 } } as never, 0);
     g.handle(
@@ -127,9 +127,9 @@ describe('buildWorldView', () => {
     );
     g.handle({ type: 'combatHit', tick: 5, hits: [{ attacker: 7, target: 9, damage: 2, died: true }] } as never, 0);
     expect(buildWorldView(g, 0).hits).toEqual([
-      { target: 9, damage: 3, died: false },
-      { target: 7, damage: 0, died: false },
-      { target: 9, damage: 2, died: true },
+      { attacker: 7, target: 9, damage: 3, died: false },
+      { attacker: 9, target: 7, damage: 0, died: false },
+      { attacker: 7, target: 9, damage: 2, died: true },
     ]);
     expect(buildWorldView(g, 0).hits).toEqual([]);
   });
