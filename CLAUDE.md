@@ -58,9 +58,10 @@ The acceptance criteria are the contract. Done means every criterion is met and 
 
 ## When the spec doesn't answer it
 
-- **Follow Old School RuneScape.** If the PRD and specs don't settle a gameplay question, do what OSRS does (mechanics, numbers, UI behaviour), adapted to the UCI campus. Say so in your PR description and in a code comment where it matters. Borrow mechanics only: never copy OSRS art, text, names or other assets.
-- **Ask about the economy and the rules.** If a choice changes the economy (item values, drop rates, XP rates, shop prices, gold sinks, trading) or the game's rules (combat, death, PvP, trust), don't guess, even if OSRS has an answer. Finish with `needs_owner` (rule 8). The runner posts your question to the owner on Discord and gives your slot to other work until they answer.
-- **Reviewers:** an OSRS-based default for something the spec doesn't cover isn't a blocker. An economy or rules change made without asking is.
+- **Follow Old School RuneScape.** If the PRD and specs don't settle a gameplay question, do what OSRS does (mechanics, numbers, UI behaviour), adapted to the UCI campus. This includes the economy (item values, drop rates, XP rates, shop prices, gold sinks, trading) and the game's rules (combat, death, PvP, trust). Say so in your PR description and in a code comment where it matters. Borrow mechanics only: never copy OSRS art, text, names or other assets.
+- **Flag economy and rules choices.** When you apply an OSRS economy or rules mechanic the spec doesn't cover, list it under an "OSRS defaults" heading in your PR description so the owner can see it.
+- **Ask only when OSRS doesn't settle it.** If OSRS has no equivalent, or its answer doesn't fit the campus setting, finish with `needs_owner` (rule 8). The runner posts your question to the owner on Discord and gives your slot to other work until they answer.
+- **Reviewers:** an OSRS-based default for something the spec doesn't cover isn't a blocker. An economy or rules choice that matches neither the spec nor OSRS, or one that isn't listed under "OSRS defaults", is.
 
 ## Rules for coding agents
 
@@ -71,7 +72,7 @@ The acceptance criteria are the contract. Done means every criterion is met and 
 5. **Don't open, merge or close pull requests or issues, and don't edit labels.** The runner does that.
 6. **Never push to `main`, never force-push, never create tags.**
 7. **If you need another area to change something** (for example a protocol field), don't make the change. Finish with status `blocked_by_issue` and describe the change in `new_issue`.
-8. **If you need a decision** (a PRD TBD, a choice that changes the economy or the rules, or a product choice that neither the PRD nor OSRS settles; see "When the spec doesn't answer it"), finish with status `needs_owner` and fill in `question`. **If you need a gate file changed** (CI, `ownership.txt`, a `CLAUDE.md`, and so on), do the same, with your recommended option in `recommendation` and the exact change in `question.gate_change`; the owner's watcher drafts it as a pull request.
+8. **If you need a decision** (a PRD TBD, or a product choice that neither the PRD nor OSRS settles; see "When the spec doesn't answer it"), finish with status `needs_owner` and fill in `question`. **If you need a gate file changed** (CI, `ownership.txt`, a `CLAUDE.md`, and so on), do the same, with your recommended option in `recommendation` and the exact change in `question.gate_change`; the owner's watcher drafts it as a pull request.
 9. **Finish with the status object** your prompt asks for. Only say `done` when the work is committed and pushed and the checks for your area pass locally. The runner verifies this against git.
 
 ## Secrets
