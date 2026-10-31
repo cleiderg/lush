@@ -14,13 +14,16 @@ import (
 )
 
 // latestMigration is the version of the newest file in db/migrations.
-const latestMigration = 4
+const latestMigration = 5
 
 // progressMigration is the version of 00003_player_progress.sql.
 const progressMigration = 3
 
 // cardPotsMigration is the version of 00004_card_pots.sql.
 const cardPotsMigration = 4
+
+// bankMigration is the version of 00005_player_bank.sql.
+const bankMigration = 5
 
 func TestMigrate(t *testing.T) {
 	url := os.Getenv("LUSH_TEST_DATABASE_URL")
@@ -35,7 +38,7 @@ func TestMigrate(t *testing.T) {
 	defer pool.Close()
 
 	// Start from an empty database.
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -72,7 +75,7 @@ func TestMigrateProgressDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Migrate(ctx, pool); err != nil {
@@ -151,7 +154,7 @@ func TestMigrateCardPotsDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Migrate(ctx, pool); err != nil {
@@ -202,5 +205,85 @@ func TestMigrateCardPotsDownUp(t *testing.T) {
 		if !tc.ok && err == nil {
 			t.Errorf("%s: accepted, want rejected", tc.name)
 		}
+	}
+}
+
+// TestMigrateBankDownUp rolls the bank migration back and applies it again,
+// then checks its constraints: one positive stack per item per player.
+func TestMigrateBankDownUp(t *testing.T) {
+	url := os.Getenv("LUSH_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("LUSH_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatalf("up: %v", err)
+	}
+	db := stdlib.OpenDBFromPool(pool)
+	defer db.Close()
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.DownTo(ctx, bankMigration-1); err != nil {
+		t.Fatalf("down to %d: %v", bankMigration-1, err)
+	}
+	if v, err := provider.GetDBVersion(ctx); err != nil || v != bankMigration-1 {
+		t.Fatalf("version after down = %d, err %v; want %d", v, err, bankMigration-1)
+	}
+	var exists bool
+	if err := pool.QueryRow(ctx, "SELECT to_regclass('player_bank') IS NOT NULL").Scan(&exists); err != nil || exists {
+		t.Fatalf("player_bank exists after down = %v, err %v", exists, err)
+	}
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+	if v, err := provider.GetDBVersion(ctx); err != nil || v != bankMigration {
+		t.Fatalf("version after up again = %d, err %v; want %d", v, err, bankMigration)
+	}
+
+	var a, b int64
+	if err := pool.QueryRow(ctx, "INSERT INTO players (token_hash) VALUES ('a') RETURNING id").Scan(&a); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, "INSERT INTO players (token_hash) VALUES ('b') RETURNING id").Scan(&b); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		sql  string
+		ok   bool
+	}{
+		{"stack", "INSERT INTO player_bank VALUES ($1, 1, 5) RETURNING $2::bigint", true},
+		{"any quantity", "INSERT INTO player_bank VALUES ($1, 2, 9000000000000) RETURNING $2::bigint", true},
+		{"same item twice", "INSERT INTO player_bank VALUES ($1, 1, 1) RETURNING $2::bigint", false},
+		{"same item, other player", "INSERT INTO player_bank VALUES ($2, 1, 1) RETURNING $1::bigint", true},
+		{"quantity zero", "INSERT INTO player_bank VALUES ($1, 3, 0) RETURNING $2::bigint", false},
+		{"quantity negative", "INSERT INTO player_bank VALUES ($1, 3, -1) RETURNING $2::bigint", false},
+		{"item zero", "INSERT INTO player_bank VALUES ($1, 0, 1) RETURNING $2::bigint", false},
+		{"unknown player", "INSERT INTO player_bank VALUES ($1 + $2 + 1000, 3, 1)", false},
+	} {
+		_, err := pool.Exec(ctx, tc.sql, a, b)
+		if tc.ok && err != nil {
+			t.Errorf("%s: %v", tc.name, err)
+		}
+		if !tc.ok && err == nil {
+			t.Errorf("%s: accepted, want rejected", tc.name)
+		}
+	}
+	if _, err := pool.Exec(ctx, "DELETE FROM players WHERE id = $1", a); err != nil {
+		t.Fatalf("delete player: %v", err)
+	}
+	var n int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM player_bank WHERE player_id = $1", a).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("bank rows of a deleted player = %d, err %v; want 0", n, err)
 	}
 }
