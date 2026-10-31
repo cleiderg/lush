@@ -36,6 +36,13 @@ export interface HudLayout {
    * prompt when the two would touch. Panels open over it.
    */
   portrait: Rect;
+  /**
+   * The round minimap: top right of the app column, under the toggles and the Interact prompt, level with the
+   * portrait on the other side. Tapping it opens the big map in the panel area.
+   */
+  minimap: Rect;
+  /** The big map panel; it takes the inventory panel's place. */
+  map: Rect;
   /** The chat log, a strip at the bottom of the panel area just above the PvP strip; hidden while a panel is open. */
   chat: Rect;
 }
@@ -59,6 +66,7 @@ const CHAT_H = 120;
 const INTERACT_W = 300;
 const INTERACT_H = 36;
 const PORTRAIT = 64;
+const MINIMAP = 96;
 
 /**
  * Where the location panel, HUD, inventory and Retro toggles, inventory panel, shop panel and trade window go for a viewport of
@@ -97,9 +105,10 @@ export function hudLayout(width: number, height: number): HudLayout {
   const portraitX = location.x;
   const portraitY = portraitX + PORTRAIT + MARGIN <= interact.x ? panelTop : interact.y + interact.h + MARGIN;
   const portrait = { x: portraitX, y: portraitY, w: PORTRAIT, h: PORTRAIT };
+  const minimap = { x: left + appW - MARGIN - MINIMAP, y: interact.y + interact.h + MARGIN, w: MINIMAP, h: MINIMAP };
   return {
     controls, location, hud, toggle, retro, panel, shop: { ...panel }, trade: { ...panel }, cardTable: { ...panel }, tradePrompt, pvp,
-    chat, interact, portrait,
+    chat, interact, portrait, minimap, map: { ...panel },
   };
 }
 
