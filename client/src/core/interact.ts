@@ -1,3 +1,4 @@
+import { EntityKind } from '../protocol';
 import { pickInteractTarget, type InteractTarget } from '../state/interact';
 import type { Point } from '../state/shop';
 import type { GameState } from '../state/world';
@@ -27,4 +28,41 @@ export function interact(game: GameState, now: number, stall: Point, actions: In
   else if (target?.type === 'attack') actions.sendAttackTarget(target.id);
   else if (target?.type === 'trade') actions.sendTradeRequest(target.id);
   return target;
+}
+
+/** What the Interact prompt shows: verb, then the name (drawn in gold) when there is one, then any detail. */
+export interface InteractPromptText {
+  verb: string;
+  name?: string;
+  detail?: string;
+}
+
+/** The shop's name, as on its panel. */
+export const SHOP_NAME = 'Campus Market';
+
+/** The prompt for target (from interactTarget), or null when Interact does nothing (visual-style.md, Interact prompt). */
+export function interactPromptText(game: GameState, target: InteractTarget | null): InteractPromptText | null {
+  if (!target) return null;
+  switch (target.type) {
+    case 'shop':
+      return { verb: 'Open', name: SHOP_NAME };
+    case 'cardTable':
+      return { verb: 'Open card table' };
+    case 'pickUp': {
+      const g = game.items.groundItems.find((i) => i.id === target.id);
+      return { verb: 'Pick up', name: (g && game.items.item(g.itemId)?.name) || 'item' };
+    }
+    case 'attack': {
+      const info = game.items.entityInfo(target.id);
+      if (info?.kind !== EntityKind.Npc) return { verb: 'Attack a player' };
+      return { verb: 'Attack', name: game.items.npc(info.npcType)?.name || 'NPC', detail: `· Lvl ${info.combatLevel}` };
+    }
+    case 'trade':
+      return { verb: 'Trade with a player' };
+  }
+}
+
+/** The prompt as one line of text. */
+export function promptString(p: InteractPromptText): string {
+  return [p.verb, p.name, p.detail].filter(Boolean).join(' ');
 }

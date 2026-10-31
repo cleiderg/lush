@@ -301,10 +301,12 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 - Table stake amounts (placeholders: 10, 25, 50, 100 gold), tuned after playtests.
 
 **Client and art** ([[architecture]])
+- Minimap placeholders, tuned after playtests: the minimap shows `MINIMAP_RANGE_M` 60 m around the player and rotates with the camera, with the N marker pointing to north ([[visual-style]]).
 - glTF model budgets per model type (placeholders from #82, enforced by the CI check in #86): `characters/` 1,500 triangles / 150 KB, `props/` 1,000 / 100 KB, `buildings/` 8,000 / 500 KB, anything else 3,000 / 200 KB. Tune after profiling on an iPhone 13.
 - Retro post-process placeholders, tuned after profiling on an iPhone 13: internal resolution scale `RETRO_SCALE` 0.5, dither colour levels `RETRO_COLOR_LEVELS` 32 per channel (4x4 ordered dither), grain strength `RETRO_GRAIN` 0.04, vignette strength `RETRO_VIGNETTE` 0.35.
 - Chat display placeholders, tuned after playtests: chat log length `CHAT_LOG_LINES` 50 lines, overhead message duration `OVERHEAD_CHAT_MS` 5000 ms.
 - Camera zoom placeholders, tuned after playtests: closest zoom `CAMERA_ZOOM_MIN` 0.5 and furthest `CAMERA_ZOOM_MAX` 1.5, as multiples of the default camera distance (which frames about 20 m across on a portrait phone, [[visual-style]]).
+- Milestone 8 look placeholders, tuned after profiling on an iPhone 13 and playtests: grass tufts `GRASS_TUFTS_PER_M2` 0.5 and flowers `FLOWERS_PER_M2` 0.05 per square metre of grass; point lights fade in and out over `POINT_LIGHT_FADE_MS` 500 ms; lantern flames flicker by up to `FLAME_FLICKER` 0.15 (±15%) of their base intensity; overhead chat bubbles fade out over the last `CHAT_FADE_MS` 1000 ms of `OVERHEAD_CHAT_MS` ([[visual-style]]).
 
 **Housing** ([[housing]], M10)
 - The first-release numbers (rent, auction, houses per area, furniture prices) are placeholders (D-052).

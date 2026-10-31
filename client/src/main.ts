@@ -1,6 +1,6 @@
 import { AudioManager } from './audio';
 import { initErrorReporting } from './core/errorReporting';
-import { interact } from './core/interact';
+import { interact, interactPromptText, interactTarget } from './core/interact';
 import { GameLoop } from './core/loop';
 import { sendMove } from './core/move';
 import { buildWorldView, controlYaw } from './core/view';
@@ -16,6 +16,7 @@ import { ChatLog, anyOpen } from './ui/chatLog';
 import { CardTablePanel } from './ui/cardTablePanel';
 import { Controls } from './ui/controls';
 import { Hud } from './ui/hud';
+import { InteractPrompt } from './ui/interactPrompt';
 import { PvpWarning } from './ui/pvpWarning';
 import { RestartBanner } from './ui/restartBanner';
 import { LocationPanel } from './ui/locationPanel';
@@ -101,6 +102,11 @@ const cardTable = new CardTablePanel({
   },
 });
 const locationPanel = new LocationPanel({ parent: document.body, position: () => game.prediction.pos, clock: game.clock });
+// Shows what Interact will do, from the same target the button uses.
+const interactPrompt = new InteractPrompt({
+  parent: document.body,
+  prompt: () => interactPromptText(game, interactTarget(game, performance.now(), SHOP_STALL)),
+});
 const pvpWarning = new PvpWarning({ parent: document.body, position: () => game.prediction.pos });
 const trade = new TradePanel({
   parent: document.body,
@@ -141,6 +147,7 @@ new GameLoop({
     cardTable.update();
     pvpWarning.update();
     locationPanel.update();
+    interactPrompt.update();
     const m = controls.worldMove();
     // Inputs the server will never see would pile up unacknowledged; Welcome resets prediction anyway.
     if (!session.connected) return;
