@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { Character } from './character';
 import { CameraRig } from './cameraRig';
-import { RemotePlayers } from './remotePlayers';
+import { MAX_REMOTE_PLAYERS, RemotePlayers } from './remotePlayers';
+import { BlobShadows, PLAYER_SHADOW_RADIUS, npcShadowRadius, type ShadowEntry } from './blobShadows';
 import { HealthBars, type BarEntry } from './healthBars';
 import { Hitsplats } from './hitsplats';
 import { CampusMap, loadCampus } from './campusMap';
@@ -40,6 +41,8 @@ export class WorldScene {
   private readonly player = new Character();
   private readonly remotes = new RemotePlayers();
   readonly healthBars = new HealthBars();
+  readonly shadows = new BlobShadows();
+  private readonly shadowEntries: { x: number; z: number; radius: number }[] = [];
   private readonly bars: { x: number; z: number; ratio: number }[] = [];
   readonly hitsplats = new Hitsplats();
   readonly chat = new ChatText();
@@ -57,9 +60,13 @@ export class WorldScene {
     const sun = new THREE.DirectionalLight(0xffffff, 1.6);
     sun.position.set(30, 60, 20);
     this.scene.add(sun);
-    this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.areas.group, this.player.root, this.remotes.group, this.healthBars.group);
+    this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.areas.group, this.player.root, this.remotes.group, this.shadows.group, this.healthBars.group);
     // After the players: tests find the remote-player instanced meshes as the first ones in the scene.
     this.scene.add(this.cardTables.group);
+    // The local player is drawn (at the origin) before the first view arrives, as a plain mesh would be.
+    this.player.update(0, 0, 0, 0);
+    this.remotes.update([], undefined, 0, this.player);
+    this.shadows.update([{ x: 0, z: 0, radius: PLAYER_SHADOW_RADIUS }]);
   }
 
   update(view: WorldView): void {
@@ -67,10 +74,11 @@ export class WorldScene {
     const dist = this.lastX === null ? 0 : Math.hypot(local.x - this.lastX, local.z - this.lastZ);
     this.lastX = local.x;
     this.lastZ = local.z;
-    this.player.update(local.x, local.z, local.heading, dist, local.animation ?? 0);
+    const time = this.now() / 1000;
+    this.player.update(local.x, local.z, local.heading, dist, local.animation ?? 0, time);
     const lookup = view.entities;
     this.player.setEquipment(lookup?.entityInfo(local.id)?.equipment, lookup);
-    this.remotes.update(view.remotes, lookup);
+    this.remotes.update(view.remotes, lookup, time, this.player);
     if (view.groundItems) {
       if (!this.groundItems) {
         this.groundItems = new GroundItems();
@@ -89,6 +97,7 @@ export class WorldScene {
     } else if (this.npcs) {
       this.npcs.update([]);
     }
+    this.shadows.update(this.shadowList(view));
     this.rig.follow(local.x, local.z);
     // Hitsplats join the scene with the first hit, so a view without hits leaves the graph as it was.
     if (view.hits?.length && !this.hitsplats.group.parent) this.scene.add(this.hitsplats.group);
@@ -97,6 +106,23 @@ export class WorldScene {
     // Chat joins the scene with the first message, like hitsplats; it needs the DOM only from then on.
     if (view.chat?.length && !this.chat.group.parent) this.scene.add(this.chat.group);
     if (this.chat.group.parent) this.chat.update(view);
+  }
+
+  /** One shadow per drawn player and NPC, reusing the same objects each frame. */
+  private shadowList(view: WorldView): readonly ShadowEntry[] {
+    let n = 0;
+    const add = (x: number, z: number, radius: number) => {
+      const e = (this.shadowEntries[n++] ??= { x: 0, z: 0, radius: 0 });
+      e.x = x;
+      e.z = z;
+      e.radius = radius;
+    };
+    add(view.local.x, view.local.z, PLAYER_SHADOW_RADIUS);
+    const remotes = Math.min(view.remotes.length, MAX_REMOTE_PLAYERS);
+    for (let i = 0; i < remotes; i++) add(view.remotes[i].x, view.remotes[i].z, PLAYER_SHADOW_RADIUS);
+    for (const p of view.npcs ?? []) add(p.x, p.z, npcShadowRadius(p.npcType));
+    this.shadowEntries.length = n;
+    return this.shadowEntries;
   }
 
   /** Bar entries for every drawn player and NPC, reusing the same objects each frame. */

@@ -1,5 +1,16 @@
 import * as THREE from 'three';
-import { PARTS, makePartGeometry, makePartMaterial, poseRoll, swingAngle, WALK_SPEED_RAD_PER_UNIT } from './character';
+import {
+  BREATH_PERIOD,
+  Character,
+  PARTS,
+  WALK_SPEED_RAD_PER_UNIT,
+  breath,
+  breathPose,
+  makePartGeometry,
+  makePartMaterial,
+  poseRoll,
+  swingAngle,
+} from './character';
 import { SLOTS, equipmentMaterial, itemColor, slotGeometry } from './equipment';
 import type { EntityLookup, PlayerView } from './worldView';
 
@@ -11,7 +22,11 @@ interface Track {
   phase: number;
 }
 
-/** Draws remote players: one InstancedMesh per body part, so draw calls do not grow with player count. */
+/**
+ * Draws every player body: one InstancedMesh per body part, so draw calls do not grow with player
+ * count. Remote players fill the first instances; the local Character, when given, is drawn as the
+ * last one from its posed joints, so it uses exactly the same model.
+ */
 export class RemotePlayers {
   readonly group = new THREE.Group();
   private readonly meshes: THREE.InstancedMesh[];
@@ -27,7 +42,7 @@ export class RemotePlayers {
   private readonly q = new THREE.Quaternion();
   private readonly qs = new THREE.Quaternion();
   private readonly pos = new THREE.Vector3();
-  private readonly one = new THREE.Vector3(1, 1, 1);
+  private readonly scale = new THREE.Vector3(1, 1, 1);
   private readonly axisX = new THREE.Vector3(1, 0, 0);
   private readonly axisZ = new THREE.Vector3(0, 0, 1);
   private readonly axisY = new THREE.Vector3(0, 1, 0);
@@ -35,9 +50,12 @@ export class RemotePlayers {
   constructor(capacity = MAX_REMOTE_PLAYERS) {
     this.capacity = capacity;
     this.meshes = PARTS.map((part) => {
-      const mesh = new THREE.InstancedMesh(makePartGeometry(part), makePartMaterial(part), capacity);
+      // One slot more than the remote cap, for the local player.
+      const mesh = new THREE.InstancedMesh(makePartGeometry(part), makePartMaterial(part), capacity + 1);
+      mesh.name = `player:${part.name}`;
       mesh.count = 0;
       mesh.frustumCulled = false;
+      mesh.castShadow = true;
       this.group.add(mesh);
       return mesh;
     });
@@ -51,16 +69,17 @@ export class RemotePlayers {
       mesh.name = `equip:${key}`;
       mesh.count = 0;
       mesh.frustumCulled = false;
+      mesh.castShadow = true;
       this.group.add(mesh);
       this.equipment.set(key, mesh);
     }
     return mesh;
   }
 
-  update(players: readonly PlayerView[], lookup?: EntityLookup): void {
+  /** `time` is the render clock in seconds; it drives idle breathing for players standing still. */
+  update(players: readonly PlayerView[], lookup?: EntityLookup, time = 0, local?: Character): void {
     for (const mesh of this.equipment.values()) mesh.count = 0;
-    const capacity = this.meshes[0].instanceMatrix.count;
-    const n = Math.min(players.length, capacity);
+    const n = Math.min(players.length, this.capacity);
     const seen = new Set<number>();
     for (let i = 0; i < n; i++) {
       const p = players[i];
@@ -71,7 +90,10 @@ export class RemotePlayers {
         this.tracks.set(p.id, t);
       }
       const d = Math.hypot(p.x - t.x, p.z - t.z);
-      t.phase = d > 1e-4 ? t.phase + d * WALK_SPEED_RAD_PER_UNIT : 0;
+      const moving = d > 1e-4;
+      t.phase = moving ? t.phase + d * WALK_SPEED_RAD_PER_UNIT : 0;
+      // Offset by id so a crowd doesn't breathe in step.
+      const b = moving ? 0 : breath(time, (p.id * 0.618) % BREATH_PERIOD);
       t.x = p.x;
       t.z = p.z;
 
@@ -81,13 +103,14 @@ export class RemotePlayers {
         const roll = poseRoll(part, p.animation ?? 0);
         if (roll !== 0) this.qs.setFromAxisAngle(this.axisZ, roll);
         else this.qs.setFromAxisAngle(this.axisX, swingAngle(t.phase, part));
-        // world = root(pos, yaw) * pivot translate * swing rotation
+        // world = root(pos, yaw) * pivot translate * swing rotation * breathing scale
         const [px, py, pz] = part.pivot;
-        this.pos.set(px, py, pz).applyQuaternion(this.q);
+        const lift = breathPose(part, b, this.scale);
+        this.pos.set(px, py + lift, pz).applyQuaternion(this.q);
         this.pos.x += p.x;
         this.pos.z += p.z;
         const rot = this.qs.premultiply(this.q);
-        this.partMatrices[k].compose(this.pos, rot, this.one);
+        this.partMatrices[k].compose(this.pos, rot, this.scale);
         this.meshes[k].setMatrixAt(i, this.partMatrices[k]);
       }
       const eq = lookup?.entityInfo(p.id)?.equipment;
@@ -101,8 +124,13 @@ export class RemotePlayers {
       }
     }
     for (const id of this.tracks.keys()) if (!seen.has(id)) this.tracks.delete(id);
+    if (local) {
+      const nodes = local.nodes;
+      for (let k = 0; k < PARTS.length; k++) this.meshes[k].setMatrixAt(n, nodes[k].matrixWorld);
+    }
+    const drawn = local ? n + 1 : n;
     for (const mesh of this.meshes) {
-      mesh.count = n;
+      mesh.count = drawn;
       mesh.instanceMatrix.needsUpdate = true;
     }
     for (const mesh of this.equipment.values()) mesh.instanceMatrix.needsUpdate = true;

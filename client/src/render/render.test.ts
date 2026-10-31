@@ -59,7 +59,8 @@ describe('characters', () => {
     console.log(`whole scene without culling: ${countDrawCalls(w.scene)} draw calls`);
     expect(calls).toBeLessThan(40);
     const inst = w.scene.getObjectByProperty('isInstancedMesh', true) as import('three').InstancedMesh;
-    expect(inst.count).toBe(100);
+    // 100 remote players plus the local one, which is drawn as the last instance of the same meshes.
+    expect(inst.count).toBe(101);
   });
 
   it('raises the local arm for Wave and returns to idle', () => {
@@ -76,7 +77,8 @@ describe('characters', () => {
   });
 
   it('raises only the waving remote player arm instance', () => {
-    const w = new WorldScene();
+    // A fixed clock, so idle breathing doesn't move anything between the two frames.
+    const w = new WorldScene(() => 0);
     const base = view(3);
     w.update(base);
     const meshes = w.scene.getObjectsByProperty('isInstancedMesh', true) as import('three').InstancedMesh[];
