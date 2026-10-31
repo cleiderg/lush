@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EntityKind } from '../protocol';
-import { OVERHEAD_CHAT_MS } from '../state/chat';
+import { CHAT_FADE_MS, OVERHEAD_CHAT_MS } from '../state/chat';
 import { GameState } from '../state/world';
 import { sunPosition } from './sun';
 import { buildWorldView, controlYaw, moveForRigYaw } from './view';
@@ -40,6 +40,36 @@ describe('buildWorldView', () => {
     g.handle({ type: 'chat', speakerId: 9, text: 'old' } as never, 1000);
     g.handle({ type: 'chat', speakerId: 7, text: 'new' } as never, 1000 + OVERHEAD_CHAT_MS);
     expect(buildWorldView(g, 1000 + OVERHEAD_CHAT_MS).chat).toEqual([{ id: 7, text: 'new' }]);
+  });
+
+  it('#384 AC1: a bubble is opaque until the fade, then fades and never brightens', () => {
+    const g = withRemote();
+    g.handle({ type: 'chat', speakerId: 9, text: 'bye' } as never, 1000);
+    const opacityAt = (age: number) => {
+      const chat = buildWorldView(g, 1000 + age).chat ?? [];
+      expect(chat).toHaveLength(1);
+      return chat[0].opacity ?? 1;
+    };
+    const fadeStart = OVERHEAD_CHAT_MS - CHAT_FADE_MS;
+    for (const age of [0, 1, fadeStart / 2, fadeStart]) expect(opacityAt(age)).toBe(1);
+    for (const age of [fadeStart + 1, fadeStart + CHAT_FADE_MS / 2, OVERHEAD_CHAT_MS - 1]) {
+      const o = opacityAt(age);
+      expect(o).toBeGreaterThan(0);
+      expect(o).toBeLessThan(1);
+    }
+    let prev = Infinity;
+    for (let age = 0; age < OVERHEAD_CHAT_MS; age += 50) {
+      const o = opacityAt(age);
+      expect(o).toBeLessThanOrEqual(prev);
+      prev = o;
+    }
+    expect(buildWorldView(g, 1000 + OVERHEAD_CHAT_MS).chat).toEqual([]);
+  });
+
+  it('#384 AC2: CHAT_FADE_MS is the Q2 placeholder and shorter than OVERHEAD_CHAT_MS', () => {
+    expect(CHAT_FADE_MS).toBe(1000);
+    expect(CHAT_FADE_MS).toBeGreaterThan(0);
+    expect(CHAT_FADE_MS).toBeLessThan(OVERHEAD_CHAT_MS);
   });
 
   it('leaves out speakers that are neither local nor in view', () => {
