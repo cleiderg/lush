@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import areasRaw from '../../../shared/map/areas.json?raw';
 import { MeshBuilder } from './campusMap';
 import { parseAreas, type AreasData } from './mapData';
+import { crate, lump, sack } from './propKit';
 
 const DM = 0.1;
 /** Above the campus paths so the border isn't hidden under them. */
@@ -13,7 +14,9 @@ const WOOD = 0x8a5a34;
 const WOOD_DARK = 0x6b4426;
 const CANOPY_A = 0xc8322a;
 const CANOPY_B = 0xf2e6c8;
-const GOODS = [0xe0a030, 0x7fb04a, 0xc0503a];
+/** Fruit heaped in the counter baskets: oranges, apples, lemons, limes. */
+const FRUIT = [0xf09a28, 0xd83a2a, 0xe8d040, 0x6cae3a];
+const BASKET = 0xb88a52;
 
 /** Polygon [x0,z0,...] in decimetres -> [x,z] points in metres. */
 export function polygonMetres(p: number[]): [number, number][] {
@@ -70,7 +73,8 @@ export function box(b: MeshBuilder, x0: number, y0: number, z0: number, x1: numb
 }
 
 /**
- * A market stall, about 3 m wide, 2 m deep and 2.8 m tall, centred on the origin with its
+ * A market stall dressed with fruit baskets, crates, sacks and a striped awning with a valance:
+ * about 3 m wide (4 m with the crates and sacks), 2 m deep and 2.8 m tall, centred on the origin with its
  * counter facing south (+z, toward spawn).
  */
 export function stallGeometry(): THREE.BufferGeometry {
@@ -79,7 +83,14 @@ export function stallGeometry(): THREE.BufferGeometry {
   // Counter and the goods on it.
   box(b, -w, 0, 0.4, w, 1, d, WOOD);
   box(b, -w - 0.05, 1, 0.35, w + 0.05, 1.08, d + 0.05, WOOD_DARK);
-  GOODS.forEach((c, i) => box(b, -1.1 + i * 0.85, 1.08, 0.5, -0.6 + i * 0.85, 1.35, 0.9, c));
+  // Three baskets heaped with fruit on the counter.
+  for (let i = 0; i < 3; i++) {
+    const x = -0.95 + i * 0.95;
+    box(b, x - 0.3, 1.08, 0.45, x + 0.3, 1.2, 0.95, BASKET);
+    for (let k = 0; k < 4; k++) {
+      lump(b, x - 0.15 + (k % 2) * 0.3, 1.17 + (k >= 2 ? 0.05 : 0), 0.6 + (k >= 2 ? 0.17 : 0), 0.09, 0.08, 0.09, FRUIT[(i + k) % FRUIT.length]);
+    }
+  }
   // Back wall and four posts.
   box(b, -w, 0, -d, w, 1.8, -d + 0.1, WOOD_DARK);
   for (const [x, z] of [[-w, -d], [w - 0.12, -d], [-w, d - 0.12], [w - 0.12, d - 0.12]]) {
@@ -96,7 +107,19 @@ export function stallGeometry(): THREE.BufferGeometry {
     b.tri(a, f, g, [0, 1, 0], c);
     b.tri(a, e, f, [0, -1, 0], c);
     b.tri(a, f, g, [0, -1, 0], c);
+    // Striped valance hanging from the front edge of the awning.
+    const h = [x1, yf - 0.3, front], k = [x0, yf - 0.3, front];
+    b.tri(g, f, h, [0, 0, 1], c);
+    b.tri(g, h, k, [0, 0, 1], c);
+    b.tri(g, f, h, [0, 0, -1], c);
+    b.tri(g, h, k, [0, 0, -1], c);
   }
+  // Crates (one of them full of fruit) and sacks stacked beside the stall.
+  crate(b, -w - 0.45, 0, 0.3, 0.6);
+  crate(b, -w - 0.45, 0.6, 0.3, 0.5, 0);
+  crate(b, -w - 0.4, 0, -0.45, 0.55, 2);
+  sack(b, w + 0.4, 0, 0.4);
+  sack(b, w + 0.4, 0, -0.3, 0.85);
   return b.geometry();
 }
 

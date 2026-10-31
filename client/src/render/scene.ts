@@ -12,6 +12,7 @@ import { ChatText } from './chatText';
 import { AreaMarkers, loadAreas } from './gameAreas';
 import { CardTables, loadCardTables } from './cardTables';
 import { Nature } from './nature';
+import { Props, loadProps } from './propKit';
 import { SkyRig } from './sky';
 import type { CampusData } from './mapData';
 import type { WorldView } from './worldView';
@@ -42,6 +43,8 @@ export class WorldScene {
   readonly cardTables = new CardTables(loadCardTables());
   /** Grass tufts and flowers, instanced per map chunk. */
   readonly nature = new Nature(loadCampus(), { exclude: [loadCardTables().plaza] });
+  /** Campus props from props.json, merged per chunk. */
+  readonly props = new Props(loadProps());
   /** Sun, ambient, sky colour and fog, following WorldView.sky. */
   readonly sky = new SkyRig();
   private readonly player = new Character();
@@ -65,7 +68,7 @@ export class WorldScene {
     this.sky.update(undefined, 0, 0);
     this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.areas.group, this.player.root, this.remotes.group, this.shadows.group, this.healthBars.group);
     // After the players: tests find the remote-player instanced meshes as the first ones in the scene.
-    this.scene.add(this.cardTables.group, this.nature.group);
+    this.scene.add(this.cardTables.group, this.props.group, this.nature.group);
     // Cull again for the camera actually rendering, in case its aspect changed since the last view.
     this.scene.onBeforeRender = (_renderer, _scene, camera) => this.nature.cull(camera);
     // The local player is drawn (at the origin) before the first view arrives, as a plain mesh would be.
