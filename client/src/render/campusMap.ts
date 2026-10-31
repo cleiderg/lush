@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import campusRaw from '../../../shared/map/campus.json?raw';
-import { GREEN_GRASS, GREEN_PITCH, GREEN_WATER, GREEN_WOOD, parseCampus, type CampusData, type Green } from './mapData';
+import { GREEN_GRASS, GREEN_PITCH, GREEN_WATER, GREEN_WOOD, parseCampus, type CampusData, type Green, type ParkNatureData } from './mapData';
 import { buildLandmark, isLandmark } from './landmarks';
 import { mulberry32 } from './rng';
 import { GROUND_KINDS, GROUND_PLAZA, SurfaceBuilder, makeGroundMaterial } from './groundSurfaces';
+import { bakeParkNature } from './parkNature';
+import { pointInPolygon } from './nature';
 
 const DM = 0.1;
 const Y_GREEN = 0.01;
@@ -60,6 +62,23 @@ export class MeshBuilder {
 }
 
 const UP = [0, 1, 0];
+
+/** [minX, minZ, maxX, maxZ] of a flat polygon [x0,z0,x1,z1,...]. */
+function bounds(p: number[]): [number, number, number, number] {
+  const b: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < p.length; i += 2) {
+    b[0] = Math.min(b[0], p[i]); b[1] = Math.min(b[1], p[i + 1]);
+    b[2] = Math.max(b[2], p[i]); b[3] = Math.max(b[3], p[i + 1]);
+  }
+  return b;
+}
+
+/** Signed shoelace area of a flat polygon. */
+function polygonArea(p: number[]): number {
+  let a = 0;
+  for (let i = 0, j = p.length - 2; i < p.length; j = i, i += 2) a += p[j] * p[i + 1] - p[i] * p[j + 1];
+  return a / 2;
+}
 
 function polygonPoints(p: number[]): THREE.Vector2[] {
   const pts: THREE.Vector2[] = [];
@@ -152,6 +171,8 @@ export interface MapStats {
   extruded: number[];
   /** Building ids drawn as hand-made landmarks (see landmarks.ts). */
   landmarks: number[];
+  /** Aldrich Park nature placements baked into the chunks, per type (empty without parknature.json data). */
+  nature: Map<string, number>;
 }
 
 /** The campus drawn as one merged mesh per fixed-size chunk (frustum culling drops the far ones). */
@@ -162,7 +183,8 @@ export class CampusMap {
   /** One material per ground kind (GROUND_DIRT, GROUND_STONE, GROUND_PAVED, GROUND_PLAZA). */
   readonly surfaceMaterials = GROUND_KINDS.map((k) => makeGroundMaterial(k));
 
-  constructor(data: CampusData) {
+  /** `nature` (parknature.json) is baked into the chunk meshes, so the park's trees and rocks cost no extra draw calls. */
+  constructor(data: CampusData, nature?: ParkNatureData) {
     this.group.name = 'campus-map';
     const chunkM = data.chunkSize;
     const { minX, minZ } = data.bounds;
@@ -226,6 +248,14 @@ export class CampusMap {
         extruded.push(bl.id);
       }
     }
+    // Each nature placement joins the chunk mesh of the largest green area it stands on (Aldrich Park's own polygon),
+    // which exists already and whose bounds span that area, so the nature adds no draw call and no chunk.
+    const greens = data.green.map((g) => ({ g, box: bounds(g.p), area: Math.abs(polygonArea(g.p)) })).sort((a, b) => b.area - a.area);
+    const greenAt = (xDm: number, zDm: number): MeshBuilder => {
+      const hit = greens.find(({ g, box }) => xDm >= box[0] && xDm <= box[2] && zDm >= box[1] && zDm <= box[3] && pointInPolygon(g.p, xDm, zDm));
+      return hit ? at(...centre(hit.g.p)) : at(xDm, zDm);
+    };
+    const natureCounts = nature ? bakeParkNature(nature, greenAt) : new Map<string, number>();
 
     let triangles = 0;
     for (const key of [...builders.keys()].sort()) {
@@ -249,7 +279,7 @@ export class CampusMap {
       }
       this.group.add(chunk);
     }
-    this.stats = { chunks: builders.size, triangles, extruded, landmarks };
+    this.stats = { chunks: builders.size, triangles, extruded, landmarks, nature: natureCounts };
   }
 
   dispose(): void {

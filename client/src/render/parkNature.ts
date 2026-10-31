@@ -180,9 +180,6 @@ const MODELS: Record<string, (b: MeshBuilder) => void> = {
 
 /** Every nature type the park can draw. */
 export const NATURE_KIT = Object.keys(MODELS);
-/** Types that cast shadows: the tall and solid things. Beds, blankets and birds sit flat and don't. */
-export const SHADOW_CASTERS = new Set(['tree_oak', 'tree_pine', 'tree_eucalyptus', 'rock_boulder', 'rock_flat', 'bush']);
-
 /** Builds one nature type's model into `b`, at the origin and unrotated. */
 export function buildNature(b: MeshBuilder, type: string): void {
   const f = MODELS[type];
@@ -191,56 +188,39 @@ export function buildNature(b: MeshBuilder, type: string): void {
 }
 
 /**
- * The trees, rocks, bushes, flower beds, picnic blankets and birds of Aldrich Park from parknature.json.
- * One InstancedMesh per type, each placement with its seeded rotation, scale, height stretch and a small
- * tint, so the nature costs at most one draw call per type however many placements there are.
+ * Bakes the trees, rocks, bushes, flower beds, picnic blankets and birds of Aldrich Park from
+ * parknature.json into the campus map's merged chunk meshes: `at(x, z)` (decimetres) gives the builder
+ * of the chunk a placement stands in. Each placement keeps its seeded rotation, scale and height stretch,
+ * plus a small seeded tint. They never move, so this adds no draw calls at all (the park's chunks are
+ * drawn anyway), is culled per chunk with them, and casts shadows with them. Returns placements per type.
  */
-export class ParkNature {
-  readonly group = new THREE.Group();
-  readonly material = new THREE.MeshLambertMaterial({ vertexColors: true });
-  /** The instanced mesh for each type that has placements, by type name. */
-  readonly meshes = new Map<string, THREE.InstancedMesh>();
-
-  constructor(data: ParkNatureData) {
-    this.group.name = 'park-nature';
-    const byType = data.types.map(() => [] as number[]);
-    data.items.forEach((it, i) => byType[it[0]].push(i));
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
-    const up = new THREE.Vector3(0, 1, 0);
-    const color = new THREE.Color();
-    const tint = mulberry32(TINT_SEED);
-    data.types.forEach((type, t) => {
-      const list = byType[t];
-      if (list.length === 0) return;
-      const b = new MeshBuilder();
-      buildNature(b, type);
-      const mesh = new THREE.InstancedMesh(b.geometry(), this.material, list.length);
-      list.forEach((i, k) => {
-        const [, x, z, rot, scale, stretch] = data.items[i];
-        // Rotation is clockwise seen from above, in degrees, like props.json.
-        q.setFromAxisAngle(up, (-rot * Math.PI) / 180);
-        s.set(scale / 100, (scale / 100) * (stretch / 100), scale / 100);
-        mesh.setMatrixAt(k, m.compose(p.set(x * DM, 0, z * DM), q, s));
-        const v = TINT_MIN + tint() * TINT_RANGE;
-        mesh.setColorAt(k, color.setRGB(v, v, v));
-      });
-      mesh.name = `park-nature:${type}`;
-      mesh.matrixAutoUpdate = false;
-      mesh.castShadow = SHADOW_CASTERS.has(type);
-      mesh.receiveShadow = true;
-      mesh.computeBoundingSphere();
-      this.meshes.set(type, mesh);
-      this.group.add(mesh);
-    });
-  }
-
-  dispose(): void {
-    for (const mesh of this.meshes.values()) {
-      mesh.geometry.dispose();
-      mesh.dispose();
+export function bakeParkNature(data: ParkNatureData, at: (xDm: number, zDm: number) => MeshBuilder): Map<string, number> {
+  const models = data.types.map((type) => {
+    const b = new MeshBuilder();
+    buildNature(b, type);
+    return b;
+  });
+  const counts = new Map<string, number>();
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
+  const up = new THREE.Vector3(0, 1, 0);
+  const v = new THREE.Vector3();
+  const tint = mulberry32(TINT_SEED);
+  for (const [t, x, z, rot, scale, stretch] of data.items) {
+    const type = data.types[t];
+    counts.set(type, (counts.get(type) ?? 0) + 1);
+    // Rotation is clockwise seen from above, in degrees, like props.json. Positive scales keep the winding.
+    q.setFromAxisAngle(up, (-rot * Math.PI) / 180);
+    s.set(scale / 100, (scale / 100) * (stretch / 100), scale / 100);
+    m.compose(p.set(x * DM, 0, z * DM), q, s);
+    const k = TINT_MIN + tint() * TINT_RANGE;
+    const src = models[t], dst = at(x, z);
+    for (let i = 0; i < src.pos.length; i += 3) {
+      v.set(src.pos[i], src.pos[i + 1], src.pos[i + 2]).applyMatrix4(m);
+      dst.pos.push(v.x, v.y, v.z);
+      dst.col.push(src.col[i] * k, src.col[i + 1] * k, src.col[i + 2] * k);
     }
-    this.material.dispose();
   }
+  return counts;
 }
 
 let cached: ParkNatureData | null = null;

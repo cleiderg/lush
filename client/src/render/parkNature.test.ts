@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { MeshBuilder } from './campusMap';
+import { CampusMap, MeshBuilder } from './campusMap';
 import { PROP_BUDGET } from './modelBudget';
-import { NATURE_KIT, ParkNature, buildNature, loadParkNature } from './parkNature';
+import { NATURE_KIT, buildNature } from './parkNature';
 import { pointInPolygon, segmentDistance2 } from './nature';
 import {
   isBlocked, parseAreas, parseCampus, parseCardTables, parseCollision, parseParkNature, parseProps, type NatureItem,
@@ -182,17 +182,24 @@ describe('park nature models (AC4)', () => {
     }
   });
 
-  it('sets castShadow on trees and rocks, and draws flat colours without textures', () => {
-    const n = new ParkNature(loadParkNature());
-    for (const t of [...TREES, ...ROCKS]) {
-      const mesh = n.meshes.get(t);
-      expect(mesh, t).toBeDefined();
-      expect(mesh!.castShadow, t).toBe(true);
+  it('bakes the trees and rocks into chunk meshes that cast shadows, in flat colours without textures', () => {
+    const base = new CampusMap(campus);
+    const map = new CampusMap(campus, nature);
+    for (const t of [...TREES, ...ROCKS]) expect(map.stats.nature.get(t), t).toBeGreaterThan(0);
+    // The chunks the nature went into: every one is a mesh that casts shadows.
+    const verts = (m: CampusMap, name: string) => (m.group.getObjectByName(name) as THREE.Mesh).geometry?.getAttribute('position').count ?? 0;
+    const grown = map.group.children.filter((c) => verts(map, c.name) !== verts(base, c.name));
+    expect(grown.length).toBeGreaterThan(0);
+    for (const c of grown) {
+      const mesh = c as THREE.Mesh;
+      expect(mesh.isMesh, c.name).toBe(true);
+      expect(mesh.castShadow, c.name).toBe(true);
+      expect(mesh.geometry.getAttribute('uv'), c.name).toBeUndefined();
     }
-    expect(n.material.vertexColors).toBe(true);
-    expect(n.material.map).toBeNull();
-    for (const mesh of n.meshes.values()) expect(mesh.geometry.getAttribute('uv')).toBeUndefined();
-    n.dispose();
+    expect(map.material.vertexColors).toBe(true);
+    expect(map.material.map).toBeNull();
+    base.dispose();
+    map.dispose();
   });
 });
 
@@ -200,19 +207,27 @@ describe('park nature draw calls (AC5)', () => {
   /** The same placements twice over, the copies nudged 0.5 m east. */
   const doubled = { ...nature, items: [...nature.items, ...nature.items.map(([t, x, z, r, s, h]) => [t, x + 5, z, r, s, h] as NatureItem)] };
 
-  it('adds at most one draw call per model type, with the placements doubled as well', () => {
-    const one = new ParkNature(nature);
-    const two = new ParkNature(doubled);
-    const a = countDrawCalls(one.group), b = countDrawCalls(two.group);
-    console.log(`park nature: ${nature.items.length} placements -> ${a} draw calls, ${doubled.items.length} -> ${b}`);
-    expect(a).toBeGreaterThan(0);
-    expect(a).toBeLessThanOrEqual(nature.types.length);
-    expect(b).toBe(a);
-    // Every placement is drawn: doubling doubles the instances of each type.
-    for (const [t, mesh] of one.meshes) expect(two.meshes.get(t)!.count, t).toBe(2 * mesh.count);
-    expect([...one.meshes.values()].reduce((s, m) => s + m.count, 0)).toBe(nature.items.length);
-    one.dispose();
-    two.dispose();
+  it('adds at most one draw call per model type (none: it is baked into the map chunks), with the placements doubled as well', () => {
+    const base = new CampusMap(campus);
+    const one = new CampusMap(campus, nature);
+    const two = new CampusMap(campus, doubled);
+    const c0 = countDrawCalls(base.group), c1 = countDrawCalls(one.group), c2 = countDrawCalls(two.group);
+    console.log(`park nature: map ${c0} draw calls; with ${nature.items.length} placements ${c1}; with ${doubled.items.length} ${c2}`);
+    expect(c1 - c0).toBeLessThanOrEqual(nature.types.length);
+    expect(c2 - c0).toBeLessThanOrEqual(nature.types.length);
+    expect(c1 - c0).toBe(0);
+    expect(c2).toBe(c1);
+    // Every placement is drawn: the added triangles are every placement's model, and doubling doubles them.
+    const perType = Object.fromEntries(NATURE_KIT.map((t) => {
+      const mb = new MeshBuilder();
+      buildNature(mb, t);
+      return [t, mb.triangles];
+    }));
+    const added = nature.items.reduce((s, [t]) => s + perType[nature.types[t]], 0);
+    console.log(`park nature: ${added} triangles`);
+    expect(one.stats.triangles - base.stats.triangles).toBe(added);
+    expect(two.stats.triangles - base.stats.triangles).toBe(2 * added);
+    for (const m of [base, one, two]) m.dispose();
   });
 
   it('report: draw calls and triangles in view at the spawn with 100 players', () => {
@@ -223,13 +238,10 @@ describe('park nature draw calls (AC5)', () => {
     w.rig.camera.aspect = 9 / 19.5;
     w.rig.camera.updateProjectionMatrix();
     const calls = countDrawCallsInView(w.scene, w.rig.camera);
-    const natureCalls = countDrawCallsInView(w.parkNature.group, w.rig.camera);
     const tris = countTrianglesInView(w.scene, w.rig.camera);
-    console.log(`spawn, 100 players: ${calls} draw calls in view (${natureCalls} for park nature), ${tris} triangles`);
-    expect(natureCalls).toBeGreaterThan(0);
-    expect(natureCalls).toBeLessThanOrEqual(nature.types.length);
+    console.log(`spawn, 100 players: ${calls} draw calls in view, ${tris} triangles`);
+    expect(w.map.stats.nature.size).toBe(NATURE_KIT.length);
     expect(calls).toBeLessThan(150);
-    expect(w.parkNature.group.parent).toBe(w.scene);
-    expect(w.scene.getObjectByName('park-nature')).toBeInstanceOf(THREE.Group);
+    expect(tris).toBeLessThan(300_000);
   });
 });

@@ -354,10 +354,24 @@ function placeNature() {
     const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - s.x0) * dx + (z - s.z0) * dz) / len2));
     return Math.hypot(s.x0 + t * dx - x, s.z0 + t * dz - z);
   };
-  /** Metres of clearance past the edge of the nearest path (negative on a path), up to `cap`. */
+  // Segments bucketed on a coarse grid, each listed in every bucket its box (plus the largest cap) touches.
+  const BUCKET = 8, CAP = 4;
+  const buckets = new Map();
+  for (const s of segs) {
+    for (let bz = Math.floor((s.b[1] - CAP) / BUCKET); bz <= Math.floor((s.b[3] + CAP) / BUCKET); bz++) {
+      for (let bx = Math.floor((s.b[0] - CAP) / BUCKET); bx <= Math.floor((s.b[2] + CAP) / BUCKET); bx++) {
+        const k = `${bx},${bz}`;
+        if (!buckets.has(k)) buckets.set(k, []);
+        buckets.get(k).push(s);
+      }
+    }
+  }
+  /** Metres of clearance past the edge of the nearest path (negative on a path), up to `cap` (at most CAP). */
   const pathClear = (x, z, cap) => {
     let best = cap;
-    for (const s of segs) if (near(s.b, x, z, cap)) best = Math.min(best, segDist(s, x, z) - s.h);
+    for (const s of buckets.get(`${Math.floor(x / BUCKET)},${Math.floor(z / BUCKET)}`) ?? []) {
+      if (near(s.b, x, z, cap)) best = Math.min(best, segDist(s, x, z) - s.h);
+    }
     return best;
   };
   const onPaved = (x, z) => paved.some((q) => near(q.b, x, z, 0) && insideDm(x, z, q.p));
