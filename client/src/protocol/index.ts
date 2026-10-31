@@ -4,6 +4,17 @@
 export { ActionFlags } from './action-flags';
 export { Animation } from './animation';
 export { AttackTarget } from './attack-target';
+export { BankAmount } from './bank-amount';
+export { BankClose } from './bank-close';
+export { BankDepositEquipment } from './bank-deposit-equipment';
+export { BankDepositInventory } from './bank-deposit-inventory';
+export { BankDeposit } from './bank-deposit';
+export { BankOpen } from './bank-open';
+export { BankResultCode } from './bank-result-code';
+export { BankResult } from './bank-result';
+export { BankSlot } from './bank-slot';
+export { BankState } from './bank-state';
+export { BankWithdraw } from './bank-withdraw';
 export { CardTableCatalog } from './card-table-catalog';
 export { CardTableInfo } from './card-table-info';
 export { CardTableLeave } from './card-table-leave';
