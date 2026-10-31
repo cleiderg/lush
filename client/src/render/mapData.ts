@@ -103,3 +103,19 @@ export function parseCardTables(json: string): CardTablesData {
   if (d.version !== 1) throw new Error(`unsupported cardtables.json version ${d.version}`);
   return d;
 }
+
+/** One prop: [type index into `types`, x, z, rotation in whole degrees]. x and z in integer decimetres. */
+export type Prop = [number, number, number, number];
+/** props.json: visual-only campus props placed by shared/map/build.mjs. */
+export interface PropsData {
+  version: number;
+  units: string;
+  types: string[];
+  props: Prop[];
+}
+
+export function parseProps(json: string): PropsData {
+  const d = JSON.parse(json) as PropsData;
+  if (d.version !== 1) throw new Error(`unsupported props.json version ${d.version}`);
+  return d;
+}

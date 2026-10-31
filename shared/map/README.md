@@ -5,12 +5,14 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 | File | What |
 |---|---|
 | `source/osm-central.json` | Committed OSM snapshot (`node shared/map/fetch.mjs` refreshes it; needs network) |
-| `build.mjs` | `node shared/map/build.mjs [outDir]` writes `campus.json`, `collision.bin`, `areas.json` and `cardtables.json`. Offline and deterministic |
+| `build.mjs` | `node shared/map/build.mjs [outDir]` writes `campus.json`, `collision.bin`, `areas.json`, `cardtables.json` and `props.json`. Offline and deterministic |
 | `campus.json` | Compact map for rendering |
 | `collision.bin` | Collision grid for client and server |
 | `areas.mjs` | Gameplay places (spawn, shop, area polygons, card tables) in metres; edit here, then rebuild |
 | `areas.json` | Gameplay areas for client and server |
 | `cardtables.json` | Card table plaza and its 4 tables |
+| `props.mjs` | Prop types, placement seed and busy-area rules; edit here, then rebuild |
+| `props.json` | Campus props (benches, lamp posts, bins, ...), visual only |
 | `config.mjs` | Bounding box, origin, chunk size, cell size |
 
 ## Coordinates
@@ -81,3 +83,15 @@ The card table area from `docs/specs/map.md` (Gameplay areas): a small plaza abo
 - `tables[]`: `{id, x, z}`. `id` 1 to 4; `x`, `z` the table centre, at least 3 m from every other table.
 
 `build.mjs` snaps each table to the centre of its collision cell and fails if that cell is blocked.
+
+## `props.json`
+
+Visual-only campus props (`docs/specs/visual-style.md`, Props). They never change `collision.bin`, and the server ignores them. Same units: integer decimetres, x east, z south.
+
+`{version, units, types, props}`
+
+- `version`: 1.
+- `types[]`: prop type names; a prop's type is an index into this list (order from `PROP_TYPES` in `props.mjs`).
+- `props[]`: `[type, x, z, rot]`. `x`, `z` the footprint centre; `rot` whole degrees, clockwise seen from above, 0 = front facing south.
+
+`build.mjs` places them with one seeded generator (`PROP_SEED`), so the file is byte-identical on every build. Busy areas (spawn, shop, card plaza centre) get a 3 × 3 block of 10 × 10 m cells around their centre; every cell that is at least half walkable gets `BUSY_TYPES` different types (the build fails if one doesn't fit). Every area in `areas.json` without props gets a small cluster near its centre. No prop centre is on a blocked cell or inside a building, near the spawn point, in front of the shop stall or on a card table.
