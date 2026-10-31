@@ -182,6 +182,8 @@ type Rules struct {
 	PvPLevelGap             int         `json:"pvp_level_gap"`
 	ShopDistanceTiles       int         `json:"shop_distance_tiles"`
 	TradeDistanceTiles      int         `json:"trade_distance_tiles"`
+	BankSlots               int         `json:"bank_slots"` // distinct items the bank holds
+	BankDistanceTiles       int         `json:"bank_distance_tiles"`
 	PvPItemsKept            int         `json:"pvp_items_kept"`
 	DropReservationSeconds  int         `json:"drop_reservation_s"`
 	DropDespawnSeconds      int         `json:"drop_despawn_s"`
@@ -432,6 +434,13 @@ func (d *Data) index() error {
 		}
 		e.Item = id
 		d.shopPrice[id] = e.Price
+	}
+
+	if d.Rules.BankSlots < 1 {
+		return fmt.Errorf("gamedata: %s: bank_slots %d must be at least 1", RulesFile, d.Rules.BankSlots)
+	}
+	if d.Rules.BankDistanceTiles < 0 {
+		return fmt.Errorf("gamedata: %s: bank_distance_tiles %d must not be negative", RulesFile, d.Rules.BankDistanceTiles)
 	}
 
 	kit := &d.Rules.StartingKit
