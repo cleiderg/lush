@@ -3,6 +3,7 @@ import { encodeShopBuy, encodeShopSell } from '../net/codec';
 import type { ItemState } from '../state/items';
 import { nearShop, shopResultText, type Point } from '../state/shop';
 import { hudLayout, place } from './hudLayout';
+import { addPressFeedbackWithin, PanelMotion } from './theme';
 
 /** The Campus Market stall from shared/map/areas.json, in metres (the file is in decimetres). */
 export const SHOP_STALL: Point = { x: areas.shop.x / 10, z: areas.shop.z / 10 };
@@ -43,18 +44,20 @@ export class ShopPanel {
   private readonly stall: Point;
   /** ShopResult seq already seen when the panel opened; older results are not shown. */
   private seenSeq = 0;
+  private readonly motion: PanelMotion;
   private readonly unsubscribe: () => void;
   private readonly onResize = (): void => this.layout();
 
   constructor(private readonly opts: ShopPanelOptions) {
     injectStyle();
     this.stall = opts.stall ?? SHOP_STALL;
-    this.panel = el('div', 'lush-shop');
+    this.panel = el('div', 'lush-panel lush-shop');
     this.panel.setAttribute('role', 'dialog');
     this.panel.setAttribute('aria-label', 'Campus Market');
-    this.panel.hidden = true;
+    this.motion = new PanelMotion(this.panel, (shown) => { this.panel.hidden = !shown; });
+    addPressFeedbackWithin(this.panel);
     const head = el('div', 'lush-shop-head');
-    head.append(el('span', 'lush-shop-title', 'Campus Market'), button('lush-shop-close', 'Close', () => this.close()));
+    head.append(el('span', 'lush-title lush-shop-title', 'Campus Market'), button('lush-shop-close', 'Close', () => this.close()));
     this.message = el('div', 'lush-shop-msg');
     this.message.setAttribute('role', 'status');
     this.buyList = el('div', 'lush-shop-list');
@@ -77,7 +80,7 @@ export class ShopPanel {
     if (!nearShop(this.opts.position(), this.stall)) return false;
     if (!this.isOpen) {
       this.seenSeq = this.opts.items.shopResult?.seq ?? 0;
-      this.panel.hidden = false;
+      this.motion.set(true);
       this.opts.onOpen?.();
       this.render();
     }
@@ -85,7 +88,7 @@ export class ShopPanel {
   }
 
   close(): void {
-    this.panel.hidden = true;
+    this.motion.set(false);
   }
 
   /** Call each frame: closes the panel once the player walks out of range. */
@@ -133,6 +136,7 @@ export class ShopPanel {
 
   dispose(): void {
     this.unsubscribe();
+    this.motion.dispose();
     window.removeEventListener('resize', this.onResize);
     this.panel.remove();
   }
@@ -145,18 +149,17 @@ function injectStyle(): void {
   styled = true;
   const s = document.createElement('style');
   s.textContent = `
-.lush-shop { box-sizing: border-box; z-index: 6; display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 12px; background: rgba(29,29,38,.96); color: #fff; font: 13px/16px system-ui, sans-serif; overflow-y: auto; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.lush-shop { box-sizing: border-box; z-index: 6; display: flex; flex-direction: column; gap: var(--lush-space-2); padding: var(--lush-space-2) var(--lush-space-3) var(--lush-space-3); font-size: var(--lush-text-sm); line-height: 16px; overflow-y: auto; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
 .lush-shop[hidden] { display: none; }
-.lush-shop-head { display: flex; align-items: center; justify-content: space-between; }
-.lush-shop-title { font-weight: 700; font-size: 15px; }
-.lush-shop-msg { min-height: 16px; color: #ffd54f; font-weight: 600; }
-.lush-shop-sub { color: #aab; font-size: 11px; text-transform: uppercase; }
-.lush-shop-list { display: flex; flex-direction: column; gap: 4px; }
-.lush-shop-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; background: #3b3b52; }
+.lush-shop-head { display: flex; align-items: center; justify-content: space-between; gap: var(--lush-space-2); }
+.lush-shop-title { font-size: var(--lush-text-lg); }
+.lush-shop-msg { min-height: 16px; color: var(--lush-gold-bright); font-weight: 600; }
+.lush-shop-sub { color: var(--lush-text-muted); font: var(--lush-text-xs) var(--lush-font-title); font-variant: small-caps; letter-spacing: 0.08em; border-bottom: var(--lush-border); padding-bottom: 2px; }
+.lush-shop-list { display: flex; flex-direction: column; gap: var(--lush-space-1); }
+.lush-shop-row { display: flex; align-items: center; gap: var(--lush-space-2); padding: var(--lush-space-1) var(--lush-space-2); border: var(--lush-border); border-radius: var(--lush-radius-sm); background: var(--lush-surface); }
 .lush-shop-name { flex: 1; min-width: 0; word-break: break-word; }
-.lush-shop-price { color: #ffd54f; white-space: nowrap; }
-.lush-shop button { min-width: 44px; min-height: 32px; border: 0; border-radius: 8px; background: #4a8f4a; color: #fff; font: 600 13px sans-serif; touch-action: manipulation; }
-.lush-shop .lush-shop-close { background: #5a3b3b; }
+.lush-shop-price { color: var(--lush-gold); white-space: nowrap; }
+.lush-shop .lush-shop-buy, .lush-shop .lush-shop-sell, .lush-shop .lush-shop-sell-all { background: var(--lush-active); }
 `;
   document.head.append(s);
 }

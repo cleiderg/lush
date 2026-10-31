@@ -2,6 +2,7 @@ import { ShedColour } from '../protocol';
 import { CARD_TABLE_POSITIONS, inCardTableReach, type CardTablePosition, type CardTableStore, type ShedCardValue } from '../state/cardTables';
 import type { Point } from '../state/shop';
 import { hudLayout, place } from './hudLayout';
+import { addPressFeedbackWithin, PanelMotion } from './theme';
 import { SHED_COLOURS, isWild, shedCardElement, shedColourCss, shedColourName } from './shedCards';
 
 /** The card table messages the panel sends; Session implements this. */
@@ -74,17 +75,19 @@ export class CardTablePanel {
   private tableId = 0;
   /** CardTableResult seq already seen when the panel opened; older results are not shown. */
   private seenSeq = 0;
+  private readonly motion: PanelMotion;
   private readonly unsubscribe: () => void;
   private readonly onResize = (): void => this.layout();
 
   constructor(private readonly opts: CardTablePanelOptions) {
     injectStyle();
-    this.panel = el('div', 'lush-ctable');
+    this.panel = el('div', 'lush-panel lush-ctable');
     this.panel.setAttribute('role', 'dialog');
     this.panel.setAttribute('aria-label', 'Card table');
-    this.panel.hidden = true;
+    this.motion = new PanelMotion(this.panel, (shown) => { this.panel.hidden = !shown; });
+    addPressFeedbackWithin(this.panel);
     const head = el('div', 'lush-ctable-head');
-    this.title = el('span', 'lush-ctable-title');
+    this.title = el('span', 'lush-title lush-ctable-title');
     head.append(this.title, button('lush-ctable-close', 'Close', () => this.close()));
     this.stake = el('div', 'lush-ctable-stake');
     this.status = el('div', 'lush-ctable-status');
@@ -147,13 +150,13 @@ export class CardTablePanel {
   open(tableId: number): void {
     if (!this.isOpen || tableId !== this.tableId) this.seenSeq = this.opts.tables.result?.seq ?? 0;
     this.tableId = tableId;
-    this.panel.hidden = false;
+    this.motion.set(true);
     this.opts.onOpen?.();
     this.render();
   }
 
   close(): void {
-    this.panel.hidden = true;
+    this.motion.set(false);
     this.pendingWild = null;
   }
 
@@ -289,6 +292,7 @@ export class CardTablePanel {
 
   dispose(): void {
     this.unsubscribe();
+    this.motion.dispose();
     window.removeEventListener('resize', this.onResize);
     this.panel.remove();
   }
@@ -301,32 +305,33 @@ function injectStyle(): void {
   styled = true;
   const s = document.createElement('style');
   s.textContent = `
-.lush-ctable { box-sizing: border-box; z-index: 6; display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 12px; background: rgba(29,29,38,.96); color: #fff; font: 13px/16px system-ui, sans-serif; overflow-y: auto; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.lush-ctable { box-sizing: border-box; z-index: 6; display: flex; flex-direction: column; gap: var(--lush-space-2); padding: var(--lush-space-2) var(--lush-space-3) var(--lush-space-3); font-size: var(--lush-text-sm); line-height: 16px; overflow-y: auto; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
 .lush-ctable[hidden], .lush-ctable button[hidden] { display: none; }
-.lush-ctable-head { display: flex; align-items: center; justify-content: space-between; }
-.lush-ctable-title { font-weight: 700; font-size: 15px; }
-.lush-ctable-stake { color: #ffd54f; font-weight: 600; }
-.lush-ctable-status { color: #aab; font-size: 11px; text-transform: uppercase; }
-.lush-ctable-msg { min-height: 16px; color: #ffd54f; font-weight: 600; }
-.lush-ctable-seats { display: flex; flex-direction: column; gap: 4px; }
-.lush-ctable-seat { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; background: #3b3b52; min-height: 28px; }
+.lush-ctable-head { display: flex; align-items: center; justify-content: space-between; gap: var(--lush-space-2); }
+.lush-ctable-title { font-size: var(--lush-text-lg); }
+.lush-ctable-stake { color: var(--lush-gold); font-weight: 600; }
+.lush-ctable-status { color: var(--lush-text-muted); font: var(--lush-text-xs) var(--lush-font-title); font-variant: small-caps; letter-spacing: 0.08em; }
+.lush-ctable-msg { min-height: 16px; color: var(--lush-gold-bright); font-weight: 600; }
+.lush-ctable-seats { display: flex; flex-direction: column; gap: var(--lush-space-1); }
+.lush-ctable-seat { display: flex; align-items: center; gap: var(--lush-space-2); padding: var(--lush-space-1) var(--lush-space-2); border: var(--lush-border); border-radius: var(--lush-radius-sm); background: var(--lush-surface); min-height: 28px; }
 .lush-ctable-who { flex: 1; min-width: 0; word-break: break-word; }
-.lush-ctable-flag { color: #9fd89f; white-space: nowrap; }
-.lush-ctable-actions { display: flex; gap: 6px; }
-.lush-ctable button { min-width: 44px; min-height: 32px; border: 0; border-radius: 8px; background: #4a8f4a; color: #fff; font: 600 13px sans-serif; touch-action: manipulation; }
-.lush-ctable .lush-ctable-close, .lush-ctable .lush-ctable-leave { background: #5a3b3b; }
-.lush-ctable button:disabled { opacity: .5; }
-.lush-ctable-turn { outline: 2px solid #ffd54f; }
-.lush-ctable-count { color: #ccd; white-space: nowrap; }
+.lush-ctable-flag { color: #9fd06a; white-space: nowrap; }
+.lush-ctable-actions { display: flex; gap: var(--lush-space-2); }
+.lush-ctable-actions button { flex: 1; font-size: var(--lush-text-md); }
+.lush-ctable .lush-ctable-sit, .lush-ctable .lush-ctable-ready, .lush-ctable .lush-shed-draw { background: var(--lush-active); }
+.lush-ctable .lush-ctable-leave { background: #7a2e24; }
+.lush-ctable-turn { outline: 2px solid var(--lush-gold-bright); }
+.lush-ctable-count { color: var(--lush-text-muted); white-space: nowrap; }
 .lush-shed { display: flex; flex-direction: column; gap: 6px; }
 .lush-shed[hidden], .lush-shed [hidden] { display: none; }
 .lush-shed-pile { display: flex; gap: 8px; align-items: center; }
 .lush-shed-info { display: flex; flex-direction: column; gap: 2px; }
 .lush-shed-colour { border-left: 6px solid transparent; padding-left: 4px; font-weight: 600; }
-.lush-shed-turn { color: #ffd54f; font-weight: 600; }
+.lush-shed-turn { color: var(--lush-gold-bright); font-weight: 600; }
 .lush-shed-hand { display: flex; flex-wrap: wrap; gap: 4px; }
 .lush-shed-card { box-sizing: border-box; display: flex; align-items: center; justify-content: center; width: 44px; height: 62px; padding: 2px; border: 2px solid #fff; border-radius: 6px; font: 700 13px/14px sans-serif; text-align: center; }
-.lush-ctable button.lush-shed-card { min-width: 44px; padding: 2px; }
+.lush-ctable button.lush-shed-card { min-width: 44px; min-height: 62px; padding: 2px; border: 2px solid #fff; border-radius: 6px; font: 700 13px/14px sans-serif; letter-spacing: 0; }
+.lush-ctable button.lush-shed-card.pressed { border-color: var(--lush-gold-bright); }
 .lush-shed-picker { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .lush-shed-picker-title { width: 100%; font-weight: 600; }
 `;
