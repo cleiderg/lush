@@ -22,7 +22,8 @@ func savedSkills(r *saveRig, sid int64, want store.SkillXP) func() bool {
 }
 
 // AC3: skill XP added in the world is written by the periodic, logout and
-// shutdown saves, and a fresh join with the same token loads it back.
+// shutdown saves, a rejoin with the same token gets it back, and a fresh join
+// after a restart loads it from the store.
 func TestSkillXPSavedAndLoadedOnJoin(t *testing.T) {
 	r := newSaveRig(t)
 	c := r.dial(hello(uint16(protocol.ProtocolVersionCurrent), ""))
@@ -64,7 +65,7 @@ func TestSkillXPSavedAndLoadedOnJoin(t *testing.T) {
 	r.tickUntilGone(id)
 	r.st.waitFor(t, "logout save with skill XP", savedSkills(r, sid, want))
 
-	// A fresh join with the same token loads it into the world player.
+	// A rejoin with the same token gets it back.
 	c2 := r.dial(hello(uint16(protocol.ProtocolVersionCurrent), tok))
 	wid2, _ := r.expectWelcome(c2)
 	r.w.Tick()
@@ -79,5 +80,19 @@ func TestSkillXPSavedAndLoadedOnJoin(t *testing.T) {
 	}
 	if p2.SkillLevel(world.Woodcutting) != world.SkillLevelForXP(250) {
 		t.Fatalf("rejoined woodcutting level = %d", p2.SkillLevel(world.Woodcutting))
+	}
+
+	// "Restart": a new world and session over the same store, so the join
+	// loads skill XP from the stored record.
+	r2 := newRigStore(t, 16, cfg(), r.st.Players)
+	c3 := r2.dial(hello(uint16(protocol.ProtocolVersionCurrent), tok))
+	wid3, _ := r2.expectWelcome(c3)
+	r2.w.Tick()
+	p3 := r2.w.Player(world.PlayerID(wid3))
+	if p3 == nil {
+		t.Fatal("player not in world after restart")
+	}
+	if p3.SkillXP != wantWorld {
+		t.Fatalf("skill xp after restart = %v, want %v", p3.SkillXP, wantWorld)
 	}
 }
