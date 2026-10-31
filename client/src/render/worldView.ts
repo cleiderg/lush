@@ -29,6 +29,8 @@ export interface EntityLookup {
 /** One combat hit on an entity. Damage 0 is a miss. */
 export interface HitView {
   readonly target: number;
+  /** Entity id of whoever struck; missing when unknown. A drawn player attacker plays an attack swing. */
+  readonly attacker?: number;
   readonly damage: number;
   readonly died: boolean;
 }
