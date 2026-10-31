@@ -27,7 +27,7 @@ static sizeOf():number {
 
 static createBankSlot(builder:flatbuffers.Builder, item_id: number, quantity: bigint):flatbuffers.Offset {
   builder.prep(8, 16);
-  builder.writeInt64(BigInt(quantity ?? 0));
+  builder.writeInt64(quantity);
   builder.pad(6);
   builder.writeInt16(item_id);
   return builder.offset();
