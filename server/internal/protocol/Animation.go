@@ -10,18 +10,27 @@ const (
 	AnimationIdle Animation = 0
 	AnimationWalk Animation = 1
 	AnimationWave Animation = 2
+	AnimationChop Animation = 3
+	AnimationFish Animation = 4
+	AnimationCook Animation = 5
 )
 
 var EnumNamesAnimation = map[Animation]string{
 	AnimationIdle: "Idle",
 	AnimationWalk: "Walk",
 	AnimationWave: "Wave",
+	AnimationChop: "Chop",
+	AnimationFish: "Fish",
+	AnimationCook: "Cook",
 }
 
 var EnumValuesAnimation = map[string]Animation{
 	"Idle": AnimationIdle,
 	"Walk": AnimationWalk,
 	"Wave": AnimationWave,
+	"Chop": AnimationChop,
+	"Fish": AnimationFish,
+	"Cook": AnimationCook,
 }
 
 func (v Animation) String() string {

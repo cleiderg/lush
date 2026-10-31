@@ -52,6 +52,11 @@ const (
 	MessageShedDraw           Message = 42
 	MessageShedState          Message = 43
 	MessageShedHand           Message = 44
+	MessageSkillStats         Message = 45
+	MessageSkillAction        Message = 46
+	MessageResourceState      Message = 47
+	MessageLevelUp            Message = 48
+	MessageSkillResult        Message = 49
 )
 
 var EnumNamesMessage = map[Message]string{
@@ -100,6 +105,11 @@ var EnumNamesMessage = map[Message]string{
 	MessageShedDraw:           "ShedDraw",
 	MessageShedState:          "ShedState",
 	MessageShedHand:           "ShedHand",
+	MessageSkillStats:         "SkillStats",
+	MessageSkillAction:        "SkillAction",
+	MessageResourceState:      "ResourceState",
+	MessageLevelUp:            "LevelUp",
+	MessageSkillResult:        "SkillResult",
 }
 
 var EnumValuesMessage = map[string]Message{
@@ -148,6 +158,11 @@ var EnumValuesMessage = map[string]Message{
 	"ShedDraw":           MessageShedDraw,
 	"ShedState":          MessageShedState,
 	"ShedHand":           MessageShedHand,
+	"SkillStats":         MessageSkillStats,
+	"SkillAction":        MessageSkillAction,
+	"ResourceState":      MessageResourceState,
+	"LevelUp":            MessageLevelUp,
+	"SkillResult":        MessageSkillResult,
 }
 
 func (v Message) String() string {
