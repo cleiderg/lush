@@ -138,3 +138,24 @@ export function parseParkNature(json: string): ParkNatureData {
   if (d.version !== 1) throw new Error(`unsupported parknature.json version ${d.version}`);
   return d;
 }
+
+/** A woodcutting tree in skills.json. x and z in integer decimetres, on a collision cell centre. */
+export interface SkillTree { id: string; kind: 'tree' | 'oak' | 'eucalyptus'; x: number; z: number }
+/** A fishing spot candidate on the pond's edge. x and z in integer decimetres. */
+export interface FishingSpot { id: string; kind: 'net' | 'rod'; x: number; z: number }
+/** skills.json: milestone 9 skill objects placed by shared/map/build.mjs (docs/specs/skills.md). */
+export interface SkillsData {
+  version: number;
+  units: string;
+  bank: MapPoint;
+  grill: MapPoint;
+  trees: SkillTree[];
+  /** `p` the closed pond outline; `active` spots per kind at once; `spots` the candidates they move between. */
+  pond: { p: number[]; active: Record<FishingSpot['kind'], number>; spots: FishingSpot[] };
+}
+
+export function parseSkills(json: string): SkillsData {
+  const d = JSON.parse(json) as SkillsData;
+  if (d.version !== 1) throw new Error(`unsupported skills.json version ${d.version}`);
+  return d;
+}

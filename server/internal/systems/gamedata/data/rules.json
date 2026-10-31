@@ -20,6 +20,8 @@
   "pvp_level_gap": 5,
   "shop_distance_tiles": 2,
   "trade_distance_tiles": 3,
+  "bank_slots": 200,
+  "bank_distance_tiles": 2,
   "pvp_items_kept": 3,
   "drop_reservation_s": 60,
   "drop_despawn_s": 180,

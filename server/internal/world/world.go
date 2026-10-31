@@ -41,6 +41,9 @@ type Player struct {
 	// Inv is the player's items, equipment and gold. Build it with
 	// NewStartingInventory or NewInventory.
 	Inv Inventory
+	// Bank is the player's banked items, kept apart from Inv. Only the bank
+	// system changes it.
+	Bank Bank
 
 	// XP is the player's combat XP total. Change it with AddXP.
 	XP int

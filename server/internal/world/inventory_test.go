@@ -583,6 +583,8 @@ func TestChangeKindString(t *testing.T) {
 		{world.ChangeUnequip, "item_unequip"},
 		{world.ChangeGold, "gold"},
 		{world.ChangeRemoveWorn, "item_remove_worn"},
+		{world.ChangeBankAdd, "bank_add"},
+		{world.ChangeBankRemove, "bank_remove"},
 		{0, "ChangeKind(0)"},
 		{200, "ChangeKind(200)"},
 	}

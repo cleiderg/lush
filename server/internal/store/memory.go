@@ -16,6 +16,8 @@ type Memory struct {
 
 	nextPot int64
 	pots    map[int64]*memPot // open card pots
+
+	banks map[int64]map[int32]int64 // player id -> item id -> banked qty
 }
 
 var _ Players = (*Memory)(nil)
