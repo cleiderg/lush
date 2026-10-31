@@ -84,8 +84,10 @@ func (s *PGPlayers) LoadByTokenHash(ctx context.Context, tokenHash string) (Play
 	p := Player{TokenHash: tokenHash}
 	var x, z float64
 	err = tx.QueryRow(ctx,
-		`SELECT id, x, z, combat_xp, gold, version FROM players WHERE token_hash = $1`,
-		[]byte(tokenHash)).Scan(&p.ID, &x, &z, &p.XP, &p.Gold, &p.Version)
+		`SELECT id, x, z, combat_xp, woodcutting_xp, fishing_xp, cooking_xp, gold, version
+		 FROM players WHERE token_hash = $1`,
+		[]byte(tokenHash)).Scan(&p.ID, &x, &z, &p.XP,
+		&p.Skills.Woodcutting, &p.Skills.Fishing, &p.Skills.Cooking, &p.Gold, &p.Version)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Player{}, fmt.Errorf("load player by token: %w", ErrNotFound)
 	}
@@ -154,10 +156,14 @@ func (s *PGPlayers) Save(ctx context.Context, p Player) (Player, error) {
 	var x, z float64
 	out := Player{ID: p.ID, TokenHash: p.TokenHash}
 	err = tx.QueryRow(ctx,
-		`UPDATE players SET x = $3, z = $4, combat_xp = $5, version = version + 1, updated_at = now()
+		`UPDATE players SET x = $3, z = $4, combat_xp = $5,
+		     woodcutting_xp = $6, fishing_xp = $7, cooking_xp = $8,
+		     version = version + 1, updated_at = now()
 		 WHERE id = $1 AND version = $2
-		 RETURNING x, z, combat_xp, gold, version`,
-		p.ID, p.Version, float64(p.X), float64(p.Z), p.XP).Scan(&x, &z, &out.XP, &out.Gold, &out.Version)
+		 RETURNING x, z, combat_xp, woodcutting_xp, fishing_xp, cooking_xp, gold, version`,
+		p.ID, p.Version, float64(p.X), float64(p.Z), p.XP,
+		p.Skills.Woodcutting, p.Skills.Fishing, p.Skills.Cooking).Scan(&x, &z, &out.XP,
+		&out.Skills.Woodcutting, &out.Skills.Fishing, &out.Skills.Cooking, &out.Gold, &out.Version)
 	if err == nil {
 		out.X, out.Z = float32(x), float32(z)
 		if err := loadItems(ctx, tx, p.ID, &out.Holdings); err != nil {

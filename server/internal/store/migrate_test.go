@@ -14,13 +14,16 @@ import (
 )
 
 // latestMigration is the version of the newest file in db/migrations.
-const latestMigration = 4
+const latestMigration = 5
 
 // progressMigration is the version of 00003_player_progress.sql.
 const progressMigration = 3
 
 // cardPotsMigration is the version of 00004_card_pots.sql.
 const cardPotsMigration = 4
+
+// skillXPMigration is the version of 00005_player_skill_xp.sql.
+const skillXPMigration = 5
 
 func TestMigrate(t *testing.T) {
 	url := os.Getenv("LUSH_TEST_DATABASE_URL")
@@ -196,6 +199,91 @@ func TestMigrateCardPotsDownUp(t *testing.T) {
 		{"closed by refund", "UPDATE card_pots SET closed_at = now(), closed_by = 'refund' WHERE id = $1 AND $2::bigint > 0", true},
 	} {
 		_, err := pool.Exec(ctx, tc.sql, pot, player)
+		if tc.ok && err != nil {
+			t.Errorf("%s: %v", tc.name, err)
+		}
+		if !tc.ok && err == nil {
+			t.Errorf("%s: accepted, want rejected", tc.name)
+		}
+	}
+}
+
+// TestMigrateSkillXPDownUp rolls the skill XP migration back and applies it
+// again, then checks its defaults and constraints.
+func TestMigrateSkillXPDownUp(t *testing.T) {
+	url := os.Getenv("LUSH_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("LUSH_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatalf("up: %v", err)
+	}
+	db := stdlib.OpenDBFromPool(pool)
+	defer db.Close()
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const countColumns = `SELECT count(*) FROM information_schema.columns
+		WHERE table_name = 'players' AND column_name IN ('woodcutting_xp', 'fishing_xp', 'cooking_xp')`
+	var before int64
+	if err := pool.QueryRow(ctx, "INSERT INTO players (token_hash) VALUES ('before') RETURNING id").Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.DownTo(ctx, skillXPMigration-1); err != nil {
+		t.Fatalf("down to %d: %v", skillXPMigration-1, err)
+	}
+	var n int
+	if err := pool.QueryRow(ctx, countColumns).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("skill xp columns after down = %d, err %v; want 0", n, err)
+	}
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+	if v, err := provider.GetDBVersion(ctx); err != nil || v != latestMigration {
+		t.Fatalf("version after up again = %d, err %v; want %d", v, err, latestMigration)
+	}
+	if err := pool.QueryRow(ctx, countColumns).Scan(&n); err != nil || n != 3 {
+		t.Fatalf("skill xp columns after up = %d, err %v; want 3", n, err)
+	}
+
+	// A row that existed before the migration gets 0 in every skill.
+	var wc, fi, co int64
+	if err := pool.QueryRow(ctx, "SELECT woodcutting_xp, fishing_xp, cooking_xp FROM players WHERE id = $1", before).Scan(&wc, &fi, &co); err != nil {
+		t.Fatal(err)
+	}
+	if wc != 0 || fi != 0 || co != 0 {
+		t.Fatalf("existing row skill xp = %d, %d, %d; want 0", wc, fi, co)
+	}
+
+	var id int64
+	if err := pool.QueryRow(ctx, "INSERT INTO players (token_hash) VALUES ('p') RETURNING id").Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		sql  string
+		ok   bool
+	}{
+		{"woodcutting", "UPDATE players SET woodcutting_xp = 5000000000 WHERE id = $1", true},
+		{"fishing", "UPDATE players SET fishing_xp = 1 WHERE id = $1", true},
+		{"cooking", "UPDATE players SET cooking_xp = 0 WHERE id = $1", true},
+		{"woodcutting negative", "UPDATE players SET woodcutting_xp = -1 WHERE id = $1", false},
+		{"fishing negative", "UPDATE players SET fishing_xp = -1 WHERE id = $1", false},
+		{"cooking negative", "UPDATE players SET cooking_xp = -1 WHERE id = $1", false},
+		{"woodcutting null", "UPDATE players SET woodcutting_xp = NULL WHERE id = $1", false},
+	} {
+		_, err := pool.Exec(ctx, tc.sql, id)
 		if tc.ok && err != nil {
 			t.Errorf("%s: %v", tc.name, err)
 		}
