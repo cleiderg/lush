@@ -44,8 +44,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 11 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 11", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 12 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 12", ProtocolVersionCurrent)
 	}
 }
 
@@ -97,6 +97,7 @@ func TestRoundTripWelcome(t *testing.T) {
 	WelcomeAddTickRate(b, 20)
 	WelcomeAddWalkSpeed(b, 4)
 	WelcomeAddRunSpeed(b, 7)
+	WelcomeAddServerTimeMs(b, 1798761600000)
 	buf := finish(b, MessageWelcome, WelcomeEnd(b))
 
 	var m Welcome
@@ -104,7 +105,7 @@ func TestRoundTripWelcome(t *testing.T) {
 	m.Init(tbl.Bytes, tbl.Pos)
 	sp := m.Spawn(nil)
 	if m.PlayerId() != 42 || string(m.GuestToken()) != "tok" || sp.X() != 1.5 || sp.Z() != -2.5 || m.TickRate() != 20 ||
-		m.WalkSpeed() != 4 || m.RunSpeed() != 7 {
+		m.WalkSpeed() != 4 || m.RunSpeed() != 7 || m.ServerTimeMs() != 1798761600000 {
 		t.Fatalf("welcome mismatch")
 	}
 }

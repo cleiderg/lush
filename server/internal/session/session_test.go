@@ -61,7 +61,14 @@ func newRigLog(t *testing.T, queue int, cfg session.Config, players store.Player
 func newRigSystems(t *testing.T, queue int, cfg session.Config, players store.Players, log *slog.Logger,
 	extra func(*session.Server) []world.System) *rig {
 	t.Helper()
-	clock := world.NewFakeClock(time.Unix(0, 0))
+	return newRigAt(t, queue, cfg, players, log, extra, time.Unix(0, 0))
+}
+
+// newRigAt is newRigSystems with the fake clock starting at start.
+func newRigAt(t *testing.T, queue int, cfg session.Config, players store.Players, log *slog.Logger,
+	extra func(*session.Server) []world.System, start time.Time) *rig {
+	t.Helper()
+	clock := world.NewFakeClock(start)
 	w := world.New(world.DefaultConfig())
 	st := &stats{}
 	sess := session.New(cfg, w, clock, players, log)
