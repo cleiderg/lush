@@ -42,7 +42,7 @@ function wobble(x: number, y: number, z: number, seed: number): number {
 const ICO = new THREE.IcosahedronGeometry(1, 0).getAttribute('position');
 
 /** A lumpy low-poly blob (20 faces) centred on (cx, cy, cz): canopies, bushes, boulders. */
-function blob(b: MeshBuilder, cx: number, cy: number, cz: number, rx: number, ry: number, rz: number, color: number, seed: number, amp = 0.18): void {
+export function blob(b: MeshBuilder, cx: number, cy: number, cz: number, rx: number, ry: number, rz: number, color: number, seed: number, amp = 0.18): void {
   const v: number[][] = [];
   for (let i = 0; i < ICO.count; i++) {
     const x = ICO.getX(i), y = ICO.getY(i), z = ICO.getZ(i);
@@ -56,7 +56,7 @@ function blob(b: MeshBuilder, cx: number, cy: number, cz: number, rx: number, ry
 }
 
 /** Tapered n-sided tube from p to q: trunks and limbs that lean. */
-function limb(b: MeshBuilder, p: number[], q: number[], r0: number, r1: number, sides: number, color: number): void {
+export function limb(b: MeshBuilder, p: number[], q: number[], r0: number, r1: number, sides: number, color: number): void {
   const d = new THREE.Vector3(q[0] - p[0], q[1] - p[1], q[2] - p[2]).normalize();
   const u = new THREE.Vector3(1, 0, 0).cross(d).normalize();
   if (u.lengthSq() < 1e-6) u.set(0, 0, 1);
