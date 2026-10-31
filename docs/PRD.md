@@ -62,19 +62,31 @@ An internal test build, deployed and playable by invited testers:
 
 **Must-have vs. stretch.** Everything above is must-have except the card tables. If the mid-December date is at risk, card tables move to Phase 2 first.
 
-### 4.2 Out of scope for Phase 1
+### 4.2 After Phase 1: milestones 8 to 13
 
-Agents must not build these in Phase 1:
+Planned once milestones 1 to 7 have issues. Still an internal test build for invited testers.
 
-- Factions, territory control, and elections.
-- Player housing. It is planned for Phase 2 and specified in [[housing]] (D-049).
+- **Look and feel (M8):** lighting, day and night, dense props, a café interior, characters, camera and a polished interface, copied about 90% from the owner's reference mock-ups in `/Users/Shared/lush-art/reference/` on the bot Mac (Lush's own names, text and characters), with day and night following real Irvine time. Mostly client work. See [[visual-style]] (D-050).
+- **Skills and bank (M9):** woodcutting, fishing and cooking, levels 1 to 30, and a 200-slot bank. See [[skills]] (D-051).
+- **Player housing (M10):** homes in Mesa Court and Middle Earth, furniture, rent and auctions. The map grows to include those two areas. See [[housing]] (D-049, D-052).
+- **Quests and more content (M11):** a data-driven quest system, three starter quests, talking NPCs, and monsters and gear for levels 20 to 30. See [[quests]] (D-053).
+- **Groups and conquest (M12):** player groups with ranks, group halls with doors, a vault and the heist, and the weekly Sunday siege for the throne in Aldrich Hall; the ruling group sets the world music, a tax and a proclamation. See [[groups]] (D-054).
+- **Trust and death (M13):** bodies stay down after every death until carried to a revival point, a hidden assassination item, and a private good/evil meter with counter-unlocks and a lagging halo. See [[trust-and-death]] (D-055).
+
+### 4.3 Out of scope
+
+Agents must not build these:
+
+- Elections, alliances and territory beyond the throne and group halls ([[groups]] covers groups and weekly rule).
+- Housing beyond the first release in [[housing]]: expansions, ratings, house sales, more areas.
+- Skills other than woodcutting, fishing and cooking.
 - Texas Hold'em (only the first card game, and only if card tables happen).
 - Native app-store apps. Phase 1 is the browser and the home-screen web app only.
 - UCI email login (guest accounts only).
 - Chat moderation tools (required before any public launch).
 - WebTransport (WebSocket only).
 - Multiple worlds or world hopping.
-- Map areas beyond central campus.
+- Map areas beyond central campus, except the two housing areas and their paths (M10).
 - Any public launch to UCI students.
 
 Never in any phase: buying, selling, or cashing out gold or items for real money (D-013).
@@ -94,7 +106,7 @@ Vertical (portrait) mobile browser layout, based on the interactive prototype:
 
 ### 5.2 Visual style (decided)
 
-- Low-poly, flat colors, no textures. Slim, OSRS-like character proportions.
+- Low-poly, mostly flat colors. Small tiling textures are allowed only for floors, walls and paths. Chunky, blocky characters with big heads (amended by D-050; the full look is in [[visual-style]] and the reference screenshots in `/Users/Shared/lush-art/reference/` on the bot Mac).
 - Optional retro post-process: low internal resolution, dithering, grain, vignette. Off by default; players switch it with a Retro toggle in the HUD, remembered in the browser.
 
 ### 5.3 Core loop
@@ -143,6 +155,12 @@ A **modular monolith**: one Go server binary and one TypeScript client, each spl
 | [[map]] (`specs/map.md`) | OpenStreetMap pipeline, chunks, shared collision, attribution |
 | [[gameplay]] (`specs/gameplay.md`) | Core loop, combat, items, gold, PvP death rules |
 | [[card-tables]] (`specs/card-tables.md`) | Table system and the first card game (stretch) |
+| [[visual-style]] (`specs/visual-style.md`) | The target look, lighting, day and night, props, interiors, characters, interface, quality presets, screenshot checks (M8) |
+| [[skills]] (`specs/skills.md`) | Woodcutting, fishing, cooking, and the bank (M9) |
+| [[housing]] (`specs/housing.md`) | Player homes, furniture, rent and auctions (M10) |
+| [[quests]] (`specs/quests.md`) | Quest system, talking NPCs, starter quests, more monsters and items (M11) |
+| [[groups]] (`specs/groups.md`) | Groups, halls, doors, vault, heist, weekly siege and rule (M12) |
+| [[trust-and-death]] (`specs/trust-and-death.md`) | Bodies and revival, assassination, good/evil meter, halo (M13) |
 | [[operations]] (`specs/operations.md`) | Deployment, environments, monitoring, restarts |
 
 ---
@@ -193,8 +211,14 @@ Cloudflare Pages for the client, a Vultr VM in Los Angeles for the server (stagi
 5. **Mobile polish:** PWA manifest, audio unlock, glTF pipeline.
 6. **Playing together:** emotes and interactions, PvE and PvP combat, inventory and equipment, gold and NPC shop, player trading.
 7. **Card tables (stretch).**
+8. **Look and feel:** lighting and shadows, day and night cycle, ground and nature detail, campus props, building detail and the Student Center café interior with cut-away view, chunkier characters and animations, camera, restyled HUD (location panel, minimap, portrait, speech bubbles, interact prompt, panels), quality presets, and the `npm run shots` screenshot check ([[visual-style]]).
+9. **Skills and bank:** woodcutting, fishing, cooking, skills panel, bank booth and bank panel ([[skills]]).
+10. **Player housing:** map growth to Mesa Court and Middle Earth, claiming and rent, auctions, home rooms with edit mode, furniture shop and workbench, visiting ([[housing]]).
+11. **Quests and more content:** quest system and log, talking NPCs and dialogue, three starter quests, new monsters and items ([[quests]]).
+12. **Groups and conquest:** groups and ranks, group chat, six group halls with doors, door log and vault, the heist, the weekly siege in Aldrich Hall, and the ruling group's settings ([[groups]]).
+13. **Trust and death:** bodies and carrying for every death, revival points, the good/evil meter, its unlocks and halo, the hidden vendor, assassination item and wards ([[trust-and-death]]).
 
-**Target:** all milestones complete by mid-December 2026 (end of Fall quarter). This is tight; see the must-have vs. stretch split in 4.1 for what gets cut first.
+**Target:** milestones 1 to 7 complete by mid-December 2026 (end of Fall quarter). Milestones 8 to 13 have no date yet and come in that order; they never take priority over unfinished work in 1 to 7. This is tight; see the must-have vs. stretch split in 4.1 for what gets cut first.
 
 ---
 
@@ -231,7 +255,7 @@ Cloudflare Pages for the client, a Vultr VM in Los Angeles for the server (stagi
 | D-027 | PvP death drops everything except a few items | OSRS-style risk makes the PvP zone meaningful |
 | D-028 | No chat moderation in Phase 1; full moderation required before public launch | Trusted testers only |
 | D-029 | Simple player-to-player trading in Phase 1, one transaction per trade | Tests the economy's hardest correctness case early |
-| D-030 | Out of scope: factions, housing, Hold'em, native apps (see 4.2) | Protects the mid-December date |
+| D-030 | Out of scope: factions, housing, Hold'em, native apps (see 4.3; housing moved to milestone 10 by D-052) | Protects the mid-December date |
 | D-031 | Client capped at 30 fps on iPhone 13+ | OSRS-paced game; saves battery and heat |
 | D-032 | Staging on the production VM, separate port | Lower cost while only testers play; load tests run at quiet times |
 | D-033 | Agents run unattended on an always-on Mac under a supervisor (now the runner, D-038) that handles usage limits | Work continues without the owner, including across limit resets |
@@ -251,6 +275,12 @@ Cloudflare Pages for the client, a Vultr VM in Los Angeles for the server (stagi
 | D-047 | Phase 1 gameplay numbers are OSRS-style placeholders kept in server data files (gameplay spec): one combat level 1 to 30, melee only, 28 inventory slots, 100 starting gold, six NPC types, a shop that also sells food and starter gear, PvP only within 5 levels, gold never dropped, a 2 s wave | A complete, playable loop now, tuned after playtests; selling at the shop gives gold a use (#96, #98, #99) |
 | D-048 | Coders and the planner also run on Opus (amends D-039). While the bot is at its Opus limit they run on Sonnet, and reviews wait for Opus. Estimated-cost caps raised to $40 per run and $150 per issue. | The bot plan had usage to spare; stronger coders mean fewer review rounds and CI fixes, and nothing merges on a weaker review |
 | D-049 | Player housing and decoration (Animal Crossing-style homes in replicas of UCI housing areas, kept by monthly gold rent) is planned for Phase 2 and specified in [[housing]]. It stays out of Phase 1. | Keeps Phase 1 on track for mid-December; housing needs the map to grow beyond central campus, and crafting and friends that Phase 1 doesn't have |
+| D-050 | Milestone 8 is look and feel, before any new gameplay: Lush is matched to the owner's two reference screenshots (`/Users/Shared/lush-art/reference/` on the bot Mac) in detail, lighting and UI polish, without copying their content. Amends 5.2: chunky big-headed characters, small tiling textures allowed for floors, walls and paths. Day and night follow the real time and sunrise and sunset in Irvine. The bottom-of-screen controls (5.1) stay; the new HUD goes in the top part of the screen. Copy the references about 90%, changing only names, text and characters. Quality presets keep 30 fps on an iPhone 13. Skills, housing and quests move to milestones 9 to 11. | Owner wants the game to look finished before more systems are added; the references make "done" checkable |
+| D-051 | Milestone 9 is skills and a bank: woodcutting, fishing and cooking (levels 1 to 30, OSRS XP table, separate from combat level) and a 200-slot bank where every item stacks. Gold stays a balance, not banked. Numbers are placeholders in server data files ([[skills]]). | Gives non-combat play, makes food a loop, answers the bank question, and protects valuables from PvP deaths |
+| D-052 | Milestone 10 is player housing (amends D-049): Mesa Court and Middle Earth, 20 houses each; 200 gold a month, two months to claim, up to 6 prepaid; auctions start at one month's rent and an unbid house becomes claimable; visiting is open or locked; furniture from a thrift stall and a no-skill workbench using logs. The map grows to those two areas only. | Owner moved housing into the plan; placeholders let agents build without waiting |
+| D-053 | Milestone 11 is quests and more content: a data-driven quest system, talking NPCs, three starter quests (Overdue, Coyote Trouble, Fish Fry), and new monsters and gear for levels 20 to 30 ([[quests]]). | OSRS-style goals and story, and content for the top of the level range |
+| D-054 | Milestone 12 is groups and conquest (from the owner's social systems doc): groups with four ranks, six claimable halls around Aldrich Park with open/closed/locked doors, a door log and a group vault, a 60 s vault heist with capped rewards, and a weekly Sunday 7–8 pm siege for the throne in Aldrich Hall that gets harder for repeat rulers. The ruler picks music, a 0–20% shop tax, a banner and a fixed proclamation. Replaces "factions" in the out-of-scope list. | A weekly reason for groups to log in, with trust as a resource |
+| D-055 | Milestone 13 is trust and death: bodies stay down after **every** death (NPC deaths too) until carried to a revival point, or 5 min (NPC) / 30 min (player) then respawn Weakened; amends the death rules in the gameplay spec. A private −100 to +100 good/evil meter with counter-unlocks and a halo that lags 3 days; a hidden 25,000-gold assassination vial with 70%-accurate residue and ward amulets. The marked PvP zone stays. | Every death is a story; corruption is rewarded and countered, betrayal leaves clues not proof |
 
 ---
 
@@ -263,8 +293,8 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 
 **Gameplay** ([[gameplay]])
 - Every gameplay number is a placeholder to tune after playtests (D-047): the combat formulas and level curve, the NPC and item tables, shop prices, wave timing, trade distance, the PvP zone warning distance and the PvP death rules.
-- Whether Phase 1 needs a bank. Without one, players carry everything they own, so a PvP death is costly (gold is never dropped for this reason).
-- More attack styles (ranged, magic) and skills beyond combat. Not in Phase 1 unless decided here.
+- More attack styles (ranged, magic). Not planned yet.
+- Every number in [[skills]], [[quests]], [[groups]] and [[trust-and-death]] is a placeholder too (D-051, D-053, D-054, D-055).
 
 **Card tables** ([[card-tables]], stretch)
 - Table rules placeholders (seats 2 to 4, start when all seated players are Ready, 20 s turn timer, 3 missed turns forfeit, no house cut), tuned after playtests.
@@ -275,13 +305,9 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 - Retro post-process placeholders, tuned after profiling on an iPhone 13: internal resolution scale `RETRO_SCALE` 0.5, dither colour levels `RETRO_COLOR_LEVELS` 32 per channel (4x4 ordered dither), grain strength `RETRO_GRAIN` 0.04, vignette strength `RETRO_VIGNETTE` 0.35.
 - Chat display placeholders, tuned after playtests: chat log length `CHAT_LOG_LINES` 50 lines, overhead message duration `OVERHEAD_CHAT_MS` 5000 ms.
 
-**Housing** ([[housing]], Phase 2)
-- Auction starting bid, and what happens if nobody bids.
-- Home expansions later, and their cost.
-- A home rating or leaderboard.
-- The monthly gold fee, and whether it differs by area.
-- Whether a player can sell or give their house to someone else.
-- Which other housing areas are included, and how many houses each has.
+**Housing** ([[housing]], M10)
+- The first-release numbers (rent, auction, houses per area, furniture prices) are placeholders (D-052).
+- Later: home expansions, a rating or leaderboard, selling or giving a house, more housing areas.
 
 **Later phases**
 - Launch plan to avoid an empty world (clubs, residence halls, scheduled events).
