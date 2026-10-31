@@ -9,6 +9,8 @@ export interface Rect {
 export interface HudLayout {
   /** The control tray (joystick and action buttons, or the chat keyboard). Overlays stay out of it. */
   controls: Rect;
+  /** The location panel (place name, area type, Irvine time on a sun arc): top left, beside the HUD. */
+  location: Rect;
   hud: Rect;
   toggle: Rect;
   /** The Retro look toggle (Q2), left of the inventory toggle in the top bar. */
@@ -35,14 +37,18 @@ export const TRAY_SHARE = 0.35;
 
 const MARGIN = 8;
 const HUD_W = 150;
-const HUD_H = 64;
+/** Height of the top band: the location panel, the HUD and the toggles. */
+const HUD_H = 76;
+/** The location panel's widest size, and its share of the top band when narrower. */
+const LOCATION_W = 200;
+const LOCATION_SHARE = 0.6;
 const TOGGLE = 52;
 const PROMPT_H = 88;
 const PVP_H = 36;
 const CHAT_H = 120;
 
 /**
- * Where the HUD, inventory and Retro toggles, inventory panel, shop panel and trade window go for a viewport of
+ * Where the location panel, HUD, inventory and Retro toggles, inventory panel, shop panel and trade window go for a viewport of
  * width × height. Everything sits over the game canvas, above the control tray.
  */
 export function hudLayout(width: number, height: number): HudLayout {
@@ -52,9 +58,14 @@ export function hudLayout(width: number, height: number): HudLayout {
   const trayTop = height - trayH;
   const controls = { x: left, y: trayTop, w: appW, h: trayH };
 
-  const hud = { x: left + MARGIN, y: MARGIN, w: Math.min(HUD_W, appW - 2 * TOGGLE - 4 * MARGIN), h: HUD_H };
   const toggle = { x: left + appW - MARGIN - TOGGLE, y: MARGIN, w: TOGGLE, h: TOGGLE };
   const retro = { ...toggle, x: toggle.x - MARGIN - TOGGLE };
+  // The top band left of the toggles holds the location panel, then the HUD.
+  const band = retro.x - MARGIN - (left + MARGIN);
+  const locationW = Math.min(LOCATION_W, Math.round((band - MARGIN) * LOCATION_SHARE));
+  const location = { x: left + MARGIN, y: MARGIN, w: locationW, h: HUD_H };
+  const hudX = location.x + location.w + MARGIN;
+  const hud = { x: hudX, y: MARGIN, w: Math.min(HUD_W, retro.x - MARGIN - hudX), h: HUD_H };
   const panelTop = MARGIN + HUD_H + MARGIN;
   // The PvP strip sits just above the tray and the panels end above it, so it never hides panel content.
   const pvp = { x: left + MARGIN, y: trayTop - MARGIN - PVP_H, w: appW - 2 * MARGIN, h: PVP_H };
@@ -67,7 +78,7 @@ export function hudLayout(width: number, height: number): HudLayout {
   const tradePrompt = { ...panel, h: Math.min(PROMPT_H, panel.h) };
   const chatH = Math.min(CHAT_H, panel.h);
   const chat = { x: panel.x, y: panel.y + panel.h - chatH, w: panel.w, h: chatH };
-  return { controls, hud, toggle, retro, panel, shop: { ...panel }, trade: { ...panel }, cardTable: { ...panel }, tradePrompt, pvp, chat };
+  return { controls, location, hud, toggle, retro, panel, shop: { ...panel }, trade: { ...panel }, cardTable: { ...panel }, tradePrompt, pvp, chat };
 }
 
 export function intersects(a: Rect, b: Rect): boolean {

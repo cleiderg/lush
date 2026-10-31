@@ -148,7 +148,7 @@ function injectStyle(): void {
   styled = true;
   const s = document.createElement('style');
   s.textContent = `
-.lush-hud { box-sizing: border-box; z-index: 5; padding: 6px 10px; border-radius: 10px; background: rgba(20,20,30,.72); color: #fff; font: 600 14px/17px system-ui, sans-serif; pointer-events: none; user-select: none; -webkit-user-select: none; }
+.lush-hud { box-sizing: border-box; z-index: 5; display: flex; flex-direction: column; justify-content: center; padding: 6px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 10px; background: rgba(20,20,30,.72); color: #fff; font: 600 13px/17px system-ui, sans-serif; pointer-events: none; user-select: none; -webkit-user-select: none; }
 .lush-hud-hp { color: #ff8a80; }
 .lush-hud-gold { color: #ffd54f; }
 .lush-inv-toggle { box-sizing: border-box; z-index: 5; border: 0; border-radius: 12px; background: #3b3b52; color: #fff; font: 600 14px sans-serif; touch-action: manipulation; }
