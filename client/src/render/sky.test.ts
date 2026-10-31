@@ -109,13 +109,14 @@ describe('shadows (AC3)', () => {
     const npcs = w.scene.getObjectByName('npcs')!.children;
     expect(npcs.length).toBeGreaterThan(0);
     for (const m of npcs) expect(m.castShadow).toBe(true);
-    const local = w.scene.children.find((c) => c.children.length > 0 && c.children.every((j) => j.children.some((m) => (m as THREE.Mesh).isMesh)))!;
-    const localMeshes: THREE.Mesh[] = [];
-    local.traverse((o) => {
-      if ((o as THREE.Mesh).isMesh) localMeshes.push(o as THREE.Mesh);
-    });
-    expect(localMeshes.length).toBeGreaterThan(0);
-    for (const m of localMeshes) expect(m.castShadow).toBe(true);
+    // The local player is drawn as the last instance of those same part meshes: one remote player
+    // in the view, plus the local one.
+    const parts = remote.filter((m) => m.name.startsWith('player:'));
+    expect(parts.length).toBeGreaterThan(0);
+    for (const m of parts) {
+      expect((m as THREE.InstancedMesh).count).toBe(2);
+      expect(m.castShadow).toBe(true);
+    }
   });
 });
 
