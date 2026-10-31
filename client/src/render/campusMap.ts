@@ -493,6 +493,24 @@ function buildChunks(data: CampusData): Built {
   return result;
 }
 
+/** Finished geometry per builder of a built map, made the first time a CampusMap needs it. */
+const finished = new WeakMap<object, THREE.BufferGeometry>();
+
+/**
+ * A new geometry for `builder` sharing the attributes of the first one made, so a second map (a
+ * second scene) neither rebuilds nor copies them. The attributes are never changed after building.
+ */
+function shared(builder: object, make: () => THREE.BufferGeometry): THREE.BufferGeometry {
+  let src = finished.get(builder);
+  if (!src) finished.set(builder, (src = make()));
+  const g = new THREE.BufferGeometry();
+  for (const [name, attr] of Object.entries(src.attributes)) g.setAttribute(name, attr);
+  g.setIndex(src.index);
+  g.boundingSphere = src.boundingSphere?.clone() ?? null;
+  g.boundingBox = src.boundingBox?.clone() ?? null;
+  return g;
+}
+
 /** The campus drawn as one merged mesh per fixed-size chunk (frustum culling drops the far ones). */
 export class CampusMap {
   readonly group = new THREE.Group();
@@ -516,7 +534,7 @@ export class CampusMap {
       triangles += b.triangles;
       // Every chunk mesh carries `glow` (all 0 without windows) so the patched shader never reads a stale value.
       // A chunk with only ground surfaces has no merged mesh of its own, just a holder for them.
-      const chunk = b.triangles > 0 ? new THREE.Mesh(b.geometry(true), this.material) : new THREE.Group();
+      const chunk = b.triangles > 0 ? new THREE.Mesh(shared(b, () => b.geometry(true)), this.material) : new THREE.Group();
       chunk.name = `chunk-${key}`;
       chunk.matrixAutoUpdate = false;
       chunk.castShadow = true;
@@ -524,7 +542,7 @@ export class CampusMap {
       for (const s of surfaces.get(key) ?? []) {
         if (s.triangles === 0) continue;
         triangles += s.triangles;
-        const mesh = new THREE.Mesh(s.geometry(), this.surfaceMaterials[s.kind]);
+        const mesh = new THREE.Mesh(shared(s, () => s.geometry()), this.surfaceMaterials[s.kind]);
         mesh.name = `ground-${key}-${s.kind}`;
         mesh.matrixAutoUpdate = false;
         mesh.receiveShadow = true;
