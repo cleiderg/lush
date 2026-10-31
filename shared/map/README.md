@@ -23,10 +23,14 @@ The world is split into square chunks of **64 m** (`chunkSize`). Chunk `(cx, cz)
 
 ## `campus.json`
 
-`{version, attribution, units, origin{lat,lon}, chunkSize, bounds{minX,minZ,maxX,maxZ}, buildings, paths, green}`
+`{version, attribution, units, origin{lat,lon}, chunkSize, bounds{minX,minZ,maxX,maxZ}, buildings, paths, plazas, green}`
 
 - `buildings[]`: `{id, h, p}`. `h` height, `p` closed footprint `[x0,z0,x1,z1,...]` (last point not repeated).
-- `paths[]`: `{id, w, p}`. `w` width, `p` open polyline.
+- `paths[]`: `{id, w, s, p}`. `w` width, `s` surface kind, `p` open polyline. `s` comes from the OSM `highway` tag:
+  - `0` dirt: `path`
+  - `1` stone: `footway`, `steps`, `cycleway`, `pedestrian` (as a line)
+  - `2` paved: `service`, `living_street`, `residential`, `unclassified`, `tertiary` (service and road types)
+- `plazas[]`: `{id, p}`. Paved pedestrian areas: closed `highway=pedestrian` + `area=yes` ways, written here instead of in `paths`. `p` closed polygon (last point not repeated, at least 3 points). Drawn only; plazas don't change collision.
 - `green[]`: `{id, k, p}`. `k`: 0 grass, 1 wood, 2 water, 3 pitch; `p` closed polygon.
 
 ## `collision.bin`
