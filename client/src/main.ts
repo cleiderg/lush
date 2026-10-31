@@ -1,4 +1,4 @@
-import { AudioManager } from './audio';
+import { AudioManager, installUiClicks } from './audio';
 import { initErrorReporting } from './core/errorReporting';
 import { interact, interactPromptText, interactTarget } from './core/interact';
 import { GameLoop } from './core/loop';
@@ -23,7 +23,7 @@ import { LocationPanel } from './ui/locationPanel';
 import { PlayerPortrait } from './ui/playerPortrait';
 import { localRetroStore, RetroToggle } from './ui/retroToggle';
 import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
-import { applyTheme } from './ui/theme';
+import { applyTheme, BUTTON_CLASS } from './ui/theme';
 import { mountTimePanel } from './ui/timePanel';
 import { TradePanel } from './ui/tradePanel';
 
@@ -32,8 +32,9 @@ initErrorReporting();
 // Theme properties and the self-hosted title font, before any panel is built.
 applyTheme();
 
-// Audio starts only after the first user gesture.
-new AudioManager({ factory: () => new AudioContext(), window, document });
+// Audio starts only after the first user gesture; from then on every button clicks softly.
+const audio = new AudioManager({ factory: () => new AudioContext(), window, document });
+installUiClicks(document, audio, `.${BUTTON_CLASS}`);
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const renderer = createRenderer(canvas);
