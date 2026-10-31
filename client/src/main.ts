@@ -5,6 +5,7 @@ import { GameLoop } from './core/loop';
 import { sendMove } from './core/move';
 import { buildWorldView, controlYaw } from './core/view';
 import { sendWave } from './core/wave';
+import { memoryTokenStore, OfflineTransport, offlineOptions } from './net/offline';
 import { localTokenStore, Session } from './net/session';
 import { WebSocketTransport } from './net/transport';
 import { createRenderer } from './render/renderer';
@@ -120,9 +121,12 @@ const chatLog = new ChatLog({
 });
 // Developer-only time control (?debug): overrides the shared time the sky follows.
 mountTimePanel(location.search, { parent: document.body, clock: game.clock });
+// ?offline: local bots stand in for the server and no WebSocket is opened (npm run shots).
+const offline = offlineOptions(location.search);
 const session = new Session({
-  factory: () => new WebSocketTransport(),
-  store: localTokenStore(),
+  factory: () => (offline ? new OfflineTransport(offline) : new WebSocketTransport()),
+  // Offline never touches the saved guest token.
+  store: offline ? memoryTokenStore() : localTokenStore(),
   onMessage: (msg) => {
     game.handle(msg, performance.now());
     banner.set(game.restartSeconds);
