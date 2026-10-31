@@ -150,8 +150,16 @@ describe('equipment attachments', () => {
     w.rig.camera.aspect = 9 / 19.5;
     w.rig.camera.updateProjectionMatrix();
     const calls = countDrawCallsInView(w.scene, w.rig.camera);
-    console.log(`in view, 100 equipped and hurt players: ${calls} draw calls`);
-    // The bound includes the world in view from the origin, such as the bank booth and grill (#451).
+    // The same view with only the local player, unequipped: the world in view from the origin.
+    const bare = new WorldScene();
+    bare.update(view(items(), 0));
+    bare.rig.camera.aspect = 9 / 19.5;
+    bare.rig.camera.updateProjectionMatrix();
+    const world = countDrawCallsInView(bare.scene, bare.rig.camera);
+    console.log(`in view, 100 equipped and hurt players: ${calls} draw calls, ${world} of them the world`);
+    // The players' own calls keep the bound they had before the world grew (40 calls with 28 of world).
+    expect(calls - world).toBeLessThan(12);
+    // The whole view, including the bank booth, grill and skill trees in view from the origin (#451).
     expect(calls).toBeLessThan(44);
   });
 });
