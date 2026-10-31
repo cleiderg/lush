@@ -225,6 +225,8 @@ export class CampusMap {
       const mesh = new THREE.Mesh(b.geometry(), this.material);
       mesh.name = `chunk-${key}`;
       mesh.matrixAutoUpdate = false;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
       this.group.add(mesh);
     }
     this.stats = { chunks: builders.size, triangles, extruded, landmarks };

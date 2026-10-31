@@ -6,6 +6,7 @@ const calls: { op: string; arg?: unknown; arg2?: unknown }[] = [];
 vi.mock('three', async (importOriginal) => {
   const three = await importOriginal<typeof import('three')>();
   class FakeWebGLRenderer {
+    shadowMap = { enabled: false, type: 0 };
     setPixelRatio(): void {}
     setSize(w: number, h: number): void {
       calls.push({ op: 'setSize', arg: w, arg2: h });

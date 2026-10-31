@@ -4,6 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('three', async (importOriginal) => {
   const three = await importOriginal<typeof import('three')>();
   class FakeWebGLRenderer {
+    shadowMap = { enabled: false, type: three.BasicShadowMap };
+    toneMapping: number = three.NoToneMapping;
+    toneMappingExposure = 1;
+    outputColorSpace = '';
     setPixelRatio(): void {}
     setSize(): void {}
     render(): void {}
@@ -12,6 +16,7 @@ vi.mock('three', async (importOriginal) => {
   return { ...three, WebGLRenderer: FakeWebGLRenderer };
 });
 
+import * as THREE from 'three';
 import { createRenderer } from './renderer';
 
 interface FakeEl {
@@ -23,12 +28,37 @@ interface FakeEl {
   remove(): void;
 }
 
-describe('createRenderer (AC4)', () => {
+describe('createRenderer', () => {
   const g = globalThis as unknown as { document?: unknown; window?: unknown };
   const prev = { document: g.document, window: g.window };
   afterEach(() => {
     g.document = prev.document;
     g.window = prev.window;
+  });
+
+  const fakeDom = () => {
+    g.document = { createElement: () => ({ style: {}, children: [], appendChild() {}, remove() {} }), body: { appendChild() {} } };
+    g.window = { devicePixelRatio: 1 };
+    return { clientWidth: 390, clientHeight: 844, addEventListener() {}, removeEventListener() {} } as unknown as HTMLCanvasElement;
+  };
+
+  it('uses ACES filmic tone mapping with sRGB output', () => {
+    const r = createRenderer(fakeDom());
+    const gl = r.gl;
+    expect(gl.toneMapping).toBe(THREE.ACESFilmicToneMapping);
+    expect(gl.outputColorSpace).toBe(THREE.SRGBColorSpace);
+    r.dispose();
+  });
+
+  it('turns on soft sun shadows', () => {
+    const r = createRenderer(fakeDom());
+    const gl = r.gl;
+    expect(gl.shadowMap.enabled).toBe(true);
+    // three 0.186 removed PCFSoftShadowMap (it falls back to PCFShadowMap, now the soft filter).
+    expect(gl.shadowMap.type).toBe(THREE.PCFShadowMap);
+    expect(r.world.sky.sun.castShadow).toBe(true);
+    expect(r.world.sky.sun.shadow.radius).toBeGreaterThan(1);
+    r.dispose();
   });
 
   it('shows the OpenStreetMap credit while the renderer exists', () => {

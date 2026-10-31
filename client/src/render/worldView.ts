@@ -58,6 +58,14 @@ export interface ChatBubbleView {
   readonly text: string;
 }
 
+/** Where the sun is. src/state works it out; render only reads it. */
+export interface SkyView {
+  /** Radians above the horizon; negative when the sun is down. */
+  readonly elevation: number;
+  /** Radians clockwise from north, where north is -z and east is +x. */
+  readonly azimuth: number;
+}
+
 export interface WorldView {
   readonly local: PlayerView;
   readonly remotes: readonly PlayerView[];
@@ -71,4 +79,6 @@ export interface WorldView {
   readonly npcs?: readonly NpcView[];
   /** Current overhead chat, at most one per speaker; missing or empty means no text is drawn. */
   readonly chat?: readonly ChatBubbleView[];
+  /** The sun; missing means a daytime default. */
+  readonly sky?: SkyView;
 }
