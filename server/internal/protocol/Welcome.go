@@ -102,8 +102,20 @@ func (rcv *Welcome) MutateRunSpeed(n float32) bool {
 	return rcv._tab.MutateFloat32Slot(14, n)
 }
 
+func (rcv *Welcome) ServerTimeMs() uint64 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(16))
+	if o != 0 {
+		return rcv._tab.GetUint64(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *Welcome) MutateServerTimeMs(n uint64) bool {
+	return rcv._tab.MutateUint64Slot(16, n)
+}
+
 func WelcomeStart(builder *flatbuffers.Builder) {
-	builder.StartObject(6)
+	builder.StartObject(7)
 }
 func WelcomeAddPlayerId(builder *flatbuffers.Builder, playerId uint16) {
 	builder.PrependUint16Slot(0, playerId, 0)
@@ -122,6 +134,9 @@ func WelcomeAddWalkSpeed(builder *flatbuffers.Builder, walkSpeed float32) {
 }
 func WelcomeAddRunSpeed(builder *flatbuffers.Builder, runSpeed float32) {
 	builder.PrependFloat32Slot(5, runSpeed, 0.0)
+}
+func WelcomeAddServerTimeMs(builder *flatbuffers.Builder, serverTimeMs uint64) {
+	builder.PrependUint64Slot(6, serverTimeMs, 0)
 }
 func WelcomeEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

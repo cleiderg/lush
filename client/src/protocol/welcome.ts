@@ -57,8 +57,13 @@ runSpeed():number {
   return offset ? this.bb!.readFloat32(this.bb_pos + offset) : 0.0;
 }
 
+serverTimeMs():bigint {
+  const offset = this.bb!.__offset(this.bb_pos, 16);
+  return offset ? this.bb!.readUint64(this.bb_pos + offset) : BigInt('0');
+}
+
 static startWelcome(builder:flatbuffers.Builder) {
-  builder.startObject(6);
+  builder.startObject(7);
 }
 
 static addPlayerId(builder:flatbuffers.Builder, playerId:number) {
@@ -83,6 +88,10 @@ static addWalkSpeed(builder:flatbuffers.Builder, walkSpeed:number) {
 
 static addRunSpeed(builder:flatbuffers.Builder, runSpeed:number) {
   builder.addFieldFloat32(5, runSpeed, 0.0);
+}
+
+static addServerTimeMs(builder:flatbuffers.Builder, serverTimeMs:bigint) {
+  builder.addFieldInt64(6, serverTimeMs, BigInt('0'));
 }
 
 static endWelcome(builder:flatbuffers.Builder):flatbuffers.Offset {
