@@ -7,7 +7,7 @@ import { overheadOpacity } from '../state/chat';
 
 /**
  * Snapshot of game state for the renderer: predicted local player, interpolated remotes and
- * NPCs, entity state (equipment and health) from game.items, ground items, and the hits received since the previous view. An entity is an NPC when
+ * NPCs, entity state (equipment and health) from game.items, ground items, and the hits received since the previous view (attacker, target, damage and died). An entity is an NPC when
  * its EntityInfo kind is Npc; players and entities with no EntityInfo yet stay in remotes.
  * Drains game.hits, so each hit appears in exactly one view. Chat holds the current overhead
  * message of the local player and of each remote player in view; other speakers are left out.
@@ -15,7 +15,7 @@ import { overheadOpacity } from '../state/chat';
  * The sky is the sun's position at the shared (server) time, or the debug override.
  */
 export function buildWorldView(game: GameState, now: number): WorldView {
-  const hits = game.hits.drain().flatMap((b) => b.hits.map((h) => ({ target: h.target, damage: h.damage, died: h.died })));
+  const hits = game.hits.drain().flatMap((b) => b.hits.map((h) => ({ attacker: h.attacker, target: h.target, damage: h.damage, died: h.died })));
   const remotes: PlayerView[] = [];
   const npcs: NpcView[] = [];
   for (const r of game.remotes(now)) {
