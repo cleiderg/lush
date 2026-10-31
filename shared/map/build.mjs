@@ -1,5 +1,6 @@
-// Converts the committed OSM snapshot into the compact map file, the collision grid, the gameplay areas, the card tables and the props.
-//   node shared/map/build.mjs [outDir]      (default: this directory)
+// Converts the committed OSM snapshot into the compact map file, the collision grid, the gameplay areas, the card tables,
+// the props and the Aldrich Park nature.
+//   node shared/map/build.mjs [outDir] [--no-nature]      (default: this directory; --no-nature skips parknature.json)
 // Deterministic: same input -> byte-identical output. No Math.random, no timestamps.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -8,9 +9,15 @@ import { ALDRICH_PARK_WAY, SPAWN, SAFE_RADIUS, SHOP, SOUTH_FIELDS, PVP_ZONE, CAR
 import {
   PROP_SEED, PROP_TYPES, BUSY_CELL, BUSY_TYPES, SPAWN_CLEAR, SHOP_CLEAR, TABLE_CLEAR, AREA_CLUSTER,
 } from './props.mjs';
+import {
+  NATURE_SEED, NATURE_TYPES, NATURE_BLOCK, NATURE_COVER_SHARE, TREES_PER_BLOCK, BUSHES_PER_BLOCK, ROCKS_PER_BLOCK,
+  FLOWER_BEDS_PER_BLOCK, PICNIC_BLANKETS, PICNIC_RING, BIRDS, BIRD_RING, NATURE_CLEAR, BANK_BOOTH, GRILL,
+} from './parknature.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
-const outDir = process.argv[2] ?? here;
+const args = process.argv.slice(2);
+const outDir = args.find((a) => !a.startsWith('--')) ?? here;
+const withNature = !args.includes('--no-nature');
 const src = JSON.parse(readFileSync(here + 'source/osm-central.json', 'utf8'));
 
 const M_PER_DEG = 111320;
@@ -316,10 +323,161 @@ const props = {
   props: placed.map((p) => [p.t, Math.round(p.x * 10), Math.round(p.z * 10), p.rot]),
 };
 
+// Aldrich Park nature (parknature.mjs): visual only, like the props, and placed after them with its own seeded generator.
+let nature = null;
+if (withNature) nature = placeNature();
+function placeNature() {
+  const natRand = rng(NATURE_SEED);
+  const between = ([lo, hi]) => lo + natRand() * (hi - lo);
+  const typeOf = Object.fromEntries(NATURE_TYPES.map((t, i) => [t.name, i]));
+  const trees = new Set(['tree_oak', 'tree_pine', 'tree_eucalyptus'].map((n) => typeOf[n]));
+  // Paths, plazas and the card plaza, with boxes in metres for quick rejection.
+  const segs = [];
+  for (const w of paths) {
+    for (let i = 0; i + 3 < w.p.length; i += 2) {
+      const [x0, z0, x1, z1] = [w.p[i] / 10, w.p[i + 1] / 10, w.p[i + 2] / 10, w.p[i + 3] / 10];
+      const h = w.w / 20;
+      segs.push({ x0, z0, x1, z1, h, b: [Math.min(x0, x1) - h, Math.min(z0, z1) - h, Math.max(x0, x1) + h, Math.max(z0, z1) + h] });
+    }
+  }
+  const pavedDm = [...plazas.map((q) => q.p), cardTables.plaza];
+  const paved = pavedDm.map((p) => {
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+    for (let i = 0; i < p.length; i += 2) {
+      x0 = Math.min(x0, p[i] / 10); x1 = Math.max(x1, p[i] / 10); z0 = Math.min(z0, p[i + 1] / 10); z1 = Math.max(z1, p[i + 1] / 10);
+    }
+    return { p, b: [x0, z0, x1, z1] };
+  });
+  const near = (b, x, z, pad) => x >= b[0] - pad && x <= b[2] + pad && z >= b[1] - pad && z <= b[3] + pad;
+  const segDist = (s, x, z) => {
+    const dx = s.x1 - s.x0, dz = s.z1 - s.z0, len2 = dx * dx + dz * dz;
+    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - s.x0) * dx + (z - s.z0) * dz) / len2));
+    return Math.hypot(s.x0 + t * dx - x, s.z0 + t * dz - z);
+  };
+  /** Metres of clearance past the edge of the nearest path (negative on a path), up to `cap`. */
+  const pathClear = (x, z, cap) => {
+    let best = cap;
+    for (const s of segs) if (near(s.b, x, z, cap)) best = Math.min(best, segDist(s, x, z) - s.h);
+    return best;
+  };
+  const onPaved = (x, z) => paved.some((q) => near(q.b, x, z, 0) && insideDm(x, z, q.p));
+  /** Walkable park grass: in the park, on a walkable cell, off paths, plazas and the card plaza. The test uses the same rule. */
+  const grassAt = (x, z) => insideDm(x, z, park.p) && !blockedAt(x, z) && pathClear(x, z, 0.01) > 0 && !onPaved(x, z);
+
+  const props = placed.map((p) => ({ x: p.x, z: p.z, r: PROP_TYPES[p.t].r }));
+  const items = []; // {t, x, z, rot, scale, stretch}, metres
+  const CELL = 4;
+  const hash = new Map();
+  const cellKey = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
+  const reach = (it) => NATURE_TYPES[it.t].space * it.scale;
+  const clearOfNature = (t, x, z, scale) => {
+    const me = NATURE_TYPES[t].space * scale;
+    const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL);
+    for (let dz = -3; dz <= 3; dz++) {
+      for (let dx = -3; dx <= 3; dx++) {
+        for (const o of hash.get(`${cx + dx},${cz + dz}`) ?? []) {
+          const need = trees.has(t) && trees.has(o.t) ? me + reach(o) : Math.max(me, reach(o));
+          if (Math.hypot(x - o.x, z - o.z) < need) return false;
+        }
+      }
+    }
+    return true;
+  };
+  const clearPoints = [spawnM, BANK_BOOTH, GRILL];
+  function fits(t, x, z, scale) {
+    const r = NATURE_TYPES[t].r * scale;
+    if (!insideDm(x, z, park.p) || !grassAt(x, z)) return false;
+    for (const [ox, oz] of [[r, 0], [-r, 0], [0, r], [0, -r]]) {
+      if (blockedAt(x + ox, z + oz) || inBuilding(x + ox, z + oz) || onPaved(x + ox, z + oz)) return false;
+    }
+    if (pathClear(x, z, r + 0.3) < r + 0.3) return false;
+    if (clearPoints.some((c) => Math.hypot(x - c.x, z - c.z) < NATURE_CLEAR + r)) return false;
+    const sx = x - shopM.x, sz = z - shopM.z, m = NATURE_CLEAR + r;
+    if (sx > SHOP_CLEAR.x0 - m && sx < SHOP_CLEAR.x1 + m && sz > SHOP_CLEAR.z0 - m && sz < SHOP_CLEAR.z1 + m) return false;
+    if (props.some((p) => Math.abs(x - p.x) < 4 && Math.abs(z - p.z) < 4 && Math.hypot(x - p.x, z - p.z) < p.r + r + 0.3)) return false;
+    return clearOfNature(t, x, z, scale);
+  }
+  function add(t, x, z, scale) {
+    const it = { t, x, z, rot: Math.floor(natRand() * 360), scale, stretch: between(NATURE_TYPES[t].stretch) };
+    items.push(it);
+    const k = cellKey(x, z);
+    if (!hash.has(k)) hash.set(k, []);
+    hash.get(k).push(it);
+  }
+  /** Try to place type t at a random decimetre point picked by `pick`; true on success. */
+  function tryPlace(t, pick, tries = 60) {
+    for (let k = 0; k < tries; k++) {
+      const scale = Math.round(between(NATURE_TYPES[t].scale) * 100) / 100;
+      const [x, z] = pick().map((v) => Math.round(v * 10) / 10);
+      if (fits(t, x, z, scale)) {
+        add(t, x, z, scale);
+        return true;
+      }
+    }
+    return false;
+  }
+  const count = (perBlock) => Math.floor(perBlock) + (natRand() < perBlock % 1 ? 1 : 0);
+
+  // Blocks over the park, row by row. Each gets trees, bushes, rocks and flower beds in proportion to its grass.
+  let px0 = Infinity, pz0 = Infinity, px1 = -Infinity, pz1 = -Infinity;
+  for (let i = 0; i < park.p.length; i += 2) {
+    px0 = Math.min(px0, park.p[i] / 10); px1 = Math.max(px1, park.p[i] / 10);
+    pz0 = Math.min(pz0, park.p[i + 1] / 10); pz1 = Math.max(pz1, park.p[i + 1] / 10);
+  }
+  const B = NATURE_BLOCK;
+  const treeKinds = ['tree_oak', 'tree_pine', 'tree_eucalyptus'].map((n) => typeOf[n]);
+  const rockKinds = ['rock_boulder', 'rock_flat'].map((n) => typeOf[n]);
+  for (let bz = Math.floor(pz0 / B) * B; bz < pz1; bz += B) {
+    for (let bx = Math.floor(px0 / B) * B; bx < px1; bx += B) {
+      let grassN = 0;
+      for (let i = 0; i < B; i++) for (let j = 0; j < B; j++) if (grassAt(bx + i + 0.5, bz + j + 0.5)) grassN++;
+      if (grassN === 0) continue;
+      const share = grassN / (B * B);
+      const pick = () => [bx + natRand() * B, bz + natRand() * B];
+      const plan = [];
+      for (let n = count(TREES_PER_BLOCK * share); n > 0; n--) plan.push(treeKinds[Math.floor(natRand() * treeKinds.length)]);
+      for (let n = count(BUSHES_PER_BLOCK * share); n > 0; n--) plan.push(typeOf.bush);
+      for (let n = count(ROCKS_PER_BLOCK * share); n > 0; n--) plan.push(rockKinds[Math.floor(natRand() * rockKinds.length)]);
+      for (let n = count(FLOWER_BEDS_PER_BLOCK * share); n > 0; n--) plan.push(typeOf.flower_bed);
+      for (const t of plan) tryPlace(t, pick);
+      if (share < NATURE_COVER_SHARE) continue;
+      const covered = () => items.some((it) => it.x >= bx && it.x < bx + B && it.z >= bz && it.z < bz + B &&
+        (trees.has(it.t) || rockKinds.includes(it.t) || it.t === typeOf.bush));
+      for (const t of [typeOf.bush, rockKinds[0], treeKinds[0]]) if (!covered()) tryPlace(t, pick, 400);
+      if (!covered()) throw new Error(`park block (${bx}, ${bz}) has no room for a tree, rock or bush`);
+    }
+  }
+  // A few picnic blankets and small groups of birds around the spawn.
+  const ring = ([lo, hi]) => () => {
+    const a = natRand() * Math.PI * 2, d = lo + natRand() * (hi - lo);
+    return [spawnM.x + Math.cos(a) * d, spawnM.z + Math.sin(a) * d];
+  };
+  for (let n = 0; n < PICNIC_BLANKETS; n++) {
+    if (!tryPlace(typeOf.picnic_blanket, ring(PICNIC_RING), 2000)) throw new Error('no room for a picnic blanket');
+  }
+  for (let n = 0; n < BIRDS;) {
+    if (!tryPlace(typeOf.bird, ring(BIRD_RING), 2000)) throw new Error('no room for a bird');
+    n++;
+    // Up to two more birds peck nearby.
+    const lead = items[items.length - 1];
+    for (let k = Math.floor(natRand() * 3); k > 0 && n < BIRDS; k--) {
+      if (tryPlace(typeOf.bird, () => [lead.x + (natRand() - 0.5) * 3, lead.z + (natRand() - 0.5) * 3], 40)) n++;
+    }
+  }
+  return {
+    version: 1,
+    units: 'decimetres',
+    types: NATURE_TYPES.map((t) => t.name),
+    // [type, x, z, rotation in whole degrees, scale in percent, extra height stretch in percent] per placement.
+    items: items.map((it) => [it.t, Math.round(it.x * 10), Math.round(it.z * 10), it.rot, Math.round(it.scale * 100), Math.round(it.stretch * 100)]),
+  };
+}
+
 mkdirSync(outDir, { recursive: true });
 writeFileSync(outDir + '/campus.json', JSON.stringify(campus) + '\n');
 writeFileSync(outDir + '/collision.bin', Buffer.concat([header, Buffer.from(bits)]));
 writeFileSync(outDir + '/areas.json', JSON.stringify(areas) + '\n');
 writeFileSync(outDir + '/cardtables.json', JSON.stringify(cardTables) + '\n');
 writeFileSync(outDir + '/props.json', JSON.stringify(props) + '\n');
-console.log(`buildings=${buildings.length} paths=${paths.length} plazas=${plazas.length} green=${green.length} grid=${width}x${height} props=${placed.length}`);
+if (nature) writeFileSync(outDir + '/parknature.json', JSON.stringify(nature) + '\n');
+console.log(`buildings=${buildings.length} paths=${paths.length} plazas=${plazas.length} green=${green.length} grid=${width}x${height} props=${placed.length} nature=${nature ? nature.items.length : 'off'}`);
