@@ -102,7 +102,7 @@ Vertical (portrait) mobile browser layout, based on the interactive prototype:
 - **Camera:** third-person, high angle behind the player, OSRS style. Drag on the world to rotate.
 - **Walking mode:** joystick at bottom-left; action buttons at bottom-right (Chat, Interact (target order in the gameplay spec), Wave, Run).
 - **Chat mode:** tapping Chat replaces the controls area with an in-game keyboard and message field. Sending shows the message above the player's head and in the chat log, then returns to walking mode.
-- **Desktop:** WASD or arrow keys to walk, Enter to open chat, physical keyboard for typing.
+- **Desktop:** WASD or arrow keys to walk, Enter to open chat, E to Interact, physical keyboard for typing.
 
 ### 5.2 Visual style (decided)
 
