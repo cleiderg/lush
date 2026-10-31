@@ -16,6 +16,8 @@ type Memory struct {
 
 	nextPot int64
 	pots    map[int64]*memPot // open card pots
+
+	banks map[int64]map[int32]int64 // player id -> item id -> banked qty
 }
 
 var _ Players = (*Memory)(nil)
@@ -87,7 +89,10 @@ func (m *Memory) Save(ctx context.Context, p Player) (Player, error) {
 	if p.XP < 0 {
 		return Player{}, fmt.Errorf("save player %d: xp %d: %w", p.ID, p.XP, ErrInvalid)
 	}
-	cur.X, cur.Z, cur.XP = p.X, p.Z, p.XP
+	if k := p.Skills; k.Woodcutting < 0 || k.Fishing < 0 || k.Cooking < 0 {
+		return Player{}, fmt.Errorf("save player %d: skill xp %+v: %w", p.ID, k, ErrInvalid)
+	}
+	cur.X, cur.Z, cur.XP, cur.Skills = p.X, p.Z, p.XP, p.Skills
 	cur.Version++
 	m.byID[cur.ID] = cur
 	return cur, nil

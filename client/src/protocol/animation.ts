@@ -5,5 +5,8 @@
 export enum Animation {
   Idle = 0,
   Walk = 1,
-  Wave = 2
+  Wave = 2,
+  Chop = 3,
+  Fish = 4,
+  Cook = 5
 }

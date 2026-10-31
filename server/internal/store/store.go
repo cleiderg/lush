@@ -71,6 +71,12 @@ type EconomyChange struct {
 	Holdings Holdings
 }
 
+// SkillXP is a player's XP in each skill, in tenths of a point as the world
+// keeps it. None may be negative.
+type SkillXP struct {
+	Woodcutting, Fishing, Cooking int64
+}
+
 // Player is a persisted player record.
 type Player struct {
 	ID        int64
@@ -78,6 +84,8 @@ type Player struct {
 	X, Z      float32
 	// XP is combat experience. It is saved with the position by Save.
 	XP int64
+	// Skills is skill XP, saved with the position by Save.
+	Skills SkillXP
 	// Holdings is read-only to Save; it changes only through ApplyEconomy.
 	Holdings
 	// Version is incremented by every successful Save. ApplyEconomy leaves it
@@ -88,7 +96,7 @@ type Player struct {
 // Players stores player records.
 type Players interface {
 	// CreateGuest creates a new player with the given token hash at version 1,
-	// with no XP and the holdings start, and appends entries to the economy
+	// with no XP or skill XP and the holdings start, and appends entries to the economy
 	// audit log with Actor set to the new player's id, all in one transaction:
 	// on any error (an invalid holding, an unknown counterparty, an entry that
 	// can't be encoded) no player is created and nothing is logged.
@@ -96,7 +104,7 @@ type Players interface {
 	CreateGuest(ctx context.Context, tokenHash string, start Holdings, entries []Entry) (Player, error)
 	// LoadByTokenHash returns the player, or an error wrapping ErrNotFound.
 	LoadByTokenHash(ctx context.Context, tokenHash string) (Player, error)
-	// Save stores the position and XP of p if p.Version matches the stored
+	// Save stores the position, XP and skill XP of p if p.Version matches the stored
 	// version, and returns the stored record with the incremented version.
 	// Otherwise it returns an error wrapping ErrStaleVersion (or ErrNotFound)
 	// and changes nothing. Save never changes holdings, whatever p.Holdings says.

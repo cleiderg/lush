@@ -1,5 +1,6 @@
 import * as flatbuffers from 'flatbuffers';
 import areas from '../../../shared/map/areas.json';
+import cardTablesData from '../../../shared/map/cardtables.json';
 import { Animation, Entity, Envelope, Message, Snapshot, Vec2, Welcome } from '../protocol';
 import type { EntityState } from './codec';
 import type { TokenStore } from './session';
@@ -12,11 +13,23 @@ import type { Transport } from './transport';
  * opened. The local player is left out of the snapshots, so prediction moves it freely.
  */
 
-/** Places the offline player can start at, in metres: the spawn from areas.json (decimetres), and a point among Aldrich Park's trees. */
+/**
+ * Places the offline player can start at, in metres: the spawn from areas.json (decimetres), a point
+ * among Aldrich Park's trees, one metre from the shop stall, and one metre from card table 1.
+ */
 export const OFFLINE_PLACES: Readonly<Record<string, { x: number; z: number }>> = {
   spawn: { x: areas.spawn.x / 10, z: areas.spawn.z / 10 },
   park: { x: -70, z: -40 },
+  shop: { x: areas.shop.x / 10 + 1, z: areas.shop.z / 10 },
+  cardtable: { x: cardTablesData.tables[0].x / 10, z: cardTablesData.tables[0].z / 10 + 1 },
 };
+
+/** UI panels offline mode can open with fixed data (`?offline&panel=<name>`, npm run shots). */
+export const OFFLINE_PANELS = ['inventory', 'shop', 'trade', 'card-table', 'chat-log', 'big-map'] as const;
+export type OfflinePanel = (typeof OFFLINE_PANELS)[number];
+
+/** Where a panel's shot starts when the URL names no place: within reach of the shop stall or card table. */
+const PANEL_PLACES: Partial<Record<OfflinePanel, string>> = { shop: 'shop', 'card-table': 'cardtable' };
 
 export const OFFLINE_PLAYER_ID = 1;
 const DEFAULT_SEED = 1;
@@ -33,22 +46,27 @@ export interface OfflineOptions {
   /** Where the local player starts and the bots gather, in metres. */
   spawn: { x: number; z: number };
   bots: number;
+  /** The panel to fill with fixed data and open, if any. */
+  panel?: OfflinePanel;
 }
 
 /**
  * Offline options from the URL query string, or null without `offline`. `seed` (integer, default 1),
- * `place` (a key of OFFLINE_PLACES, default spawn) and `bots` (0 to 64, default 8) are optional.
+ * `place` (a key of OFFLINE_PLACES, default spawn, or the panel's place), `bots` (0 to 64, default 8)
+ * and `panel` (one of OFFLINE_PANELS) are optional.
  */
 export function offlineOptions(search: string): OfflineOptions | null {
   const q = new URLSearchParams(search);
   if (!q.has('offline')) return null;
   const seed = Number.parseInt(q.get('seed') ?? '', 10);
   const bots = Number.parseInt(q.get('bots') ?? '', 10);
-  const place = OFFLINE_PLACES[q.get('place') ?? 'spawn'] ?? OFFLINE_PLACES.spawn;
+  const panel = OFFLINE_PANELS.find((p) => p === q.get('panel'));
+  const place = OFFLINE_PLACES[q.get('place') ?? (panel && PANEL_PLACES[panel]) ?? 'spawn'] ?? OFFLINE_PLACES.spawn;
   return {
     seed: Number.isFinite(seed) ? seed : DEFAULT_SEED,
     spawn: { ...place },
     bots: Number.isFinite(bots) ? Math.max(0, Math.min(MAX_BOTS, bots)) : DEFAULT_BOTS,
+    ...(panel ? { panel } : {}),
   };
 }
 

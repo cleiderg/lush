@@ -85,4 +85,6 @@ export interface WorldView {
   readonly chat?: readonly ChatBubbleView[];
   /** The sun; missing means a daytime default. */
   readonly sky?: SkyView;
+  /** Ids (skills.json) of woodcutting trees that are felled and drawn as stumps; missing means none. */
+  readonly felledTrees?: ReadonlySet<string>;
 }

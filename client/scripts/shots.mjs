@@ -3,7 +3,9 @@
 //
 // Starts the Vite dev server, opens the client offline (?offline: fixed-seed local bots, no
 // WebSocket) with the ?debug time control in headless Chromium, and saves one PNG per scene and
-// viewport to client/.shots/. Exits non-zero if any shot is missing or blank (a single colour).
+// viewport to client/.shots/. Each UI panel is also shot open (panel-<name>-<viewport>.png), filled
+// with the offline panel data (?offline&panel=<name>, src/net/offlinePanels.ts). Exits non-zero if
+// any shot is missing or blank (a single colour), or the page logs an error.
 //
 // Uses Playwright's Chromium (`npx playwright install chromium`); where that can't run (older
 // macOS), it falls back to the installed Google Chrome. LUSH_SHOTS_CHANNEL=chrome forces that.
@@ -22,12 +24,21 @@ const SCENES = [
   { name: 'spawn-noon', place: 'spawn', time: 'noon' },
   { name: 'spawn-night', place: 'spawn', time: 'night' },
   { name: 'park-dusk', place: 'park', time: 'dusk' },
+  // One per UI panel, at noon, wherever offline mode puts that panel (src/net/offline.ts PANEL_PLACES).
+  ...['inventory', 'shop', 'trade', 'card-table', 'chat-log', 'big-map'].map((panel) => ({ name: `panel-${panel}`, panel, time: 'noon' })),
 ];
+
+// LUSH_SHOTS_ONLY=<text> shoots only the scenes whose name contains it (for working on one shot).
+const ONLY = process.env.LUSH_SHOTS_ONLY ?? '';
+const SHOTS = SCENES.filter((s) => s.name.includes(ONLY));
 
 const VIEWPORTS = [
   { label: '390x844', width: 390, height: 844, mobile: true },
   { label: '1600x1000', width: 1600, height: 1000, mobile: false },
 ];
+
+/** Software WebGL can be slow to hand over a frame late in a long run, so screenshots get longer than Playwright's 30 s. */
+const SHOT_TIMEOUT_MS = 60000;
 
 /** Time for models, textures and the sky to settle after the preset is set. */
 const SETTLE_MS = 2500;
@@ -55,21 +66,34 @@ async function shoot(browser, base, scene, vp) {
     isMobile: vp.mobile,
     hasTouch: vp.mobile,
   });
-  const page = await context.newPage();
   const errors = [];
-  page.on('pageerror', (err) => errors.push(String(err)));
-  page.on('websocket', (ws) => {
-    // Vite's own hot-reload socket goes to the dev server; offline, the game must open none.
-    if (!ws.url().startsWith(base.replace(/^http/, 'ws'))) errors.push(`unexpected WebSocket: ${ws.url()}`);
-  });
-  await page.goto(`${base}/?offline&debug&seed=${SEED}&place=${scene.place}`, { waitUntil: 'load' });
-  await page.waitForSelector(`.lush-time-panel button[data-preset="${scene.time}"]`);
-  await page.click(`.lush-time-panel button[data-preset="${scene.time}"]`);
-  await page.click('.lush-time-panel button[data-action="pause"]');
-  await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(SETTLE_MS);
-  await page.screenshot({ path: fileFor(scene, vp) });
-  await context.close();
+  try {
+    const page = await context.newPage();
+    page.on('pageerror', (err) => errors.push(String(err)));
+    page.on('response', (res) => {
+      if (res.status() >= 400) errors.push(`HTTP ${res.status()}: ${res.url()}`);
+    });
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') errors.push(`console error: ${msg.text()}`);
+    });
+    page.on('websocket', (ws) => {
+      // Vite's own hot-reload socket goes to the dev server; offline, the game must open none.
+      if (!ws.url().startsWith(base.replace(/^http/, 'ws'))) errors.push(`unexpected WebSocket: ${ws.url()}`);
+    });
+    const where = scene.panel ? `panel=${scene.panel}` : `place=${scene.place}`;
+    await page.goto(`${base}/?offline&debug&seed=${SEED}&${where}`, { waitUntil: 'load' });
+    // The client marks the page once the panel's data is in and the panel is open.
+    if (scene.panel) await page.waitForSelector(`body[data-offline-panel="${scene.panel}"]`, { state: 'attached', timeout: 15000 });
+    await page.waitForSelector(`.lush-time-panel button[data-preset="${scene.time}"]`);
+    await page.click(`.lush-time-panel button[data-preset="${scene.time}"]`);
+    await page.click('.lush-time-panel button[data-action="pause"]');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(SETTLE_MS);
+    await page.screenshot({ path: fileFor(scene, vp), timeout: SHOT_TIMEOUT_MS });
+  } finally {
+    // Also after a failure, so a stuck page doesn't keep rendering under the next shots.
+    await context.close();
+  }
   if (errors.length) throw new Error(`${scene.name} ${vp.label}: ${errors.join('; ')}`);
 }
 
@@ -106,16 +130,21 @@ async function main() {
   const browser = await launch();
   const failures = [];
   try {
-    for (const scene of SCENES) {
+    for (const scene of SHOTS) {
       for (const vp of VIEWPORTS) {
         try {
-          await shoot(browser, base, scene, vp);
+          // A timeout (slow software rendering) gets one more try; page errors fail at once.
+          await shoot(browser, base, scene, vp).catch((err) => {
+            if (err?.name !== 'TimeoutError') throw err;
+            console.warn(`${scene.name} ${vp.label}: ${String(err).split('\n')[0]}; retrying`);
+            return shoot(browser, base, scene, vp);
+          });
         } catch (err) {
-          failures.push(String(err));
+          failures.push(`${scene.name} ${vp.label}: ${String(err).split('\n')[0]}`);
         }
       }
     }
-    for (const scene of SCENES) {
+    for (const scene of SHOTS) {
       for (const vp of VIEWPORTS) {
         const file = fileFor(scene, vp);
         if (!existsSync(file)) {

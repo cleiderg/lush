@@ -10,6 +10,9 @@ import {
   TradeResultCode, TradeSetGold, TradeState,
   CardTableCatalog, CardTableInfo, CardTableLeave, CardTableReady, CardTableResult, CardTableResultCode, CardTableSit,
   CardTableState, ShedCard, ShedColour, ShedDraw, ShedHand, ShedPlay, ShedState, ShedSymbol,
+  FishingSpotState, LevelUp, ResourceState, Skill, SkillAction, SkillResult, SkillResultCode, SkillStats, SkillTarget,
+  BankAmount, BankClose, BankDeposit, BankDepositEquipment, BankDepositInventory, BankOpen, BankResult, BankResultCode,
+  BankSlot, BankState, BankWithdraw,
 } from './index.js';
 
 function finish(b: flatbuffers.Builder, type: Message, msg: flatbuffers.Offset): Uint8Array {
@@ -39,7 +42,7 @@ function buildSnapshot(n: number): Uint8Array {
 
 describe('protocol', () => {
   it('exposes the version constant', () => {
-    expect(ProtocolVersion.Current).toBe(12);
+    expect(ProtocolVersion.Current).toBe(14);
   });
 
   it('keeps a 101-entity snapshot under 1200 bytes', () => {
@@ -650,5 +653,191 @@ describe('protocol', () => {
         expect([c.colour(), c.symbol()]).toEqual(want);
       });
     });
+  });
+
+  it('appends the skill messages to the end of Message', () => {
+    expect([
+      Message.SkillStats, Message.SkillAction, Message.ResourceState, Message.LevelUp, Message.SkillResult,
+    ]).toEqual([45, 46, 47, 48, 49]);
+  });
+
+  it('keeps Animation, Skill and SkillTarget values', () => {
+    expect([Animation.Idle, Animation.Walk, Animation.Wave, Animation.Chop, Animation.Fish, Animation.Cook])
+      .toEqual([0, 1, 2, 3, 4, 5]);
+    expect(Object.values(Animation).filter((v) => typeof v === 'number')).toHaveLength(6);
+    expect([Skill.Woodcutting, Skill.Fishing, Skill.Cooking]).toEqual([0, 1, 2]);
+    expect([SkillTarget.Tree, SkillTarget.FishingSpot, SkillTarget.Grill]).toEqual([0, 1, 2]);
+  });
+
+  it('round-trips the skill animations in a Snapshot', () => {
+    for (const a of [Animation.Chop, Animation.Fish, Animation.Cook]) {
+      const b = new flatbuffers.Builder(64);
+      Snapshot.startEntitiesVector(b, 1);
+      Entity.createEntity(b, 7, 10, 20, 30, a);
+      const ents = b.endVector();
+      const buf = finish(b, Message.Snapshot, Snapshot.createSnapshot(b, 0, 0, ents));
+      expect(open(buf, Message.Snapshot, new Snapshot()).entities(0)!.animation()).toBe(a);
+    }
+  });
+
+  it('round-trips SkillStats', () => {
+    const cases: [number, number, number, number, number, number][] = [
+      [1, 0, 1, 0, 1, 0],
+      [15, 23375, 5, 3880, 20, 45125],
+      [30, 4294967295, 30, 1, 30, 1342340],
+    ];
+    for (const c of cases) {
+      const b = new flatbuffers.Builder(64);
+      const buf = finish(b, Message.SkillStats, SkillStats.createSkillStats(b, ...c));
+      const m = open(buf, Message.SkillStats, new SkillStats());
+      expect([m.woodcuttingLevel(), m.woodcuttingXp(), m.fishingLevel(), m.fishingXp(), m.cookingLevel(), m.cookingXp()])
+        .toEqual(c);
+    }
+  });
+
+  it('round-trips SkillAction', () => {
+    const cases: [SkillTarget, number][] = [
+      [SkillTarget.Tree, 0], [SkillTarget.Tree, 65535], [SkillTarget.FishingSpot, 3], [SkillTarget.Grill, 0],
+    ];
+    for (const [target, id] of cases) {
+      const b = new flatbuffers.Builder(32);
+      const buf = finish(b, Message.SkillAction, SkillAction.createSkillAction(b, target, id));
+      const m = open(buf, Message.SkillAction, new SkillAction());
+      expect([m.target(), m.targetId()]).toEqual([target, id]);
+    }
+  });
+
+  it('round-trips ResourceState with 4-byte fishing spots', () => {
+    const cases: [number[], [number, number][]][] = [
+      [[1, 7, 65535], [[1, 0], [2, 3], [65535, 255]]],
+      [[], [[4, 1]]],
+      [[0], []],
+    ];
+    for (const [felled, spots] of cases) {
+      const b = new flatbuffers.Builder(64);
+      const trees = ResourceState.createFelledTreesVector(b, felled);
+      ResourceState.startFishingSpotsVector(b, spots.length);
+      for (let i = spots.length - 1; i >= 0; i--) FishingSpotState.createFishingSpotState(b, ...spots[i]);
+      const fish = b.endVector();
+      const buf = finish(b, Message.ResourceState, ResourceState.createResourceState(b, trees, fish));
+      const m = open(buf, Message.ResourceState, new ResourceState());
+      expect(Array.from(m.felledTreesArray() ?? [])).toEqual(felled);
+      expect(m.fishingSpotsLength()).toBe(spots.length);
+      spots.forEach((want, i) => {
+        const s = m.fishingSpots(i)!;
+        expect([s.id(), s.candidate()]).toEqual(want);
+      });
+    }
+    expect(FishingSpotState.sizeOf()).toBe(4);
+  });
+
+  it('round-trips LevelUp', () => {
+    const cases: [number, Skill, number][] = [[1, Skill.Woodcutting, 2], [500, Skill.Fishing, 15], [65535, Skill.Cooking, 30]];
+    for (const [id, skill, level] of cases) {
+      const b = new flatbuffers.Builder(32);
+      const buf = finish(b, Message.LevelUp, LevelUp.createLevelUp(b, id, skill, level));
+      const m = open(buf, Message.LevelUp, new LevelUp());
+      expect([m.entityId(), m.skill(), m.level()]).toEqual([id, skill, level]);
+    }
+  });
+
+  it('round-trips SkillResult', () => {
+    const codes = [
+      SkillResultCode.Started, SkillResultCode.Success, SkillResultCode.Burnt, SkillResultCode.NeedTool,
+      SkillResultCode.NeedLevel, SkillResultCode.InventoryFull, SkillResultCode.ResourceGone,
+      SkillResultCode.NothingToCook, SkillResultCode.OutOfRange, SkillResultCode.Stopped,
+    ];
+    // New codes go at the end, so older codes keep their values.
+    codes.forEach((code, i) => expect(code).toBe(i));
+    expect(Object.values(SkillResultCode).filter((v) => typeof v === 'number')).toHaveLength(codes.length);
+    codes.forEach((code, i) => {
+      const skill = (i % 3) as Skill;
+      const b = new flatbuffers.Builder(32);
+      const buf = finish(b, Message.SkillResult, SkillResult.createSkillResult(b, skill, code, 100 + i, i * 3));
+      const m = open(buf, Message.SkillResult, new SkillResult());
+      expect([m.skill(), m.code(), m.itemId(), m.level()]).toEqual([skill, code, 100 + i, i * 3]);
+    });
+  });
+
+  it('appends the bank messages to the end of Message', () => {
+    expect([
+      Message.BankOpen, Message.BankClose, Message.BankState, Message.BankDeposit, Message.BankWithdraw,
+      Message.BankDepositInventory, Message.BankDepositEquipment, Message.BankResult,
+    ]).toEqual([50, 51, 52, 53, 54, 55, 56, 57]);
+    expect(Object.values(Message).filter((v) => typeof v === 'number')).toHaveLength(58);
+  });
+
+  it('round-trips the bank messages with no fields', () => {
+    const cases: [Message, (b: flatbuffers.Builder) => flatbuffers.Offset][] = [
+      [Message.BankOpen, (b) => { BankOpen.startBankOpen(b); return BankOpen.endBankOpen(b); }],
+      [Message.BankClose, (b) => { BankClose.startBankClose(b); return BankClose.endBankClose(b); }],
+      [Message.BankDepositInventory, (b) => {
+        BankDepositInventory.startBankDepositInventory(b);
+        return BankDepositInventory.endBankDepositInventory(b);
+      }],
+      [Message.BankDepositEquipment, (b) => {
+        BankDepositEquipment.startBankDepositEquipment(b);
+        return BankDepositEquipment.endBankDepositEquipment(b);
+      }],
+    ];
+    const objs = [new BankOpen(), new BankClose(), new BankDepositInventory(), new BankDepositEquipment()];
+    cases.forEach(([type, build], i) => {
+      const b = new flatbuffers.Builder(16);
+      expect(open(finish(b, type, build(b)), type, objs[i])).toBe(objs[i]);
+    });
+  });
+
+  it('round-trips a full 200-slot BankState with 64-bit quantities', () => {
+    const full: [number, bigint][] = [];
+    for (let i = 0; i < 200; i++) full.push([i + 1, BigInt(i) * 123456789n]);
+    full[0][1] = 1n;
+    full[198] = [65535, 2n ** 53n + 1n];        // beyond a JS number
+    full[199] = [65534, 2n ** 64n - 1n];        // the largest quantity
+    for (const slots of [full, [[7, 4294967296n]] as [number, bigint][], [] as [number, bigint][]]) {
+      const b = new flatbuffers.Builder(4096);
+      BankState.startSlotsVector(b, slots.length);
+      for (let i = slots.length - 1; i >= 0; i--) BankSlot.createBankSlot(b, ...slots[i]);
+      const vec = b.endVector();
+      const buf = finish(b, Message.BankState, BankState.createBankState(b, vec));
+      const m = open(buf, Message.BankState, new BankState());
+      expect(m.slotsLength()).toBe(slots.length);
+      slots.forEach((want, i) => {
+        const s = m.slots(i)!;
+        expect([s.itemId(), s.quantity()]).toEqual(want);
+      });
+    }
+    expect(BankSlot.sizeOf()).toBe(16);
+  });
+
+  it('round-trips BankDeposit and BankWithdraw, including BankAmount.All', () => {
+    expect(BankAmount.All).toBe(4294967295);
+    const cases: [number, number][] = [[1, 1], [42, 5], [65535, 1234], [300, BankAmount.All]];
+    for (const [item, amount] of cases) {
+      let b = new flatbuffers.Builder(32);
+      let buf = finish(b, Message.BankDeposit, BankDeposit.createBankDeposit(b, item, amount));
+      const d = open(buf, Message.BankDeposit, new BankDeposit());
+      expect([d.itemId(), d.amount()]).toEqual([item, amount]);
+
+      b = new flatbuffers.Builder(32);
+      buf = finish(b, Message.BankWithdraw, BankWithdraw.createBankWithdraw(b, item, amount));
+      const w = open(buf, Message.BankWithdraw, new BankWithdraw());
+      expect([w.itemId(), w.amount()]).toEqual([item, amount]);
+    }
+  });
+
+  it('round-trips BankResult', () => {
+    const codes = [
+      BankResultCode.Ok, BankResultCode.TooFar, BankResultCode.InCombat, BankResultCode.InPvpZone,
+      BankResultCode.BankFull, BankResultCode.InventoryFull, BankResultCode.NotEnoughItems,
+      BankResultCode.Busy, BankResultCode.NotOpen,
+    ];
+    // New codes go at the end, so older codes keep their values.
+    codes.forEach((code, i) => expect(code).toBe(i));
+    expect(Object.values(BankResultCode).filter((v) => typeof v === 'number')).toHaveLength(codes.length);
+    for (const code of codes) {
+      const b = new flatbuffers.Builder(16);
+      const buf = finish(b, Message.BankResult, BankResult.createBankResult(b, code));
+      expect(open(buf, Message.BankResult, new BankResult()).code()).toBe(code);
+    }
   });
 });

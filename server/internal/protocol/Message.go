@@ -7,147 +7,186 @@ import "strconv"
 type Message byte
 
 const (
-	MessageNONE               Message = 0
-	MessageHello              Message = 1
-	MessageWelcome            Message = 2
-	MessageInput              Message = 3
-	MessageSnapshot           Message = 4
-	MessageChatSend           Message = 5
-	MessageChatMessage        Message = 6
-	MessagePing               Message = 7
-	MessagePong               Message = 8
-	MessageReload             Message = 9
-	MessageRestartCountdown   Message = 10
-	MessageEmoteSend          Message = 11
-	MessagePlayerStats        Message = 12
-	MessageInventoryState     Message = 13
-	MessageItemCatalog        Message = 14
-	MessageEntityInfo         Message = 15
-	MessageEntityHealth       Message = 16
-	MessageItemAction         Message = 17
-	MessageGroundItems        Message = 18
-	MessagePickUp             Message = 19
-	MessageShopBuy            Message = 20
-	MessageShopSell           Message = 21
-	MessageShopResult         Message = 22
-	MessageAttackTarget       Message = 23
-	MessageCombatHit          Message = 24
-	MessageNpcCatalog         Message = 25
-	MessageTradeRequest       Message = 26
-	MessageTradeOffer         Message = 27
-	MessageTradeRemove        Message = 28
-	MessageTradeSetGold       Message = 29
-	MessageTradeAccept        Message = 30
-	MessageTradeCancel        Message = 31
-	MessageTradeRequestNotice Message = 32
-	MessageTradeState         Message = 33
-	MessageTradeResult        Message = 34
-	MessageCardTableSit       Message = 35
-	MessageCardTableLeave     Message = 36
-	MessageCardTableState     Message = 37
-	MessageCardTableResult    Message = 38
-	MessageCardTableReady     Message = 39
-	MessageCardTableCatalog   Message = 40
-	MessageShedPlay           Message = 41
-	MessageShedDraw           Message = 42
-	MessageShedState          Message = 43
-	MessageShedHand           Message = 44
+	MessageNONE                 Message = 0
+	MessageHello                Message = 1
+	MessageWelcome              Message = 2
+	MessageInput                Message = 3
+	MessageSnapshot             Message = 4
+	MessageChatSend             Message = 5
+	MessageChatMessage          Message = 6
+	MessagePing                 Message = 7
+	MessagePong                 Message = 8
+	MessageReload               Message = 9
+	MessageRestartCountdown     Message = 10
+	MessageEmoteSend            Message = 11
+	MessagePlayerStats          Message = 12
+	MessageInventoryState       Message = 13
+	MessageItemCatalog          Message = 14
+	MessageEntityInfo           Message = 15
+	MessageEntityHealth         Message = 16
+	MessageItemAction           Message = 17
+	MessageGroundItems          Message = 18
+	MessagePickUp               Message = 19
+	MessageShopBuy              Message = 20
+	MessageShopSell             Message = 21
+	MessageShopResult           Message = 22
+	MessageAttackTarget         Message = 23
+	MessageCombatHit            Message = 24
+	MessageNpcCatalog           Message = 25
+	MessageTradeRequest         Message = 26
+	MessageTradeOffer           Message = 27
+	MessageTradeRemove          Message = 28
+	MessageTradeSetGold         Message = 29
+	MessageTradeAccept          Message = 30
+	MessageTradeCancel          Message = 31
+	MessageTradeRequestNotice   Message = 32
+	MessageTradeState           Message = 33
+	MessageTradeResult          Message = 34
+	MessageCardTableSit         Message = 35
+	MessageCardTableLeave       Message = 36
+	MessageCardTableState       Message = 37
+	MessageCardTableResult      Message = 38
+	MessageCardTableReady       Message = 39
+	MessageCardTableCatalog     Message = 40
+	MessageShedPlay             Message = 41
+	MessageShedDraw             Message = 42
+	MessageShedState            Message = 43
+	MessageShedHand             Message = 44
+	MessageSkillStats           Message = 45
+	MessageSkillAction          Message = 46
+	MessageResourceState        Message = 47
+	MessageLevelUp              Message = 48
+	MessageSkillResult          Message = 49
+	MessageBankOpen             Message = 50
+	MessageBankClose            Message = 51
+	MessageBankState            Message = 52
+	MessageBankDeposit          Message = 53
+	MessageBankWithdraw         Message = 54
+	MessageBankDepositInventory Message = 55
+	MessageBankDepositEquipment Message = 56
+	MessageBankResult           Message = 57
 )
 
 var EnumNamesMessage = map[Message]string{
-	MessageNONE:               "NONE",
-	MessageHello:              "Hello",
-	MessageWelcome:            "Welcome",
-	MessageInput:              "Input",
-	MessageSnapshot:           "Snapshot",
-	MessageChatSend:           "ChatSend",
-	MessageChatMessage:        "ChatMessage",
-	MessagePing:               "Ping",
-	MessagePong:               "Pong",
-	MessageReload:             "Reload",
-	MessageRestartCountdown:   "RestartCountdown",
-	MessageEmoteSend:          "EmoteSend",
-	MessagePlayerStats:        "PlayerStats",
-	MessageInventoryState:     "InventoryState",
-	MessageItemCatalog:        "ItemCatalog",
-	MessageEntityInfo:         "EntityInfo",
-	MessageEntityHealth:       "EntityHealth",
-	MessageItemAction:         "ItemAction",
-	MessageGroundItems:        "GroundItems",
-	MessagePickUp:             "PickUp",
-	MessageShopBuy:            "ShopBuy",
-	MessageShopSell:           "ShopSell",
-	MessageShopResult:         "ShopResult",
-	MessageAttackTarget:       "AttackTarget",
-	MessageCombatHit:          "CombatHit",
-	MessageNpcCatalog:         "NpcCatalog",
-	MessageTradeRequest:       "TradeRequest",
-	MessageTradeOffer:         "TradeOffer",
-	MessageTradeRemove:        "TradeRemove",
-	MessageTradeSetGold:       "TradeSetGold",
-	MessageTradeAccept:        "TradeAccept",
-	MessageTradeCancel:        "TradeCancel",
-	MessageTradeRequestNotice: "TradeRequestNotice",
-	MessageTradeState:         "TradeState",
-	MessageTradeResult:        "TradeResult",
-	MessageCardTableSit:       "CardTableSit",
-	MessageCardTableLeave:     "CardTableLeave",
-	MessageCardTableState:     "CardTableState",
-	MessageCardTableResult:    "CardTableResult",
-	MessageCardTableReady:     "CardTableReady",
-	MessageCardTableCatalog:   "CardTableCatalog",
-	MessageShedPlay:           "ShedPlay",
-	MessageShedDraw:           "ShedDraw",
-	MessageShedState:          "ShedState",
-	MessageShedHand:           "ShedHand",
+	MessageNONE:                 "NONE",
+	MessageHello:                "Hello",
+	MessageWelcome:              "Welcome",
+	MessageInput:                "Input",
+	MessageSnapshot:             "Snapshot",
+	MessageChatSend:             "ChatSend",
+	MessageChatMessage:          "ChatMessage",
+	MessagePing:                 "Ping",
+	MessagePong:                 "Pong",
+	MessageReload:               "Reload",
+	MessageRestartCountdown:     "RestartCountdown",
+	MessageEmoteSend:            "EmoteSend",
+	MessagePlayerStats:          "PlayerStats",
+	MessageInventoryState:       "InventoryState",
+	MessageItemCatalog:          "ItemCatalog",
+	MessageEntityInfo:           "EntityInfo",
+	MessageEntityHealth:         "EntityHealth",
+	MessageItemAction:           "ItemAction",
+	MessageGroundItems:          "GroundItems",
+	MessagePickUp:               "PickUp",
+	MessageShopBuy:              "ShopBuy",
+	MessageShopSell:             "ShopSell",
+	MessageShopResult:           "ShopResult",
+	MessageAttackTarget:         "AttackTarget",
+	MessageCombatHit:            "CombatHit",
+	MessageNpcCatalog:           "NpcCatalog",
+	MessageTradeRequest:         "TradeRequest",
+	MessageTradeOffer:           "TradeOffer",
+	MessageTradeRemove:          "TradeRemove",
+	MessageTradeSetGold:         "TradeSetGold",
+	MessageTradeAccept:          "TradeAccept",
+	MessageTradeCancel:          "TradeCancel",
+	MessageTradeRequestNotice:   "TradeRequestNotice",
+	MessageTradeState:           "TradeState",
+	MessageTradeResult:          "TradeResult",
+	MessageCardTableSit:         "CardTableSit",
+	MessageCardTableLeave:       "CardTableLeave",
+	MessageCardTableState:       "CardTableState",
+	MessageCardTableResult:      "CardTableResult",
+	MessageCardTableReady:       "CardTableReady",
+	MessageCardTableCatalog:     "CardTableCatalog",
+	MessageShedPlay:             "ShedPlay",
+	MessageShedDraw:             "ShedDraw",
+	MessageShedState:            "ShedState",
+	MessageShedHand:             "ShedHand",
+	MessageSkillStats:           "SkillStats",
+	MessageSkillAction:          "SkillAction",
+	MessageResourceState:        "ResourceState",
+	MessageLevelUp:              "LevelUp",
+	MessageSkillResult:          "SkillResult",
+	MessageBankOpen:             "BankOpen",
+	MessageBankClose:            "BankClose",
+	MessageBankState:            "BankState",
+	MessageBankDeposit:          "BankDeposit",
+	MessageBankWithdraw:         "BankWithdraw",
+	MessageBankDepositInventory: "BankDepositInventory",
+	MessageBankDepositEquipment: "BankDepositEquipment",
+	MessageBankResult:           "BankResult",
 }
 
 var EnumValuesMessage = map[string]Message{
-	"NONE":               MessageNONE,
-	"Hello":              MessageHello,
-	"Welcome":            MessageWelcome,
-	"Input":              MessageInput,
-	"Snapshot":           MessageSnapshot,
-	"ChatSend":           MessageChatSend,
-	"ChatMessage":        MessageChatMessage,
-	"Ping":               MessagePing,
-	"Pong":               MessagePong,
-	"Reload":             MessageReload,
-	"RestartCountdown":   MessageRestartCountdown,
-	"EmoteSend":          MessageEmoteSend,
-	"PlayerStats":        MessagePlayerStats,
-	"InventoryState":     MessageInventoryState,
-	"ItemCatalog":        MessageItemCatalog,
-	"EntityInfo":         MessageEntityInfo,
-	"EntityHealth":       MessageEntityHealth,
-	"ItemAction":         MessageItemAction,
-	"GroundItems":        MessageGroundItems,
-	"PickUp":             MessagePickUp,
-	"ShopBuy":            MessageShopBuy,
-	"ShopSell":           MessageShopSell,
-	"ShopResult":         MessageShopResult,
-	"AttackTarget":       MessageAttackTarget,
-	"CombatHit":          MessageCombatHit,
-	"NpcCatalog":         MessageNpcCatalog,
-	"TradeRequest":       MessageTradeRequest,
-	"TradeOffer":         MessageTradeOffer,
-	"TradeRemove":        MessageTradeRemove,
-	"TradeSetGold":       MessageTradeSetGold,
-	"TradeAccept":        MessageTradeAccept,
-	"TradeCancel":        MessageTradeCancel,
-	"TradeRequestNotice": MessageTradeRequestNotice,
-	"TradeState":         MessageTradeState,
-	"TradeResult":        MessageTradeResult,
-	"CardTableSit":       MessageCardTableSit,
-	"CardTableLeave":     MessageCardTableLeave,
-	"CardTableState":     MessageCardTableState,
-	"CardTableResult":    MessageCardTableResult,
-	"CardTableReady":     MessageCardTableReady,
-	"CardTableCatalog":   MessageCardTableCatalog,
-	"ShedPlay":           MessageShedPlay,
-	"ShedDraw":           MessageShedDraw,
-	"ShedState":          MessageShedState,
-	"ShedHand":           MessageShedHand,
+	"NONE":                 MessageNONE,
+	"Hello":                MessageHello,
+	"Welcome":              MessageWelcome,
+	"Input":                MessageInput,
+	"Snapshot":             MessageSnapshot,
+	"ChatSend":             MessageChatSend,
+	"ChatMessage":          MessageChatMessage,
+	"Ping":                 MessagePing,
+	"Pong":                 MessagePong,
+	"Reload":               MessageReload,
+	"RestartCountdown":     MessageRestartCountdown,
+	"EmoteSend":            MessageEmoteSend,
+	"PlayerStats":          MessagePlayerStats,
+	"InventoryState":       MessageInventoryState,
+	"ItemCatalog":          MessageItemCatalog,
+	"EntityInfo":           MessageEntityInfo,
+	"EntityHealth":         MessageEntityHealth,
+	"ItemAction":           MessageItemAction,
+	"GroundItems":          MessageGroundItems,
+	"PickUp":               MessagePickUp,
+	"ShopBuy":              MessageShopBuy,
+	"ShopSell":             MessageShopSell,
+	"ShopResult":           MessageShopResult,
+	"AttackTarget":         MessageAttackTarget,
+	"CombatHit":            MessageCombatHit,
+	"NpcCatalog":           MessageNpcCatalog,
+	"TradeRequest":         MessageTradeRequest,
+	"TradeOffer":           MessageTradeOffer,
+	"TradeRemove":          MessageTradeRemove,
+	"TradeSetGold":         MessageTradeSetGold,
+	"TradeAccept":          MessageTradeAccept,
+	"TradeCancel":          MessageTradeCancel,
+	"TradeRequestNotice":   MessageTradeRequestNotice,
+	"TradeState":           MessageTradeState,
+	"TradeResult":          MessageTradeResult,
+	"CardTableSit":         MessageCardTableSit,
+	"CardTableLeave":       MessageCardTableLeave,
+	"CardTableState":       MessageCardTableState,
+	"CardTableResult":      MessageCardTableResult,
+	"CardTableReady":       MessageCardTableReady,
+	"CardTableCatalog":     MessageCardTableCatalog,
+	"ShedPlay":             MessageShedPlay,
+	"ShedDraw":             MessageShedDraw,
+	"ShedState":            MessageShedState,
+	"ShedHand":             MessageShedHand,
+	"SkillStats":           MessageSkillStats,
+	"SkillAction":          MessageSkillAction,
+	"ResourceState":        MessageResourceState,
+	"LevelUp":              MessageLevelUp,
+	"SkillResult":          MessageSkillResult,
+	"BankOpen":             MessageBankOpen,
+	"BankClose":            MessageBankClose,
+	"BankState":            MessageBankState,
+	"BankDeposit":          MessageBankDeposit,
+	"BankWithdraw":         MessageBankWithdraw,
+	"BankDepositInventory": MessageBankDepositInventory,
+	"BankDepositEquipment": MessageBankDepositEquipment,
+	"BankResult":           MessageBankResult,
 }
 
 func (v Message) String() string {
