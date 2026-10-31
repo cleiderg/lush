@@ -11,10 +11,10 @@ import { Npcs } from './npcs';
 import { ChatText } from './chatText';
 import { AreaMarkers, loadAreas } from './gameAreas';
 import { CardTables, loadCardTables } from './cardTables';
+import { SkyRig } from './sky';
 import type { CampusData } from './mapData';
 import type { WorldView } from './worldView';
 
-const SKY = 0x6aa7d8;
 /** Ground extends this far (metres) past the map bounds so its edge stays out of view. */
 const GROUND_MARGIN = 200;
 
@@ -28,6 +28,7 @@ function makeGround(b: CampusData['bounds']): THREE.Mesh {
   );
   mesh.position.set((b.minX + b.maxX) / 20, 0, (b.minZ + b.maxZ) / 20);
   mesh.name = 'ground';
+  mesh.receiveShadow = true;
   return mesh;
 }
 
@@ -38,6 +39,8 @@ export class WorldScene {
   readonly map = new CampusMap(loadCampus());
   readonly areas = new AreaMarkers(loadAreas());
   readonly cardTables = new CardTables(loadCardTables());
+  /** Sun, ambient, sky colour and fog, following WorldView.sky. */
+  readonly sky = new SkyRig();
   private readonly player = new Character();
   private readonly remotes = new RemotePlayers();
   readonly healthBars = new HealthBars();
@@ -55,11 +58,8 @@ export class WorldScene {
 
   /** `now` is the render clock in milliseconds; tests pass a controlled one. */
   constructor(private readonly now: () => number = () => performance.now()) {
-    this.scene.background = new THREE.Color(SKY);
-    this.scene.add(new THREE.AmbientLight(0xffffff, 1.6));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-    sun.position.set(30, 60, 20);
-    this.scene.add(sun);
+    this.sky.attach(this.scene);
+    this.sky.update(undefined, 0, 0);
     this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.areas.group, this.player.root, this.remotes.group, this.shadows.group, this.healthBars.group);
     // After the players: tests find the remote-player instanced meshes as the first ones in the scene.
     this.scene.add(this.cardTables.group);
@@ -99,6 +99,7 @@ export class WorldScene {
     }
     this.shadows.update(this.shadowList(view));
     this.rig.follow(local.x, local.z);
+    this.sky.update(view.sky, local.x, local.z);
     // Hitsplats join the scene with the first hit, so a view without hits leaves the graph as it was.
     if (view.hits?.length && !this.hitsplats.group.parent) this.scene.add(this.hitsplats.group);
     if (this.hitsplats.group.parent) this.hitsplats.update(view, this.now(), this.rig.camera.quaternion);

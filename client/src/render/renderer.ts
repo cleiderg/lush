@@ -5,8 +5,13 @@ import { showAttribution } from './attribution';
 import { RetroPass } from './retro';
 import type { WorldView } from './worldView';
 
+/** Exposure before tone mapping. Placeholder tuned by eye against day-tavern.jpg. */
+export const TONE_EXPOSURE = 1;
+
 export interface GameRenderer {
   readonly world: WorldScene;
+  /** The underlying three renderer (tone mapping, shadows). */
+  readonly gl: THREE.WebGLRenderer;
   /** Whether the retro post-process (PRD 5.2) is on. Starts off. */
   readonly retro: boolean;
   setRetro(enabled: boolean): void;
@@ -20,6 +25,13 @@ export function createRenderer(canvas: HTMLCanvasElement): GameRenderer {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
   const pixelRatio = Math.min(window.devicePixelRatio, 2);
   renderer.setPixelRatio(pixelRatio);
+  // ACES filmic tone mapping into sRGB; the warm grade comes from the sky rig's light colours.
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = TONE_EXPOSURE;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  // Soft sun shadows. three 0.186 removed PCFSoftShadowMap; PCFShadowMap is now the soft, filtered one.
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   /** Low-resolution target and pass, made while retro is on and freed when it goes off. */
   let retro: RetroPass | null = null;
   const bufferWidth = () => Math.round(canvas.clientWidth * pixelRatio);
@@ -49,6 +61,7 @@ export function createRenderer(canvas: HTMLCanvasElement): GameRenderer {
   const hideAttribution = showAttribution();
   return {
     world,
+    gl: renderer,
     get retro() {
       return retro !== null;
     },

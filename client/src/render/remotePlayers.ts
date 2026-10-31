@@ -49,6 +49,7 @@ export class RemotePlayers {
 
   constructor(capacity = MAX_REMOTE_PLAYERS) {
     this.capacity = capacity;
+    this.group.name = 'remote-players';
     this.meshes = PARTS.map((part) => {
       // One slot more than the remote cap, for the local player.
       const mesh = new THREE.InstancedMesh(makePartGeometry(part), makePartMaterial(part), capacity + 1);
