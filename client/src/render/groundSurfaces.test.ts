@@ -125,7 +125,7 @@ describe('ground surface materials (AC3)', () => {
       expect(used.has(mat)).toBe(true);
       expect(mat.map).toBeInstanceOf(THREE.DataTexture);
       expect(mat.map!.wrapS).toBe(THREE.RepeatWrapping);
-      expect(mat.map!.image.width).toBeLessThanOrEqual(64);
+      expect((mat.map as THREE.DataTexture).image.width).toBeLessThanOrEqual(64);
     }
     // Each texture has its own look.
     const pixels = mats.map((mat) => Buffer.from((mat.map as THREE.DataTexture).image.data as Uint8Array).toString('hex'));
