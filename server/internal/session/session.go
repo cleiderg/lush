@@ -115,9 +115,10 @@ type guest struct {
 	// Guarded by Server.mu.
 	id      world.PlayerID
 	storeID int64
-	ver     int64      // store version at load; immutable
-	pos     world.Vec2 // last position, restored on resume
-	xp      int        // combat XP, restored on resume
+	ver     int64                // store version at load; immutable
+	pos     world.Vec2           // last position, restored on resume
+	xp      int                  // combat XP, restored on resume
+	skills  [world.NumSkills]int // skill XP in tenths, restored on resume
 	inv     world.Inventory
 	conns   int           // connections that completed the handshake and have not ended
 	idle    *list.Element // in Server.idle while conns == 0 and out of the world
@@ -466,9 +467,27 @@ func (s *Server) guestLocked(sp store.Player, fresh bool) (*guest, error) {
 			pos = s.cfg.Spawn
 		}
 	}
-	g := &guest{id: id, storeID: sp.ID, ver: sp.Version, pos: pos, xp: int(sp.XP), inv: inv}
+	g := &guest{id: id, storeID: sp.ID, ver: sp.Version, pos: pos, xp: int(sp.XP), skills: skillsFromStore(sp.Skills), inv: inv}
 	s.guests[sp.ID] = g
 	return g, nil
+}
+
+// skillsToStore converts the world's skill XP to the store's.
+func skillsToStore(xp [world.NumSkills]int) store.SkillXP {
+	return store.SkillXP{
+		Woodcutting: int64(xp[world.Woodcutting]),
+		Fishing:     int64(xp[world.Fishing]),
+		Cooking:     int64(xp[world.Cooking]),
+	}
+}
+
+// skillsFromStore converts stored skill XP to the world's.
+func skillsFromStore(k store.SkillXP) [world.NumSkills]int {
+	var xp [world.NumSkills]int
+	xp[world.Woodcutting] = int(k.Woodcutting)
+	xp[world.Fishing] = int(k.Fishing)
+	xp[world.Cooking] = int(k.Cooking)
+	return xp
 }
 
 func newToken() (string, error) {
@@ -831,7 +850,7 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 		return
 	}
 	s.mu.Lock()
-	p := &world.Player{ID: g.id, Pos: g.pos, XP: g.xp, Inv: cloneInventory(g.inv)}
+	p := &world.Player{ID: g.id, Pos: g.pos, XP: g.xp, SkillXP: g.skills, Inv: cloneInventory(g.inv)}
 	s.mu.Unlock()
 	p.HP = p.MaxHP(s.data.Rules)
 	if err := s.w.AddPlayer(p); err != nil {
@@ -893,9 +912,9 @@ func (s *Server) leave(g *guest, c transport.Conn) {
 func (s *Server) remove(g *guest) {
 	s.mu.Lock()
 	if p := s.w.Player(g.id); p != nil {
-		g.pos, g.xp, g.inv = p.Pos, p.XP, cloneInventory(p.Inv)
+		g.pos, g.xp, g.skills, g.inv = p.Pos, p.XP, p.SkillXP, cloneInventory(p.Inv)
 	}
-	req := saveReq{storeID: g.storeID, x: g.pos.X, z: g.pos.Y, xp: int64(g.xp), ver: g.ver}
+	req := saveReq{storeID: g.storeID, x: g.pos.X, z: g.pos.Y, xp: int64(g.xp), skills: skillsToStore(g.skills), ver: g.ver}
 	s.mu.Unlock()
 	if p := s.w.Player(g.id); p != nil {
 		if s.cards != nil {
@@ -968,13 +987,13 @@ func (s *Server) appendEconomy(dst []econReq, g *guest, p *world.Player) []econR
 	return dst
 }
 
-// collectSaves copies (store id, position, XP, version) of every live player into
+// collectSaves copies (store id, position, XP, skill XP, version) of every live player into
 // a reused buffer. Tick goroutine only; the saver copies what it keeps.
 func (s *Server) collectSaves() []saveReq {
 	s.saves = s.saves[:0]
 	for id, g := range s.live {
 		if p := s.w.Player(id); p != nil {
-			s.saves = append(s.saves, saveReq{storeID: g.storeID, x: p.Pos.X, z: p.Pos.Y, xp: int64(p.XP), ver: g.ver})
+			s.saves = append(s.saves, saveReq{storeID: g.storeID, x: p.Pos.X, z: p.Pos.Y, xp: int64(p.XP), skills: skillsToStore(p.SkillXP), ver: g.ver})
 		}
 	}
 	return s.saves
