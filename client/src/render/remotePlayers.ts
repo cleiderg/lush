@@ -34,10 +34,12 @@ export class RemotePlayers {
 
   constructor(capacity = MAX_REMOTE_PLAYERS) {
     this.capacity = capacity;
+    this.group.name = 'remote-players';
     this.meshes = PARTS.map((part) => {
       const mesh = new THREE.InstancedMesh(makePartGeometry(part), makePartMaterial(part), capacity);
       mesh.count = 0;
       mesh.frustumCulled = false;
+      mesh.castShadow = true;
       this.group.add(mesh);
       return mesh;
     });
@@ -51,6 +53,7 @@ export class RemotePlayers {
       mesh.name = `equip:${key}`;
       mesh.count = 0;
       mesh.frustumCulled = false;
+      mesh.castShadow = true;
       this.group.add(mesh);
       this.equipment.set(key, mesh);
     }

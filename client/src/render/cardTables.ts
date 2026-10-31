@@ -56,6 +56,7 @@ export class CardTables {
     );
     this.plaza.name = 'card-plaza';
     this.plaza.matrixAutoUpdate = false;
+    this.plaza.receiveShadow = true;
 
     this.tables = new THREE.InstancedMesh(
       cardTableGeometry(),
@@ -63,6 +64,8 @@ export class CardTables {
       data.tables.length,
     );
     this.tables.name = 'card-table';
+    this.tables.castShadow = true;
+    this.tables.receiveShadow = true;
     const m = new THREE.Matrix4();
     data.tables.forEach((t, i) => this.tables.setMatrixAt(i, m.makeTranslation(t.x * DM, 0, t.z * DM)));
     this.tables.instanceMatrix.needsUpdate = true;

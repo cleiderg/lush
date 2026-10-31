@@ -68,7 +68,9 @@ export class Character {
     for (const part of PARTS) {
       const node = new THREE.Group();
       node.position.set(...part.pivot);
-      node.add(new THREE.Mesh(makePartGeometry(part), makePartMaterial(part)));
+      const mesh = new THREE.Mesh(makePartGeometry(part), makePartMaterial(part));
+      mesh.castShadow = true;
+      node.add(mesh);
       this.root.add(node);
       this.joints.push({ part, node });
     }
@@ -92,6 +94,7 @@ export class Character {
         continue;
       }
       const mesh = new THREE.Mesh(slotGeometry(def), material);
+      mesh.castShadow = true;
       mesh.name = `equip:${def.slot}`;
       this.joints.find((j) => j.part.name === def.part)!.node.add(mesh);
       this.attachments.set(def.slot, mesh);
