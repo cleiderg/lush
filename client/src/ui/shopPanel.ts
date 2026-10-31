@@ -3,7 +3,7 @@ import { encodeShopBuy, encodeShopSell } from '../net/codec';
 import type { ItemState } from '../state/items';
 import { nearShop, shopResultText, type Point } from '../state/shop';
 import { hudLayout, place } from './hudLayout';
-import { addPressFeedbackWithin, PanelMotion } from './theme';
+import { addPressFeedbackWithin, BUTTON_CLASS, PanelMotion } from './theme';
 
 /** The Campus Market stall from shared/map/areas.json, in metres (the file is in decimetres). */
 export const SHOP_STALL: Point = { x: areas.shop.x / 10, z: areas.shop.z / 10 };
@@ -29,7 +29,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text = '
 }
 
 function button(cls: string, text: string, onClick: () => void): HTMLButtonElement {
-  const b = el('button', cls, text);
+  const b = el('button', `${cls} ${BUTTON_CLASS}`, text);
   b.type = 'button';
   b.addEventListener('click', onClick);
   return b;

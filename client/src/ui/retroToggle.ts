@@ -1,4 +1,5 @@
 import { hudLayout, place } from './hudLayout';
+import { BUTTON_CLASS } from './theme';
 
 export const RETRO_KEY = 'lush.retro';
 /** Q2 / PRD 5.2: the retro post-process is off until the player turns it on. */
@@ -53,7 +54,7 @@ export class RetroToggle {
     injectStyle();
     this.button = document.createElement('button');
     this.button.type = 'button';
-    this.button.className = 'lush-retro-toggle';
+    this.button.className = `lush-retro-toggle ${BUTTON_CLASS}`;
     this.button.textContent = 'Retro';
     this.button.setAttribute('aria-label', 'Retro look');
     this.button.addEventListener('click', () => this.set(!this.on));

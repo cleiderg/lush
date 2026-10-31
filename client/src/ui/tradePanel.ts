@@ -4,7 +4,7 @@ import {
 import type { ItemState } from '../state/items';
 import { tradeResultText, type TradeItemState, type TradeStore } from '../state/trade';
 import { hudLayout, place } from './hudLayout';
-import { addPressFeedbackWithin, PanelMotion } from './theme';
+import { addPressFeedbackWithin, BUTTON_CLASS, PanelMotion } from './theme';
 
 export interface TradePanelOptions {
   parent: HTMLElement;
@@ -30,7 +30,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text = '
 }
 
 function button(cls: string, text: string, onClick: () => void): HTMLButtonElement {
-  const b = el('button', cls, text);
+  const b = el('button', `${cls} ${BUTTON_CLASS}`, text);
   b.type = 'button';
   b.addEventListener('click', onClick);
   return b;
@@ -123,7 +123,7 @@ export class TradePanel {
     this.goldInput.step = '1';
     this.goldInput.inputMode = 'numeric';
     this.goldInput.setAttribute('aria-label', 'Gold to offer');
-    const setGold = el('button', 'lush-trade-set-gold', 'Set gold');
+    const setGold = el('button', `lush-trade-set-gold ${BUTTON_CLASS}`, 'Set gold');
     setGold.type = 'submit';
     goldRow.append(this.goldInput, setGold);
     goldRow.addEventListener('submit', (e) => {

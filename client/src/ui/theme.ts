@@ -57,6 +57,21 @@ export const PANEL_TRANSITION = `opacity ${PANEL_ANIM_MS}ms ease-out, transform 
 /** Smallest tap target for a panel button, in CSS px (PRD 5.1). */
 export const MIN_TAP_PX = 44;
 
+/** The shared button class: every button (and tappable cell) in the controls and panels carries it. */
+export const BUTTON_CLASS = 'lush-button';
+
+/**
+ * Hover and tap feedback shared by every button (visual-style.md, Interface). Hover brightens and lights the
+ * gold rim; a press (`:active`, or the `pressed` class set by addPressFeedback for touch) shrinks the button and
+ * darkens it. Only transform, filter, border colour and shadow change, so each button keeps its own colours and
+ * its tap target size (PRD 5.1). The :not(:disabled) raises these over the panels' own button rules.
+ */
+export const BUTTON_CSS = `
+.${BUTTON_CLASS} { cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; transition: transform var(--lush-transition), filter var(--lush-transition), background var(--lush-transition), border-color var(--lush-transition), box-shadow var(--lush-transition); }
+@media (hover: hover) { .${BUTTON_CLASS}:not(:disabled):hover { filter: brightness(1.15); border-color: var(--lush-gold-bright); } }
+.${BUTTON_CLASS}:not(:disabled):active, .${BUTTON_CLASS}.pressed:not(:disabled) { transform: scale(0.94); filter: brightness(0.85); border-color: var(--lush-gold-bright); box-shadow: var(--lush-shadow-pressed); }
+`;
+
 /** Shared classes every panel uses. */
 export const SHARED_CSS = `
 .lush-panel { background: var(--lush-panel-bg); border: var(--lush-border); border-radius: var(--lush-radius); box-shadow: var(--lush-shadow); color: var(--lush-text); font-family: var(--lush-font-body); }
@@ -64,11 +79,9 @@ export const SHARED_CSS = `
 .lush-title { font-family: var(--lush-font-title); font-variant: small-caps; color: var(--lush-accent); letter-spacing: 0.06em; font-size: var(--lush-text-sm); }
 .lush-anim.lush-shut { opacity: 0; transform: translateY(8px) scale(0.98); pointer-events: none; }
 .lush-anim.lush-leaving { display: flex !important; }
-.lush-panel button { box-sizing: border-box; min-width: ${MIN_TAP_PX}px; min-height: ${MIN_TAP_PX}px; padding: 0 var(--lush-space-3); border: var(--lush-border-strong); border-radius: var(--lush-radius-sm); background: var(--lush-surface-raised); color: var(--lush-text); font: 600 var(--lush-text-sm) var(--lush-font-title); letter-spacing: 0.04em; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; transition: transform var(--lush-transition), background var(--lush-transition), border-color var(--lush-transition), box-shadow var(--lush-transition); }
+.lush-panel button { box-sizing: border-box; min-width: ${MIN_TAP_PX}px; min-height: ${MIN_TAP_PX}px; padding: 0 var(--lush-space-3); border: var(--lush-border-strong); border-radius: var(--lush-radius-sm); background: var(--lush-surface-raised); color: var(--lush-text); font: 600 var(--lush-text-sm) var(--lush-font-title); letter-spacing: 0.04em; }
 .lush-panel button:disabled { opacity: 0.5; cursor: default; }
-.lush-panel .usable { cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; transition: transform var(--lush-transition), background var(--lush-transition), border-color var(--lush-transition); }
-@media (hover: hover) { .lush-panel button:not(:disabled):hover, .lush-panel .usable:hover { border-color: var(--lush-gold-bright); background: var(--lush-surface-pressed); } }
-.lush-panel button.pressed, .lush-panel .usable.pressed { transform: scale(0.95); background: var(--lush-surface-pressed); border-color: var(--lush-gold-bright); box-shadow: var(--lush-shadow-pressed); }
+${BUTTON_CSS}
 `;
 
 const STYLE_ID = 'lush-theme';
