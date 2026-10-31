@@ -56,6 +56,8 @@ export interface NpcView {
 export interface ChatBubbleView {
   readonly id: number;
   readonly text: string;
+  /** 0 (hidden) to 1 (solid), so the bubble can fade out at the end of the overhead time; missing means 1. */
+  readonly opacity?: number;
 }
 
 /** Where the sun is. src/state works it out; render only reads it. */
