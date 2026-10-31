@@ -113,6 +113,7 @@ export class WorldScene {
     this.rig.follow(local.x, local.z);
     this.nature.cull(this.rig.camera);
     this.sky.update(view.sky, local.x, local.z);
+    this.map.updateSky(view.sky);
     // Hitsplats join the scene with the first hit, so a view without hits leaves the graph as it was.
     if (view.hits?.length && !this.hitsplats.group.parent) this.scene.add(this.hitsplats.group);
     if (this.hitsplats.group.parent) this.hitsplats.update(view, this.now(), this.rig.camera.quaternion);

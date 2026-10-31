@@ -4,6 +4,12 @@ import { GREEN_GRASS, GREEN_PITCH, GREEN_WATER, GREEN_WOOD, parseCampus, type Ca
 import { buildLandmark, isLandmark } from './landmarks';
 import { mulberry32 } from './rng';
 import { GROUND_KINDS, GROUND_PLAZA, SurfaceBuilder, makeGroundMaterial } from './groundSurfaces';
+import {
+  DOOR_HEIGHT, DOOR_WIDTH, DOWN, UP, band, door, faces, fitWindows, framedWindow, offset, ring, slab, walls,
+  type DoorLook, type Face, type WindowLook,
+} from './facade';
+import { DEFAULT_SKY } from './sky';
+import type { SkyView } from './worldView';
 
 const DM = 0.1;
 const Y_GREEN = 0.01;
@@ -15,8 +21,86 @@ const Y_PATH = Y_GREEN + (MAX_GREEN_LAYER + 1) * GREEN_LAYER_STEP;
 const SURFACE_ORDER = [GROUND_PLAZA, 0, 1, 2];
 const ROOF_RISE = 2.5;
 const PITCHED_CHANCE = 0.4;
+/** Pitched roofs overhang the walls by this much. */
+const EAVE = 0.35;
+/** Flat roofs get a cornice standing this far out. */
+const CORNICE = 0.2;
 
-const WALLS = [0xd9c8a8, 0xc9b79a, 0xe0d5bd, 0xbfa88a, 0xcfcfc4];
+/** Wall faces at least this long (metres) always get framed windows. */
+export const MIN_WINDOW_FACE = 4;
+/** Storey height used to count floors, in metres. */
+export const STOREY = 3.5;
+/** Share of windows drawn with their blinds down (dark at night). */
+const BLINDS_CHANCE = 0.15;
+
+export const WALL_KINDS = ['brick', 'concrete', 'stucco', 'wood', 'glass'] as const;
+export type WallKind = (typeof WALL_KINDS)[number];
+
+interface WallStyle {
+  walls: number[];
+  trim: number;
+  window: WindowLook;
+  door: DoorLook;
+  /** Window spacing and widest pane, in metres. */
+  spacing: number;
+  pane: number;
+  /** Bottom and top of the windows as a share of the storey height. */
+  sill: number;
+  head: number;
+  plinth: boolean;
+  pitched: boolean;
+  /** Cumulative share of buildings up to and including this kind. */
+  share: number;
+}
+
+const GLASS_PANE = 0x7d9db0;
+const BLIND = 0x4a4640;
+
+/** Flat colours per wall material (PRD 5.2): no textures, so the material shows in colour and trim. */
+const STYLES: Record<WallKind, WallStyle> = {
+  brick: {
+    walls: [0xa4553f, 0x9a4b3a, 0xb06548], trim: 0xe6dccb,
+    window: { frame: 0xf0ebe0, glass: GLASS_PANE, blind: BLIND, sill: 0xe6dccb },
+    door: { frame: 0xf0ebe0, leaf: 0x3f5a4a, step: 0xb5ada0 },
+    spacing: 3.6, pane: 1.2, sill: 0.28, head: 0.75, plinth: true, pitched: true, share: 0.25,
+  },
+  concrete: {
+    walls: [0xcfcfc4, 0xbdb8ac, 0xd6d0c2], trim: 0xa39d90,
+    window: { frame: 0x50555a, glass: GLASS_PANE, blind: BLIND, sill: 0xa39d90 },
+    door: { frame: 0x50555a, leaf: 0x6f93a8, step: 0xa39d90 },
+    spacing: 4, pane: 2, sill: 0.3, head: 0.78, plinth: true, pitched: false, share: 0.55,
+  },
+  stucco: {
+    walls: [0xe0d5bd, 0xd9c8a8, 0xe8dcc2], trim: 0xb8a88f,
+    window: { frame: 0x6b4f3a, glass: GLASS_PANE, blind: BLIND, sill: 0xb8a88f },
+    door: { frame: 0x6b4f3a, leaf: 0x7a4a2e, step: 0xb8a88f },
+    spacing: 3.6, pane: 1.2, sill: 0.28, head: 0.75, plinth: true, pitched: true, share: 0.8,
+  },
+  wood: {
+    walls: [0x9c6b45, 0x8a5c3a, 0xa87850], trim: 0x5e3d26,
+    window: { frame: 0xe8dcc2, glass: GLASS_PANE, blind: BLIND, sill: 0x5e3d26 },
+    door: { frame: 0xe8dcc2, leaf: 0x5e3d26, step: 0x7a6a5c },
+    spacing: 3.2, pane: 1, sill: 0.3, head: 0.75, plinth: false, pitched: true, share: 0.9,
+  },
+  glass: {
+    walls: [0x4f6878, 0x55606a], trim: 0xc8ccd0,
+    window: { frame: 0xc8ccd0, glass: GLASS_PANE, blind: 0x3d4a55 },
+    door: { frame: 0xc8ccd0, leaf: 0x9cc3d6, step: 0xa39d90 },
+    spacing: 3, pane: 2.6, sill: 0.1, head: 0.88, plinth: false, pitched: false, share: 1,
+  },
+};
+
+/** Wall colours of each wall material. */
+export const WALL_COLORS: Readonly<Record<WallKind, readonly number[]>> = Object.fromEntries(
+  WALL_KINDS.map((k) => [k, STYLES[k].walls]),
+) as Record<WallKind, readonly number[]>;
+
+/** The wall material for a building, from its id alone, so every client draws the same one. */
+export function wallKind(id: number): WallKind {
+  const x = mulberry32(id ^ 0x5bd1e995)();
+  return WALL_KINDS.find((k) => x < STYLES[k].share) ?? 'concrete';
+}
+
 const ROOFS = [0x8c5a4a, 0x7a6a5c, 0x9a7b5f, 0x6f7a80];
 const GREEN_COLOR: Record<number, number> = {
   [GREEN_GRASS]: 0x6aa84f,
@@ -25,11 +109,34 @@ const GREEN_COLOR: Record<number, number> = {
   [GREEN_PITCH]: 0x8bc078,
 };
 
-/** Accumulates flat-shaded, vertex-coloured triangles. */
+/**
+ * Accumulates flat-shaded, vertex-coloured triangles. Window glass goes into `glass` and is merged
+ * into the same geometry with a `glow` attribute of 1, so it can light up at night (see
+ * CampusMap.updateSky) without a draw call of its own.
+ */
 export class MeshBuilder {
-  readonly pos: number[] = [];
-  readonly col: number[] = [];
-  private readonly c = new THREE.Color();
+  private posBuf = new Float32Array(9 * 64);
+  private colBuf = new Float32Array(9 * 64);
+  /** Floats used in posBuf and colBuf. */
+  private used = 0;
+  /** Framed windows and doors added through facade.ts. */
+  windows = 0;
+  doors = 0;
+  private lastHex = -1;
+  private r = 0;
+  private g = 0;
+  private b = 0;
+  private glassB: MeshBuilder | null = null;
+
+  /** Window glass, kept apart so it can be marked to glow at night. */
+  get glass(): MeshBuilder {
+    return (this.glassB ??= new MeshBuilder());
+  }
+
+  /** Whether any glass was added. */
+  get hasGlass(): boolean {
+    return (this.glassB?.triangles ?? 0) > 0;
+  }
 
   /** Add a triangle, flipping it if its normal points against `want`. */
   tri(a: number[], b: number[], c: number[], want: number[], color: number): void {
@@ -37,29 +144,93 @@ export class MeshBuilder {
     const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
     const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
     const flip = nx * want[0] + ny * want[1] + nz * want[2] < 0;
-    const pts = flip ? [a, c, b] : [a, b, c];
-    this.c.setHex(color);
-    for (const p of pts) {
-      this.pos.push(p[0], p[1], p[2]);
-      this.col.push(this.c.r, this.c.g, this.c.b);
+    if (color !== this.lastHex) {
+      const k = TMP_COLOR.setHex(color);
+      this.lastHex = color;
+      this.r = k.r;
+      this.g = k.g;
+      this.b = k.b;
     }
+    const p = flip ? c : b, q = flip ? b : c;
+    if (this.used + 9 > this.posBuf.length) this.grow();
+    const P = this.posBuf, C = this.colBuf, i = this.used;
+    P[i] = a[0]; P[i + 1] = a[1]; P[i + 2] = a[2];
+    P[i + 3] = p[0]; P[i + 4] = p[1]; P[i + 5] = p[2];
+    P[i + 6] = q[0]; P[i + 7] = q[1]; P[i + 8] = q[2];
+    for (let k = i; k < i + 9; k += 3) {
+      C[k] = this.r;
+      C[k + 1] = this.g;
+      C[k + 2] = this.b;
+    }
+    this.used += 9;
   }
 
+  private grow(): void {
+    const pos = new Float32Array(this.posBuf.length * 2), col = new Float32Array(this.colBuf.length * 2);
+    pos.set(this.posBuf);
+    col.set(this.colBuf);
+    this.posBuf = pos;
+    this.colBuf = col;
+  }
+
+  /** Corner positions so far (x, y, z per corner), not counting the glass. */
+  get pos(): Float32Array {
+    return this.posBuf.subarray(0, this.used);
+  }
+
+  /** Corner colours so far, matching `pos`. */
+  get col(): Float32Array {
+    return this.colBuf.subarray(0, this.used);
+  }
+
+  /** Triangles including the glass. */
   get triangles(): number {
-    return this.pos.length / 9;
+    return this.used / 9 + (this.glassB?.triangles ?? 0);
   }
 
-  geometry(): THREE.BufferGeometry {
+  /**
+   * The triangles, glass last. With glass (or `glow` set), a `glow` attribute marks the glass (1)
+   * from the rest (0).
+   */
+  geometry(glow = this.hasGlass): THREE.BufferGeometry {
+    const glass = glow ? this.glassB : null;
+    const n = this.used, m = glass?.used ?? 0;
+    const pos = new Float32Array(n + m), col = new Float32Array(n + m);
+    pos.set(this.pos);
+    col.set(this.col);
+    if (glass) {
+      pos.set(glass.pos, n);
+      col.set(glass.col, n);
+    }
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
-    g.computeVertexNormals();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(flatNormals(pos), 3));
+    if (glow) g.setAttribute('glow', new THREE.BufferAttribute(new Float32Array((n + m) / 3).fill(1, n / 3), 1));
     g.computeBoundingSphere();
     return g;
   }
 }
 
-const UP = [0, 1, 0];
+/** One normal per triangle, repeated at its three corners (what computeVertexNormals gives unindexed, but faster). */
+function flatNormals(pos: Float32Array): Float32Array {
+  const out = new Float32Array(pos.length);
+  for (let i = 0; i < pos.length; i += 9) {
+    const ux = pos[i + 3] - pos[i], uy = pos[i + 4] - pos[i + 1], uz = pos[i + 5] - pos[i + 2];
+    const vx = pos[i + 6] - pos[i], vy = pos[i + 7] - pos[i + 1], vz = pos[i + 8] - pos[i + 2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const l = Math.hypot(nx, ny, nz) || 1;
+    nx /= l; ny /= l; nz /= l;
+    for (let k = 0; k < 9; k += 3) {
+      out[i + k] = nx;
+      out[i + k + 1] = ny;
+      out[i + k + 2] = nz;
+    }
+  }
+  return out;
+}
+
+const TMP_COLOR = new THREE.Color();
 
 function polygonPoints(p: number[]): THREE.Vector2[] {
   const pts: THREE.Vector2[] = [];
@@ -80,36 +251,94 @@ function fillPolygon(b: MeshBuilder, pts: THREE.Vector2[], y: number, color: num
   }
 }
 
-/** The generic extrusion used for every building that isn't a hand-made landmark. */
-export function addBuilding(b: MeshBuilder, id: number, h: number, p: number[]): void {
+export interface FacadeDetail {
+  kind: WallKind;
+  /** Length and framed-window count of each wall face, in footprint order. */
+  faces: { length: number; windows: number }[];
+  doors: number;
+}
+
+/**
+ * The generic building used for everything that isn't a hand-made landmark: walls in one of the
+ * wall materials, framed windows on every storey, a door on the longest face, a plinth, and a
+ * cornice or overhanging pitched roof.
+ */
+export function addBuilding(b: MeshBuilder, id: number, h: number, p: number[]): FacadeDetail {
   const rnd = mulberry32(id);
-  const wall = WALLS[Math.floor(rnd() * WALLS.length)];
+  const kind = wallKind(id);
+  const style = STYLES[kind];
+  const wall = style.walls[Math.floor(rnd() * style.walls.length)];
   const roof = ROOFS[Math.floor(rnd() * ROOFS.length)];
-  const pitched = rnd() < PITCHED_CHANCE;
-  const pts = polygonPoints(p);
-  const ccw = signedArea(pts) > 0;
+  const pitched = rnd() < PITCHED_CHANCE && style.pitched && p.length === 8;
+  const r = ring(p, DM);
   const height = h * DM;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const a = pts[j], c = pts[i];
-    const dx = c.x - a.x, dz = c.y - a.y;
-    const out = ccw ? [dz, 0, -dx] : [-dz, 0, dx];
-    const a0 = [a.x, 0, a.y], c0 = [c.x, 0, c.y], a1 = [a.x, height, a.y], c1 = [c.x, height, c.y];
-    b.tri(a0, c0, c1, out, wall);
-    b.tri(a0, c1, a1, out, wall);
+  const floors = Math.max(1, Math.round(height / STOREY));
+  const fh = height / floors;
+  walls(b, r, r.pts, 0, height, wall);
+  if (style.plinth) {
+    const out = offset(r, 0.05);
+    const top = Math.min(0.45, fh * 0.12);
+    walls(b, r, out, 0, top, style.trim);
+    band(b, r.pts, out, top, UP, style.trim);
   }
-  if (pitched && pts.length === 4) {
-    const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
-    const cz = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
-    const apex = [cx, height + ROOF_RISE, cz];
-    for (let i = 0, j = 3; i < 4; j = i++) {
-      const a = pts[j], c = pts[i];
-      const dx = c.x - a.x, dz = c.y - a.y;
-      const out = ccw ? [dz, 0, -dx] : [-dz, 0, dx];
-      b.tri([a.x, height, a.y], [c.x, height, c.y], apex, [out[0], 1, out[2]], roof);
+
+  const fs = faces(r);
+  const doorFace = fs.reduce((m, f, i) => (f.len > fs[m].len ? i : m), 0);
+  const detail: FacadeDetail = { kind, faces: [], doors: 0 };
+  const doorsBefore = b.doors;
+  fs.forEach((f, i) => {
+    let count = 0;
+    for (let k = 0; k < floors; k++) {
+      let spans: [number, number][] = [[0, f.len]];
+      if (i === doorFace && k === 0) spans = addDoor(b, f, floors, fh, style);
+      for (const [s0, s1] of spans) {
+        const fit = fitWindows(s0, s1, style.spacing, style.pane);
+        for (const s of fit.at) {
+          framedWindow(b, f, s, fit.width, k * fh + fh * style.sill, k * fh + fh * style.head, style.window, rnd() >= BLINDS_CHANCE);
+          count++;
+        }
+      }
+    }
+    detail.faces.push({ length: f.len, windows: count });
+  });
+  detail.doors = b.doors - doorsBefore;
+
+  if (pitched) {
+    const eave = offset(r, EAVE);
+    band(b, r.pts, eave, height, DOWN, style.trim);
+    walls(b, r, eave, height, height + 0.12, style.trim);
+    const cx = (r.pts[0].x + r.pts[1].x + r.pts[2].x + r.pts[3].x) / 4;
+    const cz = (r.pts[0].z + r.pts[1].z + r.pts[2].z + r.pts[3].z) / 4;
+    const apex = [cx, height + 0.12 + ROOF_RISE, cz];
+    for (let i = 0; i < 4; i++) {
+      const a = eave[i], c = eave[(i + 1) % 4], n = r.normals[i];
+      b.tri([a.x, height + 0.12, a.z], [c.x, height + 0.12, c.z], apex, [n.x, 1, n.z], roof);
     }
   } else {
-    fillPolygon(b, pts, height, roof);
+    const out = offset(r, CORNICE);
+    walls(b, r, out, height - 0.3, height + 0.1, style.trim);
+    band(b, r.pts, out, height - 0.3, DOWN, style.trim);
+    slab(b, out, height + 0.1, roof);
   }
+  return detail;
+}
+
+/**
+ * Add the door on the ground floor of face `f` and return the spans either side of it that are
+ * left for windows. The door is centred, or moved to one end when a one-storey face would
+ * otherwise have no room for a window.
+ */
+function addDoor(b: MeshBuilder, f: Face, floors: number, fh: number, style: WallStyle): [number, number][] {
+  const w = Math.max(0.6, Math.min(DOOR_WIDTH, f.len - 0.8));
+  const dh = Math.min(DOOR_HEIGHT, fh * 0.8);
+  const gap = 0.15;
+  const spansAt = (c: number): [number, number][] => [[0, c - w / 2 - gap], [c + w / 2 + gap, f.len]];
+  let c = f.len / 2;
+  if (floors === 1 && spansAt(c).every(([s0, s1]) => fitWindows(s0, s1, style.spacing, style.pane).at.length === 0)) {
+    c = Math.min(f.len / 2, 0.5 + w / 2);
+  }
+  door(b, f, c, w, dh, style.door);
+  return spansAt(c);
 }
 
 type Box = [number, number, number, number];
@@ -152,6 +381,112 @@ export interface MapStats {
   extruded: number[];
   /** Building ids drawn as hand-made landmarks (see landmarks.ts). */
   landmarks: number[];
+  /** Wall material, windows and doors of each generic building, by id. */
+  facades: Map<number, FacadeDetail>;
+}
+
+/** Warm light from inside a lit window. */
+export const WINDOW_GLOW = 0xffc46b;
+/** Emissive intensity of window glass at night. */
+export const WINDOW_GLOW_INTENSITY = 0.9;
+
+/**
+ * Patch a Lambert shader so vertices with `glow` 1 (window glass) emit the `windowGlow` colour:
+ * glass is emissive at night while everything else in the chunk mesh stays as it was.
+ */
+export function addWindowGlow(shader: { uniforms: Record<string, THREE.IUniform>; vertexShader: string; fragmentShader: string }, glow: THREE.IUniform<THREE.Color>): void {
+  shader.uniforms.windowGlow = glow;
+  shader.vertexShader = 'attribute float glow;\nvarying float vGlow;\n' +
+    shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvGlow = glow;');
+  shader.fragmentShader = 'uniform vec3 windowGlow;\nvarying float vGlow;\n' +
+    shader.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += windowGlow * vGlow;');
+}
+
+interface Built {
+  builders: Map<string, MeshBuilder>;
+  surfaces: Map<string, SurfaceBuilder[]>;
+  extruded: number[];
+  landmarks: number[];
+  facades: Map<number, FacadeDetail>;
+}
+
+/** Built chunks per campus data, which is never changed after loading: the map is static. */
+const built = new WeakMap<CampusData, Built>();
+
+/**
+ * Triangles for every chunk of `data`, built once per data object and only read afterwards, so
+ * each CampusMap (one per scene) makes its own geometry without building the buildings again.
+ */
+function buildChunks(data: CampusData): Built {
+  const cached = built.get(data);
+  if (cached) return cached;
+  const chunkM = data.chunkSize;
+  const { minX, minZ } = data.bounds;
+  const builders = new Map<string, MeshBuilder>();
+  const surfaces = new Map<string, SurfaceBuilder[]>();
+  const keyAt = (xDm: number, zDm: number): string => {
+    const cx = Math.floor((xDm - minX) * DM / chunkM);
+    const cz = Math.floor((zDm - minZ) * DM / chunkM);
+    return `${cx},${cz}`;
+  };
+  const at = (xDm: number, zDm: number): MeshBuilder => {
+    const key = keyAt(xDm, zDm);
+    let b = builders.get(key);
+    if (!b) builders.set(key, (b = new MeshBuilder()));
+    return b;
+  };
+  const surfaceAt = (xDm: number, zDm: number, kind: number): SurfaceBuilder => {
+    const key = keyAt(xDm, zDm);
+    if (!builders.has(key)) builders.set(key, new MeshBuilder());
+    let s = surfaces.get(key);
+    if (!s) surfaces.set(key, (s = GROUND_KINDS.map((k) => new SurfaceBuilder(k, Y_PATH + SURFACE_ORDER.indexOf(k) * 0.002))));
+    return s[kind] ?? s[GROUND_KINDS[1]];
+  };
+  const centre = (p: number[]): [number, number] => {
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (let i = 0; i < p.length; i += 2) {
+      x0 = Math.min(x0, p[i]); x1 = Math.max(x1, p[i]);
+      z0 = Math.min(z0, p[i + 1]); z1 = Math.max(z1, p[i + 1]);
+    }
+    return [(x0 + x1) / 2, (z0 + z1) / 2];
+  };
+
+  const layers = greenLayers(data.green);
+  for (const g of data.green) {
+    const [cx, cz] = centre(g.p);
+    const rnd = mulberry32(g.id);
+    const shade = 0.92 + rnd() * 0.16;
+    const color = new THREE.Color(GREEN_COLOR[g.k] ?? GREEN_COLOR[GREEN_GRASS]).multiplyScalar(shade).getHex();
+    fillPolygon(at(cx, cz), polygonPoints(g.p), Y_GREEN + layers.get(g.id)! * GREEN_LAYER_STEP, color);
+  }
+  for (const pl of data.plazas) {
+    const [cx, cz] = centre(pl.p);
+    surfaceAt(cx, cz, GROUND_PLAZA).polygon(pl.p.map((v) => v * DM));
+  }
+  for (const w of data.paths) {
+    const half = (w.w * DM) / 2;
+    for (let i = 0; i + 3 < w.p.length; i += 2) {
+      const [x0, z0, x1, z1] = [w.p[i], w.p[i + 1], w.p[i + 2], w.p[i + 3]];
+      surfaceAt((x0 + x1) / 2, (z0 + z1) / 2, w.s)
+        .segment(x0 * DM, z0 * DM, x1 * DM, z1 * DM, half, i === 0, i + 4 >= w.p.length);
+    }
+  }
+  const extruded: number[] = [];
+  const landmarks: number[] = [];
+  const facades = new Map<number, FacadeDetail>();
+  for (const bl of data.buildings) {
+    const [cx, cz] = centre(bl.p);
+    if (isLandmark(bl.id) && buildLandmark(at(cx, cz), bl, data)) {
+      landmarks.push(bl.id);
+    } else {
+      facades.set(bl.id, addBuilding(at(cx, cz), bl.id, bl.h, bl.p));
+      extruded.push(bl.id);
+    }
+  }
+
+  const result = { builders, surfaces, extruded, landmarks, facades };
+  built.set(data, result);
+  return result;
 }
 
 /** The campus drawn as one merged mesh per fixed-size chunk (frustum culling drops the far ones). */
@@ -159,80 +494,24 @@ export class CampusMap {
   readonly group = new THREE.Group();
   readonly stats: MapStats;
   readonly material = new THREE.MeshLambertMaterial({ vertexColors: true });
+  /** Light added to every `glow` vertex (window glass): WINDOW_GLOW at night, black by day. */
+  readonly windowGlow = new THREE.Color(0);
   /** One material per ground kind (GROUND_DIRT, GROUND_STONE, GROUND_PAVED, GROUND_PLAZA). */
   readonly surfaceMaterials = GROUND_KINDS.map((k) => makeGroundMaterial(k));
 
   constructor(data: CampusData) {
     this.group.name = 'campus-map';
-    const chunkM = data.chunkSize;
-    const { minX, minZ } = data.bounds;
-    const builders = new Map<string, MeshBuilder>();
-    const surfaces = new Map<string, SurfaceBuilder[]>();
-    const keyAt = (xDm: number, zDm: number): string => {
-      const cx = Math.floor((xDm - minX) * DM / chunkM);
-      const cz = Math.floor((zDm - minZ) * DM / chunkM);
-      return `${cx},${cz}`;
-    };
-    const at = (xDm: number, zDm: number): MeshBuilder => {
-      const key = keyAt(xDm, zDm);
-      let b = builders.get(key);
-      if (!b) builders.set(key, (b = new MeshBuilder()));
-      return b;
-    };
-    const surfaceAt = (xDm: number, zDm: number, kind: number): SurfaceBuilder => {
-      const key = keyAt(xDm, zDm);
-      if (!builders.has(key)) builders.set(key, new MeshBuilder());
-      let s = surfaces.get(key);
-      if (!s) surfaces.set(key, (s = GROUND_KINDS.map((k) => new SurfaceBuilder(k, Y_PATH + SURFACE_ORDER.indexOf(k) * 0.002))));
-      return s[kind] ?? s[GROUND_KINDS[1]];
-    };
-    const centre = (p: number[]): [number, number] => {
-      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-      for (let i = 0; i < p.length; i += 2) {
-        x0 = Math.min(x0, p[i]); x1 = Math.max(x1, p[i]);
-        z0 = Math.min(z0, p[i + 1]); z1 = Math.max(z1, p[i + 1]);
-      }
-      return [(x0 + x1) / 2, (z0 + z1) / 2];
-    };
-
-    const layers = greenLayers(data.green);
-    for (const g of data.green) {
-      const [cx, cz] = centre(g.p);
-      const rnd = mulberry32(g.id);
-      const shade = 0.92 + rnd() * 0.16;
-      const color = new THREE.Color(GREEN_COLOR[g.k] ?? GREEN_COLOR[GREEN_GRASS]).multiplyScalar(shade).getHex();
-      fillPolygon(at(cx, cz), polygonPoints(g.p), Y_GREEN + layers.get(g.id)! * GREEN_LAYER_STEP, color);
-    }
-    for (const pl of data.plazas) {
-      const [cx, cz] = centre(pl.p);
-      surfaceAt(cx, cz, GROUND_PLAZA).polygon(pl.p.map((v) => v * DM));
-    }
-    for (const w of data.paths) {
-      const half = (w.w * DM) / 2;
-      for (let i = 0; i + 3 < w.p.length; i += 2) {
-        const [x0, z0, x1, z1] = [w.p[i], w.p[i + 1], w.p[i + 2], w.p[i + 3]];
-        surfaceAt((x0 + x1) / 2, (z0 + z1) / 2, w.s)
-          .segment(x0 * DM, z0 * DM, x1 * DM, z1 * DM, half, i === 0, i + 4 >= w.p.length);
-      }
-    }
-    const extruded: number[] = [];
-    const landmarks: number[] = [];
-    for (const bl of data.buildings) {
-      const [cx, cz] = centre(bl.p);
-      if (isLandmark(bl.id) && buildLandmark(at(cx, cz), bl, data)) {
-        landmarks.push(bl.id);
-      } else {
-        addBuilding(at(cx, cz), bl.id, bl.h, bl.p);
-        extruded.push(bl.id);
-      }
-    }
+    const glow = { value: this.windowGlow };
+    this.material.onBeforeCompile = (shader) => addWindowGlow(shader, glow);
+    const { builders, surfaces, extruded, landmarks, facades } = buildChunks(data);
 
     let triangles = 0;
     for (const key of [...builders.keys()].sort()) {
       const b = builders.get(key)!;
       triangles += b.triangles;
+      // Every chunk mesh carries `glow` (all 0 without windows) so the patched shader never reads a stale value.
       // A chunk with only ground surfaces has no merged mesh of its own, just a holder for them.
-      const chunk = b.triangles > 0 ? new THREE.Mesh(b.geometry(), this.material) : new THREE.Group();
+      const chunk = b.triangles > 0 ? new THREE.Mesh(b.geometry(true), this.material) : new THREE.Group();
       chunk.name = `chunk-${key}`;
       chunk.matrixAutoUpdate = false;
       chunk.castShadow = true;
@@ -249,7 +528,13 @@ export class CampusMap {
       }
       this.group.add(chunk);
     }
-    this.stats = { chunks: builders.size, triangles, extruded, landmarks };
+    this.stats = { chunks: builders.size, triangles, extruded: [...extruded], landmarks: [...landmarks], facades: new Map(facades) };
+  }
+
+  /** Light the windows while the sun is below the horizon (DEFAULT_SKY when `sky` is missing). */
+  updateSky(sky: SkyView | undefined): void {
+    const night = (sky ?? DEFAULT_SKY).elevation < 0;
+    this.windowGlow.setHex(night ? WINDOW_GLOW : 0).multiplyScalar(night ? WINDOW_GLOW_INTENSITY : 1);
   }
 
   dispose(): void {
