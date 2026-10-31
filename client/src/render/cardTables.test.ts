@@ -36,7 +36,7 @@ function build(dir: string): void {
 /** A copy of the map build inputs in a temp dir, so a test can change areas.mjs. */
 function buildInputs(): string {
   const dir = mkdtempSync(join(tmpdir(), 'cardtables-src-'));
-  for (const f of ['build.mjs', 'config.mjs', 'areas.mjs']) copyFileSync(join(mapDir, f), join(dir, f));
+  for (const f of ['build.mjs', 'config.mjs', 'areas.mjs', 'props.mjs']) copyFileSync(join(mapDir, f), join(dir, f));
   cpSync(join(mapDir, 'source'), join(dir, 'source'), { recursive: true });
   return dir;
 }

@@ -1,10 +1,13 @@
-// Converts the committed OSM snapshot into the compact map file, the collision grid, the gameplay areas and the card tables.
+// Converts the committed OSM snapshot into the compact map file, the collision grid, the gameplay areas, the card tables and the props.
 //   node shared/map/build.mjs [outDir]      (default: this directory)
 // Deterministic: same input -> byte-identical output. No Math.random, no timestamps.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { BBOX, ORIGIN, CHUNK_SIZE, CELL_SIZE } from './config.mjs';
 import { ALDRICH_PARK_WAY, SPAWN, SAFE_RADIUS, SHOP, SOUTH_FIELDS, PVP_ZONE, CARD_PLAZA, CARD_TABLES } from './areas.mjs';
+import {
+  PROP_SEED, PROP_TYPES, BUSY_CELL, BUSY_TYPES, SPAWN_CLEAR, SHOP_CLEAR, TABLE_CLEAR, AREA_CLUSTER,
+} from './props.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const outDir = process.argv[2] ?? here;
@@ -192,9 +195,131 @@ const cardTables = {
   tables: CARD_TABLES.map((t) => ({ id: t.id, ...cellCentre(t, `card table ${t.id}`) })),
 };
 
+// Props (props.mjs): visual only, so they never change collision.bin. Placed with one seeded generator in a fixed order.
+const blockedAt = (x, z) => {
+  const c = Math.floor((x * 10 - minX) / cellDm);
+  const r = Math.floor((z * 10 - minZ) / cellDm);
+  if (c < 0 || r < 0 || c >= width || r >= height) return true;
+  const idx = r * width + c;
+  return ((bits[idx >> 3] >> (idx & 7)) & 1) === 1;
+};
+/** Point (metres) inside polygon [x0,z0,...] in decimetres. */
+function insideDm(x, z, p) {
+  const px = x * 10, pz = z * 10;
+  let inside = false;
+  for (let i = 0, j = p.length - 2; i < p.length; j = i, i += 2) {
+    const xi = p[i], zi = p[i + 1], xj = p[j], zj = p[j + 1];
+    if (zi > pz !== zj > pz && px < xi + ((pz - zi) * (xj - xi)) / (zj - zi)) inside = !inside;
+  }
+  return inside;
+}
+const buildingBoxes = buildings.map((b) => {
+  let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+  for (let i = 0; i < b.p.length; i += 2) {
+    x0 = Math.min(x0, b.p[i]); x1 = Math.max(x1, b.p[i]); z0 = Math.min(z0, b.p[i + 1]); z1 = Math.max(z1, b.p[i + 1]);
+  }
+  return { p: b.p, x0, z0, x1, z1 };
+});
+const inBuilding = (x, z) => buildingBoxes.some((b) =>
+  x * 10 >= b.x0 && x * 10 <= b.x1 && z * 10 >= b.z0 && z * 10 <= b.z1 && insideDm(x, z, b.p));
+/** Share of the 10 x 10 one-metre samples in the square [x0, x0+size) x [z0, z0+size) that are walkable. */
+function walkableShare(x0, z0, size) {
+  let free = 0;
+  for (let i = 0; i < size; i++) for (let j = 0; j < size; j++) if (!blockedAt(x0 + i + 0.5, z0 + j + 0.5)) free++;
+  return free / (size * size);
+}
+
+const spawnM = { x: areas.spawn.x / 10, z: areas.spawn.z / 10 };
+const shopM = { x: areas.shop.x / 10, z: areas.shop.z / 10 };
+const tablesM = cardTables.tables.map((t) => ({ x: t.x / 10, z: t.z / 10 }));
+const plazaCentre = {
+  x: CARD_PLAZA.reduce((a, [x]) => a + x, 0) / CARD_PLAZA.length,
+  z: CARD_PLAZA.reduce((a, [, z]) => a + z, 0) / CARD_PLAZA.length,
+};
+const typeId = Object.fromEntries(PROP_TYPES.map((t, i) => [t.name, i]));
+const placed = []; // {t, x, z, rot}, metres
+function free(t, x, z) {
+  const r = PROP_TYPES[t].r;
+  if (blockedAt(x, z) || inBuilding(x, z)) return false;
+  if (Math.hypot(x - spawnM.x, z - spawnM.z) < SPAWN_CLEAR + r) return false;
+  const sx = x - shopM.x, sz = z - shopM.z;
+  if (sx > SHOP_CLEAR.x0 - r && sx < SHOP_CLEAR.x1 + r && sz > SHOP_CLEAR.z0 - r && sz < SHOP_CLEAR.z1 + r) return false;
+  if (tablesM.some((c) => Math.abs(x - c.x) < TABLE_CLEAR + r && Math.abs(z - c.z) < TABLE_CLEAR + r)) return false;
+  return placed.every((p) => Math.hypot(x - p.x, z - p.z) >= r + PROP_TYPES[p.t].r);
+}
+const rand = rng(PROP_SEED);
+const rotFor = (t) => (PROP_TYPES[t].square ? Math.floor(rand() * 4) * 90 : Math.floor(rand() * 360));
+/** Try to place type t at a random free point (decimetre grid) in the square; true on success. */
+function placeIn(t, x0, z0, size) {
+  for (let k = 0; k < 120; k++) {
+    const x = (Math.round(x0 * 10) + 1 + Math.floor(rand() * (size * 10 - 1))) / 10;
+    const z = (Math.round(z0 * 10) + 1 + Math.floor(rand() * (size * 10 - 1))) / 10;
+    if (free(t, x, z)) {
+      placed.push({ t, x, z, rot: rotFor(t) });
+      return true;
+    }
+  }
+  return false;
+}
+const typesIn = (x0, z0, size) => new Set(placed.filter((p) => p.x >= x0 && p.x < x0 + size && p.z >= z0 && p.z < z0 + size).map((p) => p.t));
+
+// Busy areas: every 10 x 10 m cell of the 3 x 3 block around each centre that is at least half walkable gets BUSY_TYPES types.
+const busy = [
+  { name: 'spawn', c: spawnM, shop: false },
+  { name: 'shop', c: shopM, shop: true },
+  { name: 'card plaza', c: plazaCentre, shop: false },
+];
+for (const { name, c, shop } of busy) {
+  const pool = PROP_TYPES.map((_, i) => i).filter((i) => shop || !PROP_TYPES[i].shop);
+  for (let dz = -1; dz <= 1; dz++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const x0 = c.x - BUSY_CELL / 2 + dx * BUSY_CELL, z0 = c.z - BUSY_CELL / 2 + dz * BUSY_CELL;
+      if (walkableShare(x0, z0, BUSY_CELL) < 0.5) continue;
+      const have = typesIn(x0, z0, BUSY_CELL);
+      // Shuffle the pool (Fisher-Yates) so each cell gets a different mix.
+      const order = pool.slice();
+      for (let i = order.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+      for (const t of order) {
+        if (have.size >= BUSY_TYPES) break;
+        if (!have.has(t) && placeIn(t, x0, z0, BUSY_CELL)) have.add(t);
+      }
+      if (have.size < BUSY_TYPES) throw new Error(`${name}: cell (${x0}, ${z0}) only fits ${have.size} prop types`);
+    }
+  }
+}
+// Every gameplay area gets at least a small cluster near the walkable point closest to its centre.
+for (const a of areas.areas) {
+  if (placed.some((p) => insideDm(p.x, p.z, a.p))) continue;
+  let cx = 0, cz = 0;
+  for (let i = 0; i < a.p.length; i += 2) { cx += a.p[i] / 10; cz += a.p[i + 1] / 10; }
+  cx = Math.round((cx * 2) / a.p.length); cz = Math.round((cz * 2) / a.p.length);
+  let done = 0;
+  for (let ring = 0; ring < 60 && !done; ring++) {
+    const x0 = cx - 4 - ring, z0 = cz - 4 - ring, size = 8 + 2 * ring;
+    if (!insideDm(x0 + size / 2, z0 + size / 2, a.p)) continue;
+    const before = placed.length;
+    for (const n of AREA_CLUSTER) placeIn(typeId[n], x0, z0, size);
+    // Keep only what landed inside the area.
+    for (let i = placed.length - 1; i >= before; i--) if (!insideDm(placed[i].x, placed[i].z, a.p)) placed.splice(i, 1);
+    done = placed.length - before;
+  }
+  if (!done) throw new Error(`area ${a.id} has no room for props`);
+}
+const props = {
+  version: 1,
+  units: 'decimetres',
+  types: PROP_TYPES.map((t) => t.name),
+  // [type, x, z, rotation in whole degrees] per prop.
+  props: placed.map((p) => [p.t, Math.round(p.x * 10), Math.round(p.z * 10), p.rot]),
+};
+
 mkdirSync(outDir, { recursive: true });
 writeFileSync(outDir + '/campus.json', JSON.stringify(campus) + '\n');
 writeFileSync(outDir + '/collision.bin', Buffer.concat([header, Buffer.from(bits)]));
 writeFileSync(outDir + '/areas.json', JSON.stringify(areas) + '\n');
 writeFileSync(outDir + '/cardtables.json', JSON.stringify(cardTables) + '\n');
-console.log(`buildings=${buildings.length} paths=${paths.length} plazas=${plazas.length} green=${green.length} grid=${width}x${height}`);
+writeFileSync(outDir + '/props.json', JSON.stringify(props) + '\n');
+console.log(`buildings=${buildings.length} paths=${paths.length} plazas=${plazas.length} green=${green.length} grid=${width}x${height} props=${placed.length}`);
