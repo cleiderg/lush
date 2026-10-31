@@ -816,7 +816,7 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 		// Still in the world from the previous connection, or waiting out
 		// the logout lock after it ended: take over the same player.
 		delete(s.gone, g.id)
-		c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate, s.cfg.MoveSpeed, s.cfg.RunSpeed))
+		c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate, s.cfg.MoveSpeed, s.cfg.RunSpeed, s.clock.Now()))
 		s.sendInitial(g, p)
 		if s.cards != nil {
 			if tookOver {
@@ -841,7 +841,7 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 		return
 	}
 	s.live[g.id] = g
-	c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate, s.cfg.MoveSpeed, s.cfg.RunSpeed))
+	c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate, s.cfg.MoveSpeed, s.cfg.RunSpeed, s.clock.Now()))
 	s.sendInitial(g, p)
 	s.log.Info("player joined", "player", g.id, "transport", "websocket")
 }

@@ -3,6 +3,7 @@ package session
 import (
 	"fmt"
 	"math"
+	"time"
 
 	flatbuffers "github.com/google/flatbuffers/go"
 
@@ -27,7 +28,9 @@ func finish(b *flatbuffers.Builder, typ protocol.Message, msg flatbuffers.UOffse
 	return append([]byte(nil), b.FinishedBytes()...)
 }
 
-func encodeWelcome(id world.PlayerID, token string, spawn world.Vec2, tickRate int, walkSpeed, runSpeed float32) []byte {
+// encodeWelcome builds the Welcome; now is the server clock, sent as UTC Unix
+// milliseconds (D-050).
+func encodeWelcome(id world.PlayerID, token string, spawn world.Vec2, tickRate int, walkSpeed, runSpeed float32, now time.Time) []byte {
 	b := flatbuffers.NewBuilder(128)
 	tok := b.CreateString(token)
 	protocol.WelcomeStart(b)
@@ -37,6 +40,7 @@ func encodeWelcome(id world.PlayerID, token string, spawn world.Vec2, tickRate i
 	protocol.WelcomeAddTickRate(b, byte(min(tickRate, 255)))
 	protocol.WelcomeAddWalkSpeed(b, walkSpeed)
 	protocol.WelcomeAddRunSpeed(b, runSpeed)
+	protocol.WelcomeAddServerTimeMs(b, uint64(now.UTC().UnixMilli()))
 	return finish(b, protocol.MessageWelcome, protocol.WelcomeEnd(b))
 }
 

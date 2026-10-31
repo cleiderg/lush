@@ -10,6 +10,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/ops"
 	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/session"
+	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/world"
 )
 
@@ -119,4 +120,28 @@ func TestWelcomeCarriesSpeeds(t *testing.T) {
 			check("reconnect", c2)
 		})
 	}
+}
+
+// TestWelcomeCarriesServerTime (#352 AC2): the Welcome sent to a new guest and
+// to a player resuming with a token carries the session clock as UTC Unix
+// milliseconds (D-050).
+func TestWelcomeCarriesServerTime(t *testing.T) {
+	start := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	r := newRigAt(t, 16, session.Config{TickRate: 20, MoveSpeed: 5, HelloTimeout: time.Second}, store.NewMemory(), nil, nil, start)
+	v := uint16(protocol.ProtocolVersionCurrent)
+	check := func(what string, c *client) string {
+		t.Helper()
+		typ, tbl := r.next(c)
+		if typ != protocol.MessageWelcome {
+			t.Fatalf("%s: got message %v, want Welcome", what, typ)
+		}
+		var w protocol.Welcome
+		w.Init(tbl.Bytes, tbl.Pos)
+		if got := w.ServerTimeMs(); got != 1798761600000 {
+			t.Fatalf("%s: Welcome server_time_ms %d, want 1798761600000", what, got)
+		}
+		return string(w.GuestToken())
+	}
+	tok := check("new guest", r.dial(hello(v, "")))
+	check("resumed token", r.dial(hello(v, tok)))
 }
