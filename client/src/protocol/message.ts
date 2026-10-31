@@ -21,12 +21,14 @@ import { Input } from '../protocol/input';
 import { InventoryState } from '../protocol/inventory-state';
 import { ItemAction } from '../protocol/item-action';
 import { ItemCatalog } from '../protocol/item-catalog';
+import { LevelUp } from '../protocol/level-up';
 import { NpcCatalog } from '../protocol/npc-catalog';
 import { PickUp } from '../protocol/pick-up';
 import { Ping } from '../protocol/ping';
 import { PlayerStats } from '../protocol/player-stats';
 import { Pong } from '../protocol/pong';
 import { Reload } from '../protocol/reload';
+import { ResourceState } from '../protocol/resource-state';
 import { RestartCountdown } from '../protocol/restart-countdown';
 import { ShedDraw } from '../protocol/shed-draw';
 import { ShedHand } from '../protocol/shed-hand';
@@ -35,6 +37,9 @@ import { ShedState } from '../protocol/shed-state';
 import { ShopBuy } from '../protocol/shop-buy';
 import { ShopResult } from '../protocol/shop-result';
 import { ShopSell } from '../protocol/shop-sell';
+import { SkillAction } from '../protocol/skill-action';
+import { SkillResult } from '../protocol/skill-result';
+import { SkillStats } from '../protocol/skill-stats';
 import { Snapshot } from '../protocol/snapshot';
 import { TradeAccept } from '../protocol/trade-accept';
 import { TradeCancel } from '../protocol/trade-cancel';
@@ -93,13 +98,18 @@ export enum Message {
   ShedPlay = 41,
   ShedDraw = 42,
   ShedState = 43,
-  ShedHand = 44
+  ShedHand = 44,
+  SkillStats = 45,
+  SkillAction = 46,
+  ResourceState = 47,
+  LevelUp = 48,
+  SkillResult = 49
 }
 
 export function unionToMessage(
   type: Message,
-  accessor: (obj:AttackTarget|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome) => AttackTarget|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null
-): AttackTarget|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null {
+  accessor: (obj:AttackTarget|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome) => AttackTarget|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null
+): AttackTarget|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null {
   switch(Message[type]) {
     case 'NONE': return null; 
     case 'Hello': return accessor(new Hello())! as Hello;
@@ -146,15 +156,20 @@ export function unionToMessage(
     case 'ShedDraw': return accessor(new ShedDraw())! as ShedDraw;
     case 'ShedState': return accessor(new ShedState())! as ShedState;
     case 'ShedHand': return accessor(new ShedHand())! as ShedHand;
+    case 'SkillStats': return accessor(new SkillStats())! as SkillStats;
+    case 'SkillAction': return accessor(new SkillAction())! as SkillAction;
+    case 'ResourceState': return accessor(new ResourceState())! as ResourceState;
+    case 'LevelUp': return accessor(new LevelUp())! as LevelUp;
+    case 'SkillResult': return accessor(new SkillResult())! as SkillResult;
     default: return null;
   }
 }
 
 export function unionListToMessage(
   type: Message, 
-  accessor: (index: number, obj:AttackTarget|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome) => AttackTarget|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null, 
+  accessor: (index: number, obj:AttackTarget|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome) => AttackTarget|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null, 
   index: number
-): AttackTarget|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null {
+): AttackTarget|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null {
   switch(Message[type]) {
     case 'NONE': return null; 
     case 'Hello': return accessor(index, new Hello())! as Hello;
@@ -201,6 +216,11 @@ export function unionListToMessage(
     case 'ShedDraw': return accessor(index, new ShedDraw())! as ShedDraw;
     case 'ShedState': return accessor(index, new ShedState())! as ShedState;
     case 'ShedHand': return accessor(index, new ShedHand())! as ShedHand;
+    case 'SkillStats': return accessor(index, new SkillStats())! as SkillStats;
+    case 'SkillAction': return accessor(index, new SkillAction())! as SkillAction;
+    case 'ResourceState': return accessor(index, new ResourceState())! as ResourceState;
+    case 'LevelUp': return accessor(index, new LevelUp())! as LevelUp;
+    case 'SkillResult': return accessor(index, new SkillResult())! as SkillResult;
     default: return null;
   }
 }

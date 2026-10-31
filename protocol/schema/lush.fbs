@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 12
+  Current = 13
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -33,7 +33,10 @@ enum ActionFlags : ubyte (bit_flags) {
 enum Animation : ubyte {
   Idle = 0,
   Walk = 1,
-  Wave = 2
+  Wave = 2,
+  Chop = 3,  // looping while woodcutting
+  Fish = 4,  // looping while fishing
+  Cook = 5   // looping while cooking
 }
 
 // Emotes a client can request with EmoteSend.
@@ -538,6 +541,87 @@ table ShedHand {
   cards: [ShedCard];
 }
 
+// Skills (D-051, docs/specs/skills.md). Levels are 1..30. XP is sent in
+// tenths of a point, because some XP rewards have a half point (Oak 37.5).
+
+// Skill values.
+enum Skill : ubyte {
+  Woodcutting = 0,
+  Fishing = 1,
+  Cooking = 2
+}
+
+// Server -> client: the player's own skill levels and XP. Sent on join and
+// whenever any of them changes.
+table SkillStats {
+  woodcutting_level: ubyte;
+  woodcutting_xp: uint32;   // tenths of an XP point
+  fishing_level: ubyte;
+  fishing_xp: uint32;       // tenths of an XP point
+  cooking_level: ubyte;
+  cooking_xp: uint32;       // tenths of an XP point
+}
+
+// SkillAction.target values.
+enum SkillTarget : ubyte {
+  Tree = 0,         // target_id is a tree id from the shared map data
+  FishingSpot = 1,  // target_id is a fishing spot id from the shared map data
+  Grill = 2         // target_id is ignored; there is one grill
+}
+
+// Client -> server: start chopping a tree, fishing at a spot or cooking at
+// the grill. The server checks range, level and tool, replies with
+// SkillResult, and keeps trying on its own until it stops.
+table SkillAction {
+  target: SkillTarget;
+  target_id: ushort;
+}
+
+// One fishing spot inside ResourceState. Packed to 4 bytes.
+struct FishingSpotState {
+  id: uint16;        // fishing spot id from the shared map data
+  candidate: uint8;  // index into that spot's candidate positions in the map data
+}
+
+// Server -> client: which trees are felled (shown as stumps) and where each
+// fishing spot currently is. Each message replaces the whole state; it is
+// sent on join and whenever it changes. Trees not listed are standing.
+table ResourceState {
+  felled_trees: [uint16];          // tree ids from the shared map data
+  fishing_spots: [FishingSpotState];
+}
+
+// Server -> client: an entity in view reached a new skill level, for the
+// chat log message and the effect nearby players see.
+table LevelUp {
+  entity_id: ushort;  // entity id, as in Entity.id
+  skill: Skill;
+  level: ubyte;       // the new level
+}
+
+// SkillResult.code values.
+enum SkillResultCode : ubyte {
+  Started = 0,        // the action started
+  Success = 1,        // one item gathered or cooked (item_id)
+  Burnt = 2,          // the fish burnt (item_id is the burnt fish)
+  NeedTool = 3,       // no tool for this resource (item_id is the tool needed)
+  NeedLevel = 4,      // level too low (level is the level needed)
+  InventoryFull = 5,  // no room for the item
+  ResourceGone = 6,   // the tree is felled or the fishing spot moved
+  NothingToCook = 7,  // no raw fish in the inventory
+  OutOfRange = 8,     // too far from the target
+  Stopped = 9         // the action stopped (the player moved or combat started)
+}
+
+// Server -> client: the outcome of a SkillAction or of one attempt, for the
+// chat log. Fields that don't apply are 0 (item_id EmptyItem.Id).
+table SkillResult {
+  skill: Skill;
+  code: SkillResultCode;
+  item_id: ushort;   // ItemDef.id, where one applies
+  level: ubyte;      // the level needed, for NeedLevel
+}
+
 union Message {
   Hello,
   Welcome,
@@ -582,7 +666,12 @@ union Message {
   ShedPlay,
   ShedDraw,
   ShedState,
-  ShedHand
+  ShedHand,
+  SkillStats,
+  SkillAction,
+  ResourceState,
+  LevelUp,
+  SkillResult
 }
 
 table Envelope {
