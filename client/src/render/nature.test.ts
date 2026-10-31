@@ -49,12 +49,12 @@ class Buckets<T extends { b: number[] }> {
   }
 }
 
-/** Every placed tuft and flower, checked against grass, paths, buildings and water. */
+/** Every placed tuft and flower, checked against grass, paths, plazas, buildings and water. */
 function checkPlacement(data: CampusData, chunks: ChunkScatter[]): number {
   const withBox = (list: { p: number[] }[]) => new Buckets(list.map((g) => ({ p: g.p, b: box(g.p) })));
   const grass = withBox(data.green.filter((g) => g.k === GREEN_GRASS));
   const water = withBox(data.green.filter((g) => g.k === GREEN_WATER));
-  const buildings = withBox(data.buildings);
+  const buildings = withBox([...data.buildings, ...data.plazas]);
   const list: { a: number[]; half: number; b: number[] }[] = [];
   for (const w of data.paths) {
     for (let i = 0; i + 3 < w.p.length; i += 2) {
@@ -71,7 +71,7 @@ function checkPlacement(data: CampusData, chunks: ChunkScatter[]): number {
     for (const t of [...c.tufts, ...c.flowers]) {
       if (!hit(grass, t.x, t.z)) bad.push(`off grass ${t.x},${t.z}`);
       if (hit(water, t.x, t.z)) bad.push(`in water ${t.x},${t.z}`);
-      if (hit(buildings, t.x, t.z)) bad.push(`in a building ${t.x},${t.z}`);
+      if (hit(buildings, t.x, t.z)) bad.push(`in a building or on a plaza ${t.x},${t.z}`);
       if (segs.near(t.x, t.z).some((s) => distToSegment(t.x, t.z, s.a[0], s.a[1], s.a[2], s.a[3]) <= s.half)) bad.push(`on a path ${t.x},${t.z}`);
       n++;
     }
@@ -80,7 +80,7 @@ function checkPlacement(data: CampusData, chunks: ChunkScatter[]): number {
   return n;
 }
 
-/** A 64 m chunk of grass crossed by a path, with a building and a pond on it. */
+/** A 64 m chunk of grass crossed by a path, with a building, a plaza and a pond on it. */
 const small: CampusData = {
   version: 1,
   attribution: '',
@@ -91,7 +91,8 @@ const small: CampusData = {
     { id: 2, k: GREEN_WATER, p: [400, 400, 550, 400, 550, 550, 400, 550] },
   ],
   buildings: [{ id: 3, h: 80, p: [50, 50, 200, 50, 200, 200, 50, 200] }],
-  paths: [{ id: 4, w: 40, p: [0, 300, 640, 320] }],
+  paths: [{ id: 4, w: 40, s: 0, p: [0, 300, 640, 320] }],
+  plazas: [{ id: 5, p: [400, 50, 550, 50, 550, 200, 400, 200] }],
 };
 
 describe('grass tufts and flowers placement (AC1)', () => {
@@ -101,7 +102,7 @@ describe('grass tufts and flowers placement (AC1)', () => {
     expect(n).toBeGreaterThan(10_000);
   });
 
-  it('keeps clear of a path, a building and a pond on a small map', () => {
+  it('keeps clear of a path, a building, a plaza and a pond on a small map', () => {
     const chunks = scatterNature(small, { tuftsPerM2: 4, flowersPerM2: 1 });
     const n = checkPlacement(small, chunks);
     expect(n).toBeGreaterThan(5000);
@@ -129,28 +130,29 @@ describe('grass tufts and flowers placement (AC1)', () => {
   });
 });
 
-const meshes = (n: Nature) => n.group.children as THREE.InstancedMesh[];
-const variants = (m: THREE.InstancedMesh) => Array.from((m.geometry.getAttribute('variant') as THREE.InstancedBufferAttribute).array);
+/** The packed instances of the mesh, as drawn now. */
+const variants = (n: Nature) => Array.from((n.mesh.geometry.getAttribute('variant').array as Float32Array).slice(0, n.mesh.count));
+const position = (m: THREE.InstancedMesh, i: number) => new THREE.Vector3().setFromMatrixPosition((m.getMatrixAt(i, new THREE.Matrix4())));
+const at = { local: { id: 0, x: 0, z: 0, heading: 0 }, remotes: [] };
 
 describe('grass tufts and flowers drawing (AC2)', () => {
-  it('draws them with one InstancedMesh per map chunk', () => {
+  it('groups the instances per map chunk in an InstancedMesh', () => {
     const data = loadCampus();
     const nature = new Nature(data);
     const chunkM = data.chunkSize;
-    expect(nature.group.children.length).toBe(scatterNature(data).length);
-    const names = new Set<string>();
-    for (const m of meshes(nature)) {
-      expect(m.isInstancedMesh).toBe(true);
-      names.add(m.name);
-      const [cx, cz] = m.name.split('-')[1].split(',').map(Number);
-      const x0 = data.bounds.minX / 10 + cx * chunkM, z0 = data.bounds.minZ / 10 + cz * chunkM;
-      const mat = new THREE.Matrix4(), p = new THREE.Vector3();
-      for (let i = 0; i < m.count; i++) {
-        p.setFromMatrixPosition((m.getMatrixAt(i, mat), mat));
+    expect(nature.group.children).toEqual([nature.mesh]);
+    expect(nature.mesh.isInstancedMesh).toBe(true);
+    expect(nature.chunks.length).toBe(scatterNature(data).length);
+    expect(new Set(nature.chunks.map((c) => `${c.cx},${c.cz}`)).size).toBe(nature.chunks.length);
+    // Before any culling every chunk is packed, in order.
+    expect(nature.mesh.count).toBe(nature.stats.tufts + nature.stats.flowers);
+    for (const c of nature.chunks) {
+      const x0 = data.bounds.minX / 10 + c.cx * chunkM, z0 = data.bounds.minZ / 10 + c.cz * chunkM;
+      for (let i = c.start; i < c.start + c.count; i++) {
+        const p = position(nature.mesh, i);
         expect(p.x >= x0 && p.x <= x0 + chunkM && p.z >= z0 && p.z <= z0 + chunkM).toBe(true);
       }
     }
-    expect(names.size).toBe(nature.group.children.length);
     console.log(`nature: ${nature.stats.tufts} tufts, ${nature.stats.flowers} flowers in ${nature.stats.chunks} chunks`);
   });
 
@@ -160,42 +162,50 @@ describe('grass tufts and flowers drawing (AC2)', () => {
     const dense = new Nature(data, { tuftsPerM2: GRASS_TUFTS_PER_M2 * 2, flowersPerM2: FLOWERS_PER_M2 * 2 });
     expect(dense.stats.tufts).toBeGreaterThan(base.stats.tufts * 1.9);
     expect(countDrawCalls(dense.group)).toBe(countDrawCalls(base.group));
-    expect(countDrawCalls(dense.group)).toBe(base.stats.chunks);
+    expect(countDrawCalls(base.group)).toBe(1);
     // And the map as a whole, with the camera in the same place.
-    const at = (n: Nature) => {
+    const calls = (n: Nature) => {
       const w = new WorldScene();
       w.scene.remove(w.nature.group);
       w.scene.add(n.group);
-      w.update({ local: { id: 0, x: 0, z: 0, heading: 0 }, remotes: [] });
+      w.update(at);
       n.cull(w.rig.camera);
       return [countDrawCalls(w.scene), countDrawCallsInView(w.scene, w.rig.camera)];
     };
-    expect(at(dense)).toEqual(at(base));
+    expect(calls(dense)).toEqual(calls(base));
   });
 
   it('culls the chunks off screen', () => {
     const w = new WorldScene();
-    w.update({ local: { id: 0, x: 0, z: 0, heading: 0 }, remotes: [] });
+    w.update(at);
     w.rig.camera.aspect = 9 / 19.5;
     w.rig.camera.updateProjectionMatrix();
     w.nature.cull(w.rig.camera);
-    const inView = countDrawCallsInView(w.nature.group, w.rig.camera);
-    expect(inView).toBeGreaterThan(0);
-    expect(inView).toBeLessThanOrEqual(4);
-    console.log(`nature in view: ${inView} draw calls, ${countTrianglesInView(w.nature.group, w.rig.camera)} triangles`);
-    // Far away, other chunks show and these ones are hidden.
-    const before = meshes(w.nature).map((m) => m.visible);
-    w.update({ local: { id: 0, x: 200, z: 300, heading: 0 }, remotes: [] });
-    expect(meshes(w.nature).map((m) => m.visible)).not.toEqual(before);
+    const shown = w.nature.visibleChunks;
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown.length).toBeLessThanOrEqual(4);
+    expect(w.nature.mesh.count).toBe(shown.reduce((n, c) => n + c.count, 0));
+    expect(w.nature.mesh.count).toBeLessThan(w.nature.stats.tufts + w.nature.stats.flowers);
+    // Only instances of the chunks in view are drawn.
+    for (let i = 0; i < w.nature.mesh.count; i++) {
+      const p = position(w.nature.mesh, i);
+      expect(shown.some((c) => c.box.containsPoint(p))).toBe(true);
+    }
+    console.log(`nature in view: ${shown.length} chunks, ${countDrawCallsInView(w.nature.group, w.rig.camera)} draw call, ${countTrianglesInView(w.nature.group, w.rig.camera)} triangles`);
+    // Elsewhere, other chunks are drawn.
+    w.update({ ...at, local: { ...at.local, x: 200, z: 300 } });
+    expect(w.nature.visibleChunks).not.toEqual(shown);
+    expect(w.nature.visibleChunks.length).toBeGreaterThan(0);
   });
 
   it('culls again for the camera that renders', () => {
     const w = new WorldScene();
-    w.update({ local: { id: 0, x: 0, z: 0, heading: 0 }, remotes: [] });
+    w.update(at);
     const cam = w.rig.camera.clone();
     cam.position.set(5000, 10, 5000);
     w.scene.onBeforeRender(undefined as never, w.scene, cam, undefined as never, undefined as never, undefined as never);
-    expect(meshes(w.nature).every((m) => !m.visible)).toBe(true);
+    expect(w.nature.visibleChunks).toEqual([]);
+    expect(countDrawCalls(w.nature.group)).toBe(0);
   });
 });
 
@@ -208,11 +218,10 @@ describe('grass tufts and flowers density (AC3)', () => {
   it('halves the instance count when the densities halve', () => {
     const full = new Nature(loadCampus());
     const half = new Nature(loadCampus(), { tuftsPerM2: GRASS_TUFTS_PER_M2 / 2, flowersPerM2: FLOWERS_PER_M2 / 2 });
-    const count = (n: Nature) => meshes(n).reduce((s, m) => s + m.count, 0);
-    expect(count(full)).toBe(full.stats.tufts + full.stats.flowers);
-    expect(count(half) / count(full)).toBeGreaterThan(0.5 * 0.95);
-    expect(count(half) / count(full)).toBeLessThan(0.5 * 1.05);
-    const flowers = (n: Nature) => meshes(n).reduce((s, m) => s + variants(m).filter((v) => v === FLOWER_VARIANT).length, 0);
+    expect(full.mesh.count).toBe(full.stats.tufts + full.stats.flowers);
+    expect(half.mesh.count / full.mesh.count).toBeGreaterThan(0.5 * 0.95);
+    expect(half.mesh.count / full.mesh.count).toBeLessThan(0.5 * 1.05);
+    const flowers = (n: Nature) => variants(n).filter((v) => v === FLOWER_VARIANT).length;
     expect(flowers(half) / flowers(full)).toBeGreaterThan(0.5 * 0.95);
     expect(flowers(half) / flowers(full)).toBeLessThan(0.5 * 1.05);
   });
@@ -222,36 +231,34 @@ describe('grass tufts and flowers variety (AC4)', () => {
   it('uses at least 2 tuft shapes and 3 flower colours', () => {
     const nature = new Nature(loadCampus());
     expect(TUFT_VARIANTS).toBeGreaterThanOrEqual(2);
-    const used = new Set(meshes(nature).flatMap(variants));
+    const used = new Set(variants(nature));
     for (let v = 0; v < TUFT_VARIANTS; v++) expect(used).toContain(v);
     expect(used).toContain(FLOWER_VARIANT);
     // Each tuft shape is its own set of triangles in the shared geometry.
-    const part = meshes(nature)[0].geometry.getAttribute('part');
+    const part = nature.mesh.geometry.getAttribute('part');
     const tris = (v: number) => Array.from(part.array).filter((p) => p === v).length / 3;
     expect(tris(0)).toBeGreaterThan(0);
     expect(tris(1)).toBeGreaterThan(0);
     expect(tris(0)).not.toBe(tris(1));
     const colours = new Set<number>();
     const c = new THREE.Color();
-    for (const m of meshes(nature)) {
-      variants(m).forEach((v, i) => {
-        if (v === FLOWER_VARIANT) colours.add((m.getColorAt(i, c), c.getHex()));
-      });
-    }
+    variants(nature).forEach((v, i) => {
+      if (v === FLOWER_VARIANT) colours.add((nature.mesh.getColorAt(i, c), c.getHex()));
+    });
     expect(colours.size).toBeGreaterThanOrEqual(3);
     for (const h of colours) expect(FLOWER_COLORS).toContain(h);
   });
 
   it('gives each instance a seeded random rotation and scale', () => {
     const nature = new Nature(loadCampus());
-    for (const m of meshes(nature)) {
-      if (m.count < 2) continue;
+    for (const ch of nature.chunks) {
+      if (ch.count < 2) continue;
       // Compare the rotation and scale part only: the positions differ anyway.
       const linear = new Set<string>();
       const scales = new Set<number>();
       const mat = new THREE.Matrix4();
-      for (let i = 0; i < m.count; i++) {
-        m.getMatrixAt(i, mat);
+      for (let i = ch.start; i < ch.start + ch.count; i++) {
+        nature.mesh.getMatrixAt(i, mat);
         linear.add(mat.elements.slice(0, 11).map((v) => v.toFixed(4)).join());
         scales.add(+mat.elements[5].toFixed(4));
       }

@@ -79,8 +79,8 @@ const cache = new WeakMap<CampusData, Map<string, ChunkScatter[]>>();
 
 /**
  * Seeded tuft and flower positions, per map chunk. Candidates are spread uniformly over each chunk
- * and kept only on grass (green k=0), off paths (within half their width plus a margin), buildings
- * and water. Every candidate draws the same number of random values, so a lower density keeps a
+ * and kept only on grass (green k=0), off paths (within half their width plus a margin), plazas,
+ * buildings and water. Every candidate draws the same number of random values, so a lower density keeps a
  * prefix of the same candidates.
  */
 export function scatterNature(data: CampusData, opts: NatureOptions = {}): ChunkScatter[] {
@@ -99,7 +99,8 @@ export function scatterNature(data: CampusData, opts: NatureOptions = {}): Chunk
   const { minX, minZ, maxX, maxZ } = data.bounds;
   const grass = polys(data.green.filter((g) => g.k === GREEN_GRASS));
   const water = polys(data.green.filter((g) => g.k === GREEN_WATER));
-  const buildings = polys([...data.buildings, ...exclude.map((p) => ({ p }))]);
+  // Buildings, paved plazas and any extra polygons are all kept clear.
+  const buildings = polys([...data.buildings, ...data.plazas, ...exclude.map((p) => ({ p }))]);
   const segs: Seg[] = [];
   for (const w of data.paths) {
     const r = w.w / 2 + PATH_MARGIN * 10;
@@ -122,10 +123,10 @@ export function scatterNature(data: CampusData, opts: NatureOptions = {}): Chunk
       const ok = (x: number, z: number): boolean =>
         hit(g, x, z) && !hit(w, x, z) && !hit(b, x, z) &&
         !s.some((q) => inBox(q.box, x, z) && segmentDistance2(x, z, q.x0, q.z0, q.x1, q.z1) < q.r2);
-      const sample = (n: number, salt: number, kinds: number): Scatter[] => {
+      const sample = (n: number, salt: number, kinds: number, max = Infinity): Scatter[] => {
         const rnd = mulberry32(chunkSeed(seed, salt, cx, cz));
         const res: Scatter[] = [];
-        for (let i = 0; i < n; i++) {
+        for (let i = 0; i < n && res.length < max; i++) {
           const x = box[0] + rnd() * chunkDm, z = box[1] + rnd() * chunkDm;
           const rot = rnd() * Math.PI * 2, scale = MIN_SCALE + rnd() * SCALE_RANGE, kind = Math.floor(rnd() * kinds);
           if (ok(x, z)) res.push({ x: x / 10, z: z / 10, rot, scale, kind });
@@ -135,7 +136,7 @@ export function scatterNature(data: CampusData, opts: NatureOptions = {}): Chunk
       // Which chunks have tufts, and so the meshes and draw calls, must not depend on the density:
       // a chunk is used only when a fixed set of probes finds grass, and then has at least one
       // tuft, at the first probe hit.
-      const anchor = sample(ANCHOR_PROBES, 3, 1).slice(0, 1);
+      const anchor = sample(ANCHOR_PROBES, 3, 1, 1);
       if (anchor.length === 0) continue;
       const area = data.chunkSize * data.chunkSize;
       const tufts = sample(Math.round(area * tuftsPerM2), 1, TUFT_SHAPES.length);
@@ -237,73 +238,120 @@ function natureMaterial(): THREE.MeshLambertMaterial {
 
 export interface NatureStats { chunks: number; tufts: number; flowers: number }
 
+/** One map chunk's instances: a range of the source arrays, and a tight box for culling. */
+export interface NatureChunk { cx: number; cz: number; start: number; count: number; box: THREE.Box3 }
+
 /**
- * Grass tufts and flowers: one InstancedMesh per map chunk, so the draw calls don't depend on the
- * density. Chunks are culled by a tight box around their instances (see cull), since a whole
- * chunk's bounding sphere reaches far above the flat ground.
+ * Grass tufts and flowers, grouped per map chunk and drawn as one InstancedMesh: each cull copies
+ * the instances of the chunks in view into it, so off-screen chunks aren't drawn and the whole
+ * thing is one draw call whatever the density. Chunks are culled by a tight box around their
+ * instances, since a chunk's bounding sphere reaches far above the flat ground.
  */
 export class Nature {
   readonly group = new THREE.Group();
+  readonly mesh: THREE.InstancedMesh;
   readonly stats: NatureStats;
+  readonly chunks: NatureChunk[] = [];
   private readonly geometry = natureGeometry();
   private readonly material = natureMaterial();
-  private readonly boxes: THREE.Box3[] = [];
+  private readonly matrices: Float32Array;
+  private readonly colors: Float32Array;
+  private readonly variants: Float32Array;
+  private readonly variant: THREE.InstancedBufferAttribute;
   private readonly frustum = new THREE.Frustum();
   private readonly viewProj = new THREE.Matrix4();
+  /** Indices of the chunks currently packed into the mesh, joined. */
+  private shown = '';
 
   constructor(data: CampusData, opts: NatureOptions = {}) {
     this.group.name = 'nature';
-    const white = new THREE.Color(0xffffff), color = new THREE.Color();
-    let tufts = 0, flowers = 0;
-    for (const c of scatterNature(data, opts)) {
-      const list = [...c.tufts, ...c.flowers];
-      const g = new THREE.BufferGeometry();
-      // Shared attributes are uploaded once; only the per-instance variant differs per chunk.
-      for (const [name, attr] of Object.entries(this.geometry.attributes)) g.setAttribute(name, attr);
-      g.boundingSphere = this.geometry.boundingSphere;
-      const variant = new Float32Array(list.length);
-      const m = new THREE.InstancedMesh(g, this.material, list.length);
-      const a = m.instanceMatrix.array as Float32Array;
+    const scatter = scatterNature(data, opts);
+    const total = scatter.reduce((n, c) => n + c.tufts.length + c.flowers.length, 0);
+    this.matrices = new Float32Array(total * 16);
+    this.colors = new Float32Array(total * 3);
+    this.variants = new Float32Array(total);
+    const color = new THREE.Color();
+    let tufts = 0, flowers = 0, i = 0;
+    for (const c of scatter) {
       const box = new THREE.Box3();
-      list.forEach((t, i) => {
+      const start = i;
+      for (const t of [...c.tufts, ...c.flowers]) {
         // Rotation about y, uniform scale, translation (column-major).
-        const cos = Math.cos(t.rot) * t.scale, sin = Math.sin(t.rot) * t.scale, o = i * 16;
+        const cos = Math.cos(t.rot) * t.scale, sin = Math.sin(t.rot) * t.scale, a = this.matrices, o = i * 16;
         a[o] = cos; a[o + 2] = -sin;
         a[o + 5] = t.scale;
         a[o + 8] = sin; a[o + 10] = cos;
         a[o + 12] = t.x; a[o + 14] = t.z; a[o + 15] = 1;
-        const flower = i >= c.tufts.length;
-        variant[i] = flower ? FLOWER_VARIANT : t.kind;
-        m.setColorAt(i, flower ? color.setHex(FLOWER_COLORS[t.kind]) : white);
+        const flower = i - start >= c.tufts.length;
+        this.variants[i] = flower ? FLOWER_VARIANT : t.kind;
+        color.setHex(flower ? FLOWER_COLORS[t.kind] : 0xffffff).toArray(this.colors, i * 3);
         box.expandByPoint(new THREE.Vector3(t.x, 0, t.z));
-      });
-      g.setAttribute('variant', new THREE.InstancedBufferAttribute(variant, 1));
+        i++;
+      }
       box.expandByScalar(0.5);
       box.min.y = 0;
       box.max.y = CULL_HEIGHT;
-      m.computeBoundingSphere();
-      m.name = `nature-${c.cx},${c.cz}`;
-      m.matrixAutoUpdate = false;
-      m.frustumCulled = false;
-      m.receiveShadow = true;
-      this.boxes.push(box);
-      this.group.add(m);
+      this.chunks.push({ cx: c.cx, cz: c.cz, start, count: i - start, box });
       tufts += c.tufts.length;
       flowers += c.flowers.length;
     }
-    this.stats = { chunks: this.group.children.length, tufts, flowers };
+    this.stats = { chunks: this.chunks.length, tufts, flowers };
+
+    this.variant = new THREE.InstancedBufferAttribute(new Float32Array(total), 1);
+    this.geometry.setAttribute('variant', this.variant);
+    this.mesh = new THREE.InstancedMesh(this.geometry, this.material, Math.max(total, 1));
+    this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(Math.max(total, 1) * 3), 3);
+    this.mesh.name = 'nature';
+    this.mesh.matrixAutoUpdate = false;
+    // Culled per chunk in cull(); the mesh as a whole spans the map.
+    this.mesh.frustumCulled = false;
+    this.mesh.receiveShadow = true;
+    this.group.add(this.mesh);
+    this.show(this.chunks.map((_, k) => k));
   }
 
-  /** Show only the chunks whose box is in the camera's view. */
+  /** Draw only the chunks whose box is in the camera's view. */
   cull(camera: THREE.Camera): void {
     camera.updateMatrixWorld();
     this.frustum.setFromProjectionMatrix(this.viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
-    this.group.children.forEach((m, i) => (m.visible = this.frustum.intersectsBox(this.boxes[i])));
+    const visible: number[] = [];
+    this.chunks.forEach((c, k) => {
+      if (this.frustum.intersectsBox(c.box)) visible.push(k);
+    });
+    this.show(visible);
+  }
+
+  /** The chunks drawn now. */
+  get visibleChunks(): NatureChunk[] {
+    return this.shown === '' ? [] : this.shown.split(',').map((k) => this.chunks[+k]);
+  }
+
+  private show(chunks: number[]): void {
+    const key = chunks.join(',');
+    if (key === this.shown && this.mesh.count > 0) return;
+    this.shown = key;
+    const m = this.mesh.instanceMatrix, col = this.mesh.instanceColor!, v = this.variant;
+    let n = 0;
+    for (const k of chunks) {
+      const { start, count } = this.chunks[k];
+      m.array.set(this.matrices.subarray(start * 16, (start + count) * 16), n * 16);
+      col.array.set(this.colors.subarray(start * 3, (start + count) * 3), n * 3);
+      v.array.set(this.variants.subarray(start, start + count), n);
+      n += count;
+    }
+    // Upload only the packed part.
+    for (const [attr, size] of [[m, 16], [col, 3], [v, 1]] as const) {
+      attr.clearUpdateRanges();
+      attr.addUpdateRange(0, n * size);
+      attr.needsUpdate = true;
+    }
+    this.mesh.count = n;
+    this.mesh.visible = n > 0;
   }
 
   dispose(): void {
     this.geometry.dispose();
     this.material.dispose();
-    for (const m of this.group.children) (m as THREE.InstancedMesh).dispose();
+    this.mesh.dispose();
   }
 }
