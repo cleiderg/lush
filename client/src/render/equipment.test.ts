@@ -151,6 +151,7 @@ describe('equipment attachments', () => {
     w.rig.camera.updateProjectionMatrix();
     const calls = countDrawCallsInView(w.scene, w.rig.camera);
     console.log(`in view, 100 equipped and hurt players: ${calls} draw calls`);
-    expect(calls).toBeLessThan(40);
+    // The bound includes the world in view from the origin, such as the bank booth and grill (#451).
+    expect(calls).toBeLessThan(44);
   });
 });

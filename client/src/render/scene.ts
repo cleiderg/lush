@@ -14,6 +14,7 @@ import { CardTables, loadCardTables } from './cardTables';
 import { Nature } from './nature';
 import { Props, loadProps } from './propKit';
 import { loadParkNature } from './parkNature';
+import { SkillObjects, loadSkills } from './skillObjects';
 import { DEFAULT_SKY, SkyRig } from './sky';
 import { LampLights, lampSources } from './lights';
 import type { CampusData } from './mapData';
@@ -48,6 +49,8 @@ export class WorldScene {
   readonly nature = new Nature(loadCampus(), { exclude: [loadCardTables().plaza] });
   /** Campus props from props.json, merged per chunk. */
   readonly props = new Props(loadProps());
+  /** Woodcutting trees and stumps, the bank booth, the grill and the pond from skills.json. */
+  readonly skills = new SkillObjects(loadSkills());
   /** Sun, ambient, sky colour and fog, following WorldView.sky. */
   readonly sky = new SkyRig();
   /** Warm point lights and glowing heads for lamp posts and lanterns, lit from sunset to sunrise. */
@@ -75,10 +78,13 @@ export class WorldScene {
     this.sky.update(undefined, 0, 0);
     this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.areas.group, this.player.root, this.remotes.group, this.shadows.group, this.healthBars.group);
     // After the players: tests find the remote-player instanced meshes as the first ones in the scene.
-    this.scene.add(this.cardTables.group, this.props.group, this.nature.group, this.lamps.group);
+    this.scene.add(this.cardTables.group, this.props.group, this.skills.group, this.nature.group, this.lamps.group);
     this.lamps.update(DEFAULT_SKY.elevation, this.rig.camera.position, this.now());
     // Cull again for the camera actually rendering, in case its aspect changed since the last view.
-    this.scene.onBeforeRender = (_renderer, _scene, camera) => this.nature.cull(camera);
+    this.scene.onBeforeRender = (_renderer, _scene, camera) => {
+      this.nature.cull(camera);
+      this.skills.cull(camera);
+    };
     // The local player is drawn (at the origin) before the first view arrives, as a plain mesh would be.
     this.player.update(0, 0, 0, 0);
     this.remotes.update([], undefined, 0, this.player);
@@ -87,6 +93,7 @@ export class WorldScene {
     const start = new CameraRig(this.rig.camera.aspect);
     start.follow(0, 0);
     this.nature.cull(start.camera);
+    this.skills.cull(start.camera);
   }
 
   update(view: WorldView): void {
@@ -100,6 +107,7 @@ export class WorldScene {
     const lookup = view.entities;
     this.player.setEquipment(lookup?.entityInfo(local.id)?.equipment, lookup);
     this.remotes.update(view.remotes, lookup, time, this.player, this.combat);
+    this.skills.update(view.felledTrees);
     if (view.groundItems) {
       if (!this.groundItems) {
         this.groundItems = new GroundItems();
@@ -121,6 +129,7 @@ export class WorldScene {
     this.shadows.update(this.shadowList(view));
     this.rig.follow(local.x, local.z);
     this.nature.cull(this.rig.camera);
+    this.skills.cull(this.rig.camera);
     this.sky.update(view.sky, local.x, local.z);
     this.lamps.update((view.sky ?? DEFAULT_SKY).elevation, this.rig.camera.position, this.now());
     this.map.updateSky(view.sky);
