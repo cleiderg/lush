@@ -44,3 +44,16 @@ func TestMemoryCardPots(t *testing.T) {
 		}
 	})
 }
+
+func TestMemoryBank(t *testing.T) {
+	storetest.RunBank(t, func(*testing.T) (storetest.BankStore, func() []store.Entry) {
+		m := store.NewMemory()
+		return m, func() []store.Entry {
+			out := m.AuditEntries()
+			for i := range out {
+				out[i].Payload = nil
+			}
+			return out
+		}
+	})
+}
