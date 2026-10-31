@@ -2,6 +2,7 @@ import { encodeItemAction } from '../net/codec';
 import { EquipSlot, ItemActionKind, ItemKind } from '../protocol';
 import type { Equipment, ItemState } from '../state/items';
 import { hudLayout, place } from './hudLayout';
+import { addPressFeedback, addPressFeedbackWithin, PanelMotion } from './theme';
 
 export interface HudOptions {
   parent: HTMLElement;
@@ -45,6 +46,7 @@ export class Hud {
   private readonly gold: HTMLElement;
   private readonly equipment: HTMLElement;
   private readonly grid: HTMLElement;
+  private readonly motion: PanelMotion;
   private readonly unsubscribe: () => void;
   private readonly onResize = (): void => this.layout();
 
@@ -61,14 +63,16 @@ export class Hud {
     this.toggle.setAttribute('aria-label', 'Inventory');
     this.toggle.setAttribute('aria-expanded', 'false');
     this.toggle.addEventListener('click', () => this.setOpen(!this.isOpen));
+    addPressFeedback(this.toggle);
 
-    this.panel = el('div', 'lush-inv');
+    this.panel = el('div', 'lush-panel lush-inv');
     this.panel.setAttribute('role', 'dialog');
     this.panel.setAttribute('aria-label', 'Inventory');
-    this.panel.hidden = true;
+    this.motion = new PanelMotion(this.panel, (shown) => { this.panel.hidden = !shown; });
+    addPressFeedbackWithin(this.panel);
     this.equipment = el('div', 'lush-equip');
     this.grid = el('div', 'lush-inv-grid');
-    this.panel.append(this.equipment, this.grid);
+    this.panel.append(el('div', 'lush-title lush-inv-title', 'Inventory'), this.equipment, this.grid);
 
     opts.parent.append(this.hud, this.toggle, this.panel);
     this.unsubscribe = opts.items.subscribe(() => this.render());
@@ -83,7 +87,7 @@ export class Hud {
 
   setOpen(open: boolean): void {
     if (open && !this.isOpen) this.opts.onOpen?.();
-    this.panel.hidden = !open;
+    this.motion.set(open);
     this.toggle.setAttribute('aria-expanded', String(open));
     this.toggle.classList.toggle('on', open);
   }
@@ -134,6 +138,7 @@ export class Hud {
 
   dispose(): void {
     this.unsubscribe();
+    this.motion.dispose();
     window.removeEventListener('resize', this.onResize);
     this.hud.remove();
     this.toggle.remove();
@@ -151,21 +156,21 @@ function injectStyle(): void {
 .lush-hud { box-sizing: border-box; z-index: 5; display: flex; flex-direction: column; justify-content: center; padding: 6px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 10px; background: rgba(20,20,30,.72); color: #fff; font: 600 13px/17px system-ui, sans-serif; pointer-events: none; user-select: none; -webkit-user-select: none; }
 .lush-hud-hp { color: #ff8a80; }
 .lush-hud-gold { color: #ffd54f; }
-.lush-inv-toggle { box-sizing: border-box; z-index: 5; border: 0; border-radius: 12px; background: #3b3b52; color: #fff; font: 600 14px sans-serif; touch-action: manipulation; }
-.lush-inv-toggle.on { background: #4a8f4a; }
-.lush-inv { box-sizing: border-box; z-index: 5; display: flex; flex-direction: column; gap: 8px; padding: 8px; border-radius: 12px; background: rgba(29,29,38,.94); color: #fff; font: 12px/14px system-ui, sans-serif; overflow-y: auto; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.lush-inv-toggle { box-sizing: border-box; z-index: 5; min-width: 44px; min-height: 44px; border: var(--lush-border-strong); border-radius: var(--lush-radius); background: var(--lush-panel-bg); color: var(--lush-text); box-shadow: var(--lush-shadow); font: 600 var(--lush-text-sm) var(--lush-font-title); letter-spacing: 0.04em; touch-action: manipulation; -webkit-tap-highlight-color: transparent; transition: transform var(--lush-transition), background var(--lush-transition), border-color var(--lush-transition); }
+.lush-inv-toggle.on { background: var(--lush-surface-pressed); border-color: var(--lush-gold-bright); color: var(--lush-gold-bright); }
+.lush-inv-toggle.pressed { transform: scale(0.94); background: var(--lush-surface-pressed); box-shadow: var(--lush-shadow-pressed); }
+.lush-inv { box-sizing: border-box; z-index: 5; display: flex; flex-direction: column; gap: var(--lush-space-2); padding: var(--lush-space-2) var(--lush-space-3) var(--lush-space-3); font-size: 12px; line-height: 14px; overflow-y: auto; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
 .lush-inv[hidden] { display: none; }
-.lush-equip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
-.lush-equip-slot, .lush-slot { position: relative; min-width: 0; padding: 4px; border-radius: 6px; background: #3b3b52; overflow: hidden; }
+.lush-inv-title { font-size: var(--lush-text-lg); }
+.lush-equip { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--lush-space-1); }
+.lush-equip-slot, .lush-slot { box-sizing: border-box; position: relative; min-width: 0; min-height: 44px; padding: var(--lush-space-1); border: var(--lush-border); border-radius: var(--lush-radius-sm); background: var(--lush-surface); overflow: hidden; }
 .lush-equip-slot { display: flex; flex-direction: column; }
-.lush-equip-label { color: #aab; font-size: 10px; }
-.lush-equip-slot.empty .lush-equip-name { color: #778; }
-.lush-inv-grid { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: minmax(40px, 1fr); gap: 4px; flex: 1; }
-.lush-equip-slot.usable, .lush-slot.usable { cursor: pointer; touch-action: manipulation; }
-.lush-equip-slot.usable:active, .lush-slot.usable:active { background: #4a8f4a; }
-.lush-slot.empty { background: #2c2c3a; }
+.lush-equip-label { color: var(--lush-text-muted); font: 10px var(--lush-font-title); letter-spacing: 0.04em; }
+.lush-equip-slot.empty .lush-equip-name, .lush-slot.empty { color: var(--lush-text-muted); }
+.lush-inv-grid { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: minmax(44px, 1fr); gap: var(--lush-space-1); flex: 1; }
+.lush-slot.empty { background: rgba(0, 0, 0, 0.25); }
 .lush-slot-name { display: block; word-break: break-word; }
-.lush-slot-qty { position: absolute; right: 4px; bottom: 2px; color: #ffd54f; font-weight: 700; }
+.lush-slot-qty { position: absolute; right: 4px; bottom: 2px; color: var(--lush-gold-bright); font-weight: 700; }
 `;
   document.head.append(s);
 }

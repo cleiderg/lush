@@ -3,6 +3,7 @@ import campusRaw from '../../../shared/map/campus.json?raw';
 import { GREEN_GRASS, GREEN_PITCH, GREEN_WATER, GREEN_WOOD, parseCampus, type CampusData, type Green } from './mapData';
 import { buildLandmark, isLandmark } from './landmarks';
 import { mulberry32 } from './rng';
+import { GROUND_KINDS, GROUND_PLAZA, SurfaceBuilder, makeGroundMaterial } from './groundSurfaces';
 
 const DM = 0.1;
 const Y_GREEN = 0.01;
@@ -10,6 +11,8 @@ const Y_GREEN = 0.01;
 const GREEN_LAYER_STEP = 0.005;
 export const MAX_GREEN_LAYER = 8;
 const Y_PATH = Y_GREEN + (MAX_GREEN_LAYER + 1) * GREEN_LAYER_STEP;
+/** Ground surfaces never write depth, so they draw in this order: plazas, dirt, stone, then paved on top. */
+const SURFACE_ORDER = [GROUND_PLAZA, 0, 1, 2];
 const ROOF_RISE = 2.5;
 const PITCHED_CHANCE = 0.4;
 
@@ -21,7 +24,6 @@ const GREEN_COLOR: Record<number, number> = {
   [GREEN_WATER]: 0x4a90c8,
   [GREEN_PITCH]: 0x8bc078,
 };
-const PATH_COLOR = 0xdcceA4;
 
 /** Accumulates flat-shaded, vertex-coloured triangles. */
 export class MeshBuilder {
@@ -110,17 +112,6 @@ export function addBuilding(b: MeshBuilder, id: number, h: number, p: number[]):
   }
 }
 
-function addPathSegment(b: MeshBuilder, x0: number, z0: number, x1: number, z1: number, halfW: number): void {
-  const dx = x1 - x0, dz = z1 - z0;
-  const len = Math.hypot(dx, dz);
-  if (len === 0) return;
-  const nx = (-dz / len) * halfW, nz = (dx / len) * halfW;
-  const a = [x0 + nx, Y_PATH, z0 + nz], c = [x0 - nx, Y_PATH, z0 - nz];
-  const d = [x1 + nx, Y_PATH, z1 + nz], e = [x1 - nx, Y_PATH, z1 - nz];
-  b.tri(a, c, d, UP, PATH_COLOR);
-  b.tri(c, e, d, UP, PATH_COLOR);
-}
-
 type Box = [number, number, number, number];
 
 function bbox(p: number[]): Box {
@@ -168,19 +159,32 @@ export class CampusMap {
   readonly group = new THREE.Group();
   readonly stats: MapStats;
   readonly material = new THREE.MeshLambertMaterial({ vertexColors: true });
+  /** One material per ground kind (GROUND_DIRT, GROUND_STONE, GROUND_PAVED, GROUND_PLAZA). */
+  readonly surfaceMaterials = GROUND_KINDS.map((k) => makeGroundMaterial(k));
 
   constructor(data: CampusData) {
     this.group.name = 'campus-map';
     const chunkM = data.chunkSize;
     const { minX, minZ } = data.bounds;
     const builders = new Map<string, MeshBuilder>();
-    const at = (xDm: number, zDm: number): MeshBuilder => {
+    const surfaces = new Map<string, SurfaceBuilder[]>();
+    const keyAt = (xDm: number, zDm: number): string => {
       const cx = Math.floor((xDm - minX) * DM / chunkM);
       const cz = Math.floor((zDm - minZ) * DM / chunkM);
-      const key = `${cx},${cz}`;
+      return `${cx},${cz}`;
+    };
+    const at = (xDm: number, zDm: number): MeshBuilder => {
+      const key = keyAt(xDm, zDm);
       let b = builders.get(key);
       if (!b) builders.set(key, (b = new MeshBuilder()));
       return b;
+    };
+    const surfaceAt = (xDm: number, zDm: number, kind: number): SurfaceBuilder => {
+      const key = keyAt(xDm, zDm);
+      if (!builders.has(key)) builders.set(key, new MeshBuilder());
+      let s = surfaces.get(key);
+      if (!s) surfaces.set(key, (s = GROUND_KINDS.map((k) => new SurfaceBuilder(k, Y_PATH + SURFACE_ORDER.indexOf(k) * 0.002))));
+      return s[kind] ?? s[GROUND_KINDS[1]];
     };
     const centre = (p: number[]): [number, number] => {
       let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
@@ -199,11 +203,16 @@ export class CampusMap {
       const color = new THREE.Color(GREEN_COLOR[g.k] ?? GREEN_COLOR[GREEN_GRASS]).multiplyScalar(shade).getHex();
       fillPolygon(at(cx, cz), polygonPoints(g.p), Y_GREEN + layers.get(g.id)! * GREEN_LAYER_STEP, color);
     }
+    for (const pl of data.plazas) {
+      const [cx, cz] = centre(pl.p);
+      surfaceAt(cx, cz, GROUND_PLAZA).polygon(pl.p.map((v) => v * DM));
+    }
     for (const w of data.paths) {
       const half = (w.w * DM) / 2;
       for (let i = 0; i + 3 < w.p.length; i += 2) {
         const [x0, z0, x1, z1] = [w.p[i], w.p[i + 1], w.p[i + 2], w.p[i + 3]];
-        addPathSegment(at((x0 + x1) / 2, (z0 + z1) / 2), x0 * DM, z0 * DM, x1 * DM, z1 * DM, half);
+        surfaceAt((x0 + x1) / 2, (z0 + z1) / 2, w.s)
+          .segment(x0 * DM, z0 * DM, x1 * DM, z1 * DM, half, i === 0, i + 4 >= w.p.length);
       }
     }
     const extruded: number[] = [];
@@ -222,12 +231,23 @@ export class CampusMap {
     for (const key of [...builders.keys()].sort()) {
       const b = builders.get(key)!;
       triangles += b.triangles;
-      const mesh = new THREE.Mesh(b.geometry(), this.material);
-      mesh.name = `chunk-${key}`;
-      mesh.matrixAutoUpdate = false;
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      this.group.add(mesh);
+      // A chunk with only ground surfaces has no merged mesh of its own, just a holder for them.
+      const chunk = b.triangles > 0 ? new THREE.Mesh(b.geometry(), this.material) : new THREE.Group();
+      chunk.name = `chunk-${key}`;
+      chunk.matrixAutoUpdate = false;
+      chunk.castShadow = true;
+      chunk.receiveShadow = true;
+      for (const s of surfaces.get(key) ?? []) {
+        if (s.triangles === 0) continue;
+        triangles += s.triangles;
+        const mesh = new THREE.Mesh(s.geometry(), this.surfaceMaterials[s.kind]);
+        mesh.name = `ground-${key}-${s.kind}`;
+        mesh.matrixAutoUpdate = false;
+        mesh.receiveShadow = true;
+        mesh.renderOrder = SURFACE_ORDER.indexOf(s.kind) - SURFACE_ORDER.length;
+        chunk.add(mesh);
+      }
+      this.group.add(chunk);
     }
     this.stats = { chunks: builders.size, triangles, extruded, landmarks };
   }
@@ -235,6 +255,10 @@ export class CampusMap {
   dispose(): void {
     this.group.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
     this.material.dispose();
+    for (const m of this.surfaceMaterials) {
+      m.map?.dispose();
+      m.dispose();
+    }
   }
 }
 

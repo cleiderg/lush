@@ -31,6 +31,11 @@ export interface HudLayout {
    * Panels open over it.
    */
   interact: Rect;
+  /**
+   * The player's own portrait (HP ring, combat level): round, directly under the location panel, below the Interact
+   * prompt when the two would touch. Panels open over it.
+   */
+  portrait: Rect;
   /** The chat log, a strip at the bottom of the panel area just above the PvP strip; hidden while a panel is open. */
   chat: Rect;
 }
@@ -53,6 +58,7 @@ const PVP_H = 36;
 const CHAT_H = 120;
 const INTERACT_W = 300;
 const INTERACT_H = 36;
+const PORTRAIT = 64;
 
 /**
  * Where the location panel, HUD, inventory and Retro toggles, inventory panel, shop panel and trade window go for a viewport of
@@ -87,9 +93,13 @@ export function hudLayout(width: number, height: number): HudLayout {
   const chat = { x: panel.x, y: panel.y + panel.h - chatH, w: panel.w, h: chatH };
   const interactW = Math.min(INTERACT_W, appW - 2 * MARGIN);
   const interact = { x: left + (appW - interactW) / 2, y: panelTop, w: interactW, h: INTERACT_H };
+  // Level with the Interact prompt if it fits beside it, otherwise just below it.
+  const portraitX = location.x;
+  const portraitY = portraitX + PORTRAIT + MARGIN <= interact.x ? panelTop : interact.y + interact.h + MARGIN;
+  const portrait = { x: portraitX, y: portraitY, w: PORTRAIT, h: PORTRAIT };
   return {
     controls, location, hud, toggle, retro, panel, shop: { ...panel }, trade: { ...panel }, cardTable: { ...panel }, tradePrompt, pvp,
-    chat, interact,
+    chat, interact, portrait,
   };
 }
 

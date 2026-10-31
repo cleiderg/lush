@@ -20,6 +20,7 @@ import { InteractPrompt } from './ui/interactPrompt';
 import { PvpWarning } from './ui/pvpWarning';
 import { RestartBanner } from './ui/restartBanner';
 import { LocationPanel } from './ui/locationPanel';
+import { PlayerPortrait } from './ui/playerPortrait';
 import { localRetroStore, RetroToggle } from './ui/retroToggle';
 import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
 import { applyTheme } from './ui/theme';
@@ -102,6 +103,7 @@ const cardTable = new CardTablePanel({
   },
 });
 const locationPanel = new LocationPanel({ parent: document.body, position: () => game.prediction.pos, clock: game.clock });
+const portrait = new PlayerPortrait({ parent: document.body, stats: () => game.items.stats });
 // Shows what Interact will do, from the same target the button uses.
 const interactPrompt = new InteractPrompt({
   parent: document.body,
@@ -147,6 +149,7 @@ new GameLoop({
     cardTable.update();
     pvpWarning.update();
     locationPanel.update();
+    portrait.update();
     interactPrompt.update();
     const m = controls.worldMove();
     // Inputs the server will never see would pile up unacknowledged; Welcome resets prediction anyway.

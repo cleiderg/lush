@@ -1,7 +1,13 @@
 /** Types and parsers for the files in shared/map (format documented in shared/map/README.md). */
 
 export interface Building { id: number; h: number; p: number[] }
-export interface PathWay { id: number; w: number; p: number[] }
+/** Path surface kinds (`s` in campus.json). */
+export const SURFACE_DIRT = 0;
+export const SURFACE_STONE = 1;
+export const SURFACE_PAVED = 2;
+export interface PathWay { id: number; w: number; s: number; p: number[] }
+/** A paved pedestrian area: closed polygon, last point not repeated. */
+export interface Plaza { id: number; p: number[] }
 export const GREEN_GRASS = 0;
 export const GREEN_WOOD = 1;
 export const GREEN_WATER = 2;
@@ -16,12 +22,15 @@ export interface CampusData {
   bounds: { minX: number; minZ: number; maxX: number; maxZ: number };
   buildings: Building[];
   paths: PathWay[];
+  plazas: Plaza[];
   green: Green[];
 }
 
 export function parseCampus(json: string): CampusData {
   const d = JSON.parse(json) as CampusData;
   if (d.version !== 1) throw new Error(`unsupported campus.json version ${d.version}`);
+  d.plazas ??= [];
+  for (const w of d.paths) w.s ??= SURFACE_STONE;
   return d;
 }
 
