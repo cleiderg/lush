@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EntityKind } from '../protocol';
 import { OVERHEAD_CHAT_MS } from '../state/chat';
 import { GameState } from '../state/world';
+import { sunPosition } from './sun';
 import { buildWorldView, controlYaw, moveForRigYaw } from './view';
 
 describe('buildWorldView', () => {
@@ -201,5 +202,33 @@ describe('camera yaw for controls', () => {
     expect(a.y).toBeCloseTo(1); // yaw 0: camera north of player, forward is south
     expect(b.x).toBeCloseTo(1);
     expect(controlYaw(0)).toBeCloseTo(Math.PI);
+  });
+});
+
+describe('buildWorldView sky', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('sets sky from sunPosition at the shared server time', () => {
+    const server = Date.UTC(2026, 5, 21, 19, 57); // about solar noon in Irvine, midsummer
+    vi.useFakeTimers();
+    vi.setSystemTime(server - 3 * 3_600_000); // local clock 3 hours wrong
+    const g = new GameState();
+    g.handle({ type: 'welcome', playerId: 7, tickRate: 20, spawn: { x: 0, z: 0 }, serverTimeMs: server } as never, 0);
+    const sky = buildWorldView(g, 0).sky;
+    const want = sunPosition(server);
+    expect(sky?.elevation).toBeCloseTo(want.elevation, 6);
+    expect(sky?.azimuth).toBeCloseTo(want.azimuth, 6);
+    // High in the south: 90° - (33.646° - 23.44°) ≈ 79.8°.
+    expect((sky!.elevation * 180) / Math.PI).toBeCloseTo(79.8, 0);
+    expect((sky!.azimuth * 180) / Math.PI).toBeGreaterThan(150);
+    expect((sky!.azimuth * 180) / Math.PI).toBeLessThan(210);
+  });
+
+  it('follows the debug override', () => {
+    const g = new GameState();
+    const night = Date.UTC(2026, 9, 30, 10, 0); // 03:00 PDT
+    g.clock.override(night);
+    g.clock.pause();
+    expect(buildWorldView(g, 0).sky).toEqual(sunPosition(night));
   });
 });

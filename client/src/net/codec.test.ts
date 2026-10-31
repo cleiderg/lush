@@ -21,6 +21,32 @@ function envelope(bytes: Uint8Array, type: Message): Envelope {
   return env;
 }
 
+describe('decode Welcome', () => {
+  it('carries server_time_ms as a number of UTC ms', () => {
+    const b = new flatbuffers.Builder(128);
+    const tok = b.createString('t');
+    Welcome.startWelcome(b);
+    Welcome.addPlayerId(b, 3);
+    Welcome.addGuestToken(b, tok);
+    Welcome.addSpawn(b, Vec2.createVec2(b, 0, 0));
+    Welcome.addServerTimeMs(b, BigInt(Date.UTC(2026, 9, 30, 17, 0)));
+    expect(decode(finish(b, Message.Welcome, Welcome.endWelcome(b)))).toMatchObject({
+      type: 'welcome',
+      playerId: 3,
+      serverTimeMs: Date.UTC(2026, 9, 30, 17, 0),
+    });
+  });
+
+  it('leaves serverTimeMs out when the server sends none', () => {
+    const b = new flatbuffers.Builder(64);
+    Welcome.startWelcome(b);
+    Welcome.addSpawn(b, Vec2.createVec2(b, 0, 0));
+    const msg = decode(finish(b, Message.Welcome, Welcome.endWelcome(b)));
+    expect(msg).toMatchObject({ type: 'welcome' });
+    expect((msg as { serverTimeMs?: number }).serverTimeMs).toBeUndefined();
+  });
+});
+
 describe('decode M6 server messages', () => {
   it('decodes GroundItems with positions in metres', () => {
     const b = new flatbuffers.Builder(128);

@@ -168,7 +168,7 @@ export interface ShedHandState {
 }
 
 export type ServerMessage =
-  | { type: 'welcome'; playerId: number; guestToken: string; spawn: { x: number; z: number }; tickRate: number; walkSpeed?: number; runSpeed?: number }
+  | { type: 'welcome'; playerId: number; guestToken: string; spawn: { x: number; z: number }; tickRate: number; walkSpeed?: number; runSpeed?: number; serverTimeMs?: number }
   | { type: 'snapshot'; tick: number; lastInputSeq: number; entities: EntityState[] }
   | { type: 'chat'; speakerId: number; text: string }
   | { type: 'pong'; token: number }
@@ -349,6 +349,8 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
         tickRate: m.tickRate(),
         walkSpeed: m.walkSpeed(),
         runSpeed: m.runSpeed(),
+        // UTC ms; 0 (an older server) means unknown, and the client keeps its own clock.
+        serverTimeMs: Number(m.serverTimeMs()) || undefined,
       };
     }
     case Message.Snapshot: {
