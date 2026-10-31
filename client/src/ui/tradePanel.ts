@@ -4,6 +4,7 @@ import {
 import type { ItemState } from '../state/items';
 import { tradeResultText, type TradeItemState, type TradeStore } from '../state/trade';
 import { hudLayout, place } from './hudLayout';
+import { addPressFeedbackWithin, PanelMotion } from './theme';
 
 export interface TradePanelOptions {
   parent: HTMLElement;
@@ -66,6 +67,8 @@ export class TradePanel {
   /** Result seq already shown (or that arrived before this panel). */
   private shownResultSeq: number;
   private wasOpen = false;
+  private readonly motion: PanelMotion;
+  private readonly promptMotion: PanelMotion;
   private messageTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly unsubscribe: () => void;
   private readonly onResize = (): void => this.layout();
@@ -75,10 +78,11 @@ export class TradePanel {
     this.answeredSeq = 0;
     this.shownResultSeq = opts.trade.result?.seq ?? 0;
 
-    this.prompt = el('div', 'lush-trade-prompt');
+    this.prompt = el('div', 'lush-panel lush-trade-prompt');
     this.prompt.setAttribute('role', 'alertdialog');
     this.prompt.setAttribute('aria-label', 'Trade request');
-    this.prompt.hidden = true;
+    this.promptMotion = new PanelMotion(this.prompt, (shown) => { this.prompt.hidden = !shown; });
+    addPressFeedbackWithin(this.prompt);
     this.promptText = el('div', 'lush-trade-prompt-text');
     const promptBtns = el('div', 'lush-trade-btns');
     promptBtns.append(
@@ -87,11 +91,12 @@ export class TradePanel {
     );
     this.prompt.append(this.promptText, promptBtns);
 
-    this.panel = el('div', 'lush-trade');
+    this.panel = el('div', 'lush-panel lush-trade');
     this.panel.setAttribute('role', 'dialog');
     this.panel.setAttribute('aria-label', 'Trade');
-    this.panel.hidden = true;
-    this.title = el('div', 'lush-trade-title');
+    this.motion = new PanelMotion(this.panel, (shown) => { this.panel.hidden = !shown; });
+    addPressFeedbackWithin(this.panel);
+    this.title = el('div', 'lush-title lush-trade-title');
     this.hint = el('div', 'lush-trade-hint');
 
     const mine = el('div', 'lush-trade-side lush-trade-mine');
@@ -133,7 +138,7 @@ export class TradePanel {
     btns.append(this.acceptBtn, button('lush-trade-cancel', 'Cancel', () => opts.send(encodeTradeCancel())));
     this.panel.append(this.title, this.hint, sides, this.offerArea, btns);
 
-    this.message = el('div', 'lush-trade-msg');
+    this.message = el('div', 'lush-panel lush-trade-msg');
     this.message.setAttribute('role', 'status');
     this.message.hidden = true;
 
@@ -228,11 +233,11 @@ export class TradePanel {
 
     const req = t.pendingRequest;
     const showPrompt = !t.open && !!req && req.seq > this.answeredSeq;
-    this.prompt.hidden = !showPrompt;
+    this.promptMotion.set(showPrompt);
     if (showPrompt && req) this.promptText.textContent = `${playerName(req.fromId)} wants to trade with you.`;
 
     const open = t.open;
-    this.panel.hidden = !open;
+    this.motion.set(!!open);
     if (!open) {
       this.wasOpen = false;
       return;
@@ -278,6 +283,8 @@ export class TradePanel {
   dispose(): void {
     this.unsubscribe();
     if (this.messageTimer) clearTimeout(this.messageTimer);
+    this.motion.dispose();
+    this.promptMotion.dispose();
     window.removeEventListener('resize', this.onResize);
     this.prompt.remove();
     this.panel.remove();
@@ -292,29 +299,29 @@ function injectStyle(): void {
   styled = true;
   const s = document.createElement('style');
   s.textContent = `
-.lush-trade, .lush-trade-prompt, .lush-trade-msg { box-sizing: border-box; z-index: 7; border-radius: 12px; background: rgba(29,29,38,.96); color: #fff; font: 13px/16px system-ui, sans-serif; user-select: none; -webkit-user-select: none; }
-.lush-trade { display: flex; flex-direction: column; gap: 6px; padding: 8px; overflow-y: auto; touch-action: pan-y; }
-.lush-trade-prompt { z-index: 8; display: flex; flex-direction: column; justify-content: center; gap: 8px; padding: 8px; }
-.lush-trade-msg { z-index: 9; display: flex; align-items: center; justify-content: center; padding: 4px 8px; color: #ffd54f; font-weight: 600; pointer-events: none; }
+.lush-trade, .lush-trade-prompt, .lush-trade-msg { box-sizing: border-box; z-index: 7; font-size: var(--lush-text-sm); line-height: 16px; user-select: none; -webkit-user-select: none; }
+.lush-trade { display: flex; flex-direction: column; gap: var(--lush-space-2); padding: var(--lush-space-2) var(--lush-space-3) var(--lush-space-3); overflow-y: auto; touch-action: pan-y; }
+.lush-trade-prompt { z-index: 8; display: flex; flex-direction: column; justify-content: center; gap: var(--lush-space-2); padding: var(--lush-space-2) var(--lush-space-3); }
+.lush-trade-msg { z-index: 9; display: flex; align-items: center; justify-content: center; padding: 4px 8px; color: var(--lush-gold-bright); font-weight: 600; pointer-events: none; }
 .lush-trade[hidden], .lush-trade-prompt[hidden], .lush-trade-msg[hidden], .lush-trade-offer[hidden] { display: none; }
-.lush-trade-title { font-weight: 700; font-size: 15px; }
-.lush-trade-hint { color: #aab; font-size: 12px; }
-.lush-trade-sides { display: flex; gap: 6px; }
-.lush-trade-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 6px; border-radius: 8px; background: #2a2a3a; }
-.lush-trade-sub { color: #aab; font-size: 11px; text-transform: uppercase; }
-.lush-trade-list { display: flex; flex-direction: column; gap: 4px; }
-.lush-trade-row { display: block; width: 100%; text-align: left; padding: 6px; border-radius: 6px; background: #3b3b52; color: #fff; word-break: break-word; }
-.lush-trade-empty { color: #778; }
-.lush-trade-gold { color: #ffd54f; }
-.lush-trade-status { min-height: 16px; color: #8fdf8f; font-weight: 600; }
-.lush-trade-offer { display: flex; flex-direction: column; gap: 6px; }
-.lush-trade-gold-row { display: flex; gap: 6px; margin: 0; }
-.lush-trade-gold-input { flex: 1; min-width: 0; min-height: 32px; border: 0; border-radius: 8px; padding: 0 8px; font: 16px sans-serif; }
-.lush-trade-btns { display: flex; gap: 8px; }
-.lush-trade button { min-height: 32px; border: 0; border-radius: 8px; font: 600 13px sans-serif; touch-action: manipulation; }
-.lush-trade-btns button, .lush-trade-set-gold { flex: 1; min-height: 40px; border: 0; border-radius: 8px; background: #4a8f4a; color: #fff; font: 600 14px sans-serif; touch-action: manipulation; }
-.lush-trade-btns .lush-trade-cancel { background: #8f3b3b; }
-.lush-trade-btns button:disabled { opacity: .5; }
+.lush-trade-title { font-size: var(--lush-text-lg); }
+.lush-trade-hint { color: var(--lush-text-muted); font-size: 12px; font-style: italic; }
+.lush-trade-sides { display: flex; gap: var(--lush-space-2); }
+.lush-trade-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--lush-space-1); padding: var(--lush-space-2); border: var(--lush-border); border-radius: var(--lush-radius-sm); background: rgba(0, 0, 0, 0.25); }
+.lush-trade-sub { color: var(--lush-text-muted); font: var(--lush-text-xs) var(--lush-font-title); font-variant: small-caps; letter-spacing: 0.08em; }
+.lush-trade-list { display: flex; flex-direction: column; gap: var(--lush-space-1); }
+.lush-trade-row { box-sizing: border-box; display: block; width: 100%; min-height: 44px; text-align: left; padding: var(--lush-space-2); border: var(--lush-border); border-radius: var(--lush-radius-sm); background: var(--lush-surface); color: var(--lush-text); word-break: break-word; }
+.lush-trade button.lush-trade-row { border: var(--lush-border); background: var(--lush-surface); font: var(--lush-text-sm) var(--lush-font-body); letter-spacing: 0; text-align: left; }
+.lush-trade-empty { color: var(--lush-text-muted); }
+.lush-trade-gold { color: var(--lush-gold); }
+.lush-trade-status { min-height: 16px; color: #9fd06a; font-weight: 600; }
+.lush-trade-offer { display: flex; flex-direction: column; gap: var(--lush-space-2); }
+.lush-trade-gold-row { display: flex; gap: var(--lush-space-2); margin: 0; }
+.lush-trade-gold-input { box-sizing: border-box; flex: 1; min-width: 0; min-height: 44px; border: var(--lush-border); border-radius: var(--lush-radius-sm); padding: 0 8px; background: rgba(0, 0, 0, 0.35); color: var(--lush-text); font: 16px var(--lush-font-body); }
+.lush-trade-btns { display: flex; gap: var(--lush-space-2); }
+.lush-trade-btns button, .lush-trade-set-gold { flex: 1; font-size: var(--lush-text-md); }
+.lush-trade-btns .lush-trade-accept { background: var(--lush-active); }
+.lush-trade-btns .lush-trade-cancel { background: #7a2e24; }
 `;
   document.head.append(s);
 }
