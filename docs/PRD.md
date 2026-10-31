@@ -307,6 +307,7 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 - Chat display placeholders, tuned after playtests: chat log length `CHAT_LOG_LINES` 50 lines, overhead message duration `OVERHEAD_CHAT_MS` 5000 ms.
 - Camera zoom placeholders, tuned after playtests: closest zoom `CAMERA_ZOOM_MIN` 0.5 and furthest `CAMERA_ZOOM_MAX` 1.5, as multiples of the default camera distance (which frames about 20 m across on a portrait phone, [[visual-style]]).
 - Milestone 8 look placeholders, tuned after profiling on an iPhone 13 and playtests: grass tufts `GRASS_TUFTS_PER_M2` 0.5 and flowers `FLOWERS_PER_M2` 0.05 per square metre of grass; point lights fade in and out over `POINT_LIGHT_FADE_MS` 500 ms; lantern flames flicker by up to `FLAME_FLICKER` 0.15 (±15%) of their base intensity; overhead chat bubbles fade out over the last `CHAT_FADE_MS` 1000 ms of `OVERHEAD_CHAT_MS` ([[visual-style]]).
+- Bloom, grade and vignette placeholders, tuned after profiling on an iPhone 13 and playtests: bloom luminance threshold `BLOOM_THRESHOLD` 0.85, strength `BLOOM_STRENGTH` 0.6, radius `BLOOM_RADIUS` 0.4, rendered at `BLOOM_SCALE` 0.5 of the canvas size; warm colour grade `GRADE_WARMTH` 0.05; soft vignette `LOOK_VIGNETTE` 0.25 ([[visual-style]]).
 
 **Housing** ([[housing]], M10)
 - The first-release numbers (rent, auction, houses per area, furniture prices) are placeholders (D-052).
