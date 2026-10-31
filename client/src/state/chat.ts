@@ -2,6 +2,18 @@
 export const CHAT_LOG_LINES = 50;
 /** How long an overhead message shows after it arrives. Placeholder (Q1, CONSTITUTION rule 4). */
 export const OVERHEAD_CHAT_MS = 5000;
+/** An overhead message fades out over its last CHAT_FADE_MS. Placeholder (Q2, CONSTITUTION rule 4). */
+export const CHAT_FADE_MS = 1000;
+
+/**
+ * Opacity of an overhead message `age` ms after it arrived: 1 until OVERHEAD_CHAT_MS - CHAT_FADE_MS,
+ * then falling linearly to 0 at OVERHEAD_CHAT_MS. Never increases with age.
+ */
+export function overheadOpacity(age: number): number {
+  const left = OVERHEAD_CHAT_MS - age;
+  if (left >= CHAT_FADE_MS) return 1;
+  return Math.max(0, left / CHAT_FADE_MS);
+}
 
 export interface ChatLine {
   readonly speakerId: number;

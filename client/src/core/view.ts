@@ -3,6 +3,7 @@ import { toWorldMove, type Vec2 } from '../input/joystick';
 import type { ChatBubbleView, NpcView, PlayerView, WorldView } from '../render/worldView';
 import { EntityKind } from '../protocol';
 import { sunPosition } from './sun';
+import { overheadOpacity } from '../state/chat';
 
 /**
  * Snapshot of game state for the renderer: predicted local player, interpolated remotes and
@@ -10,6 +11,7 @@ import { sunPosition } from './sun';
  * its EntityInfo kind is Npc; players and entities with no EntityInfo yet stay in remotes.
  * Drains game.hits, so each hit appears in exactly one view. Chat holds the current overhead
  * message of the local player and of each remote player in view; other speakers are left out.
+ * A bubble carries an opacity below 1 only while it fades over the last CHAT_FADE_MS.
  * The sky is the sun's position at the shared (server) time, or the debug override.
  */
 export function buildWorldView(game: GameState, now: number): WorldView {
@@ -26,7 +28,10 @@ export function buildWorldView(game: GameState, now: number): WorldView {
   const chat: ChatBubbleView[] = game.chat
     .activeOverheads(now)
     .filter((o) => speakers.has(o.speakerId))
-    .map((o) => ({ id: o.speakerId, text: o.text }));
+    .map((o) => {
+      const opacity = overheadOpacity(now - o.at);
+      return opacity < 1 ? { id: o.speakerId, text: o.text, opacity } : { id: o.speakerId, text: o.text };
+    });
   return { local, remotes, npcs, entities: game.items, groundItems: game.items.groundItems, hits, chat, sky: sunPosition(game.clock.now()) };
 }
 
