@@ -8,7 +8,8 @@ import { CardTablePanel } from './cardTablePanel';
 import { ChatLog } from './chatLog';
 import { Hud } from './hud';
 import { SHOP_STALL, ShopPanel } from './shopPanel';
-import { applyTheme, MIN_TAP_PX, PANEL_ANIM_MS, SHARED_CSS, THEME } from './theme';
+import { Controls } from './controls';
+import { applyTheme, BUTTON_CLASS, BUTTON_CSS, MIN_TAP_PX, PANEL_ANIM_MS, SHARED_CSS, THEME } from './theme';
 import { TradePanel } from './tradePanel';
 
 const VP = { width: 390, height: 844 };
@@ -157,7 +158,7 @@ describe('panel theme (#387 AC1)', () => {
   });
 });
 
-describe('panel open and close animations (#387 AC2)', () => {
+describe('panel open and close animations (#387 AC2, #410 AC2)', () => {
   it('opening and closing applies a transition of 150 to 200 ms', () => {
     expect(PANEL_ANIM_MS).toBeGreaterThanOrEqual(150);
     expect(PANEL_ANIM_MS).toBeLessThanOrEqual(200);
@@ -244,5 +245,76 @@ describe('panel buttons (#387 AC3)', () => {
     const toggle = document.querySelector<HTMLElement>('.lush-inv-toggle')!;
     toggle.dispatchEvent(new PointerEvent('pointerdown'));
     expect(toggle.classList.contains('pressed')).toBe(true);
+  });
+});
+
+/** The declarations of the first rule in css whose selector list contains selector. */
+function declarations(css: string, selector: string): Map<string, string> {
+  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (!m[1].split(',').map((x) => x.trim()).includes(selector)) continue;
+    return new Map(m[2].split(';').map((d) => d.split(':').map((x) => x.trim())).filter((d) => d[0]).map(([k, ...v]) => [k, v.join(':')]));
+  }
+  return new Map();
+}
+
+describe('button hover and tap feedback (#410 AC1)', () => {
+  const base = `.${BUTTON_CLASS}`;
+  const hover = `.${BUTTON_CLASS}:not(:disabled):hover`;
+  const active = `.${BUTTON_CLASS}:not(:disabled):active`;
+
+  it('the shared button styles give a distinct :hover and :active state', () => {
+    expect(SHARED_CSS).toContain(BUTTON_CSS);
+    const b = declarations(BUTTON_CSS, base);
+    const h = declarations(BUTTON_CSS, hover);
+    const a = declarations(BUTTON_CSS, active);
+    expect(h.size).toBeGreaterThan(0);
+    expect(a.size).toBeGreaterThan(0);
+    // Each state changes something the base look doesn't set, and the two differ from each other.
+    for (const [k] of h) expect(b.has(k), `hover ${k}`).toBe(false);
+    for (const [k] of a) expect(b.has(k), `active ${k}`).toBe(false);
+    expect([...h].map(String).sort()).not.toEqual([...a].map(String).sort());
+    expect(h.get('filter')).not.toBe(a.get('filter'));
+    expect(a.get('transform')).toMatch(/scale\(0\.9\d*\)/);
+    expect(h.has('transform')).toBe(false);
+    // Touch has no :active for long enough, so the pressed class gets the same look.
+    expect(declarations(BUTTON_CSS, `.${BUTTON_CLASS}.pressed:not(:disabled)`)).toEqual(a);
+    // The states never change size, so tap targets keep their minimum (PRD 5.1).
+    for (const m of [b, h, a]) {
+      for (const k of m.keys()) expect(k).not.toMatch(/width|height|padding|margin/);
+    }
+    // Hover only where a real hover exists, so a tap on a phone doesn't leave it lit.
+    expect(BUTTON_CSS).toMatch(new RegExp(`@media \\(hover: hover\\) \\{ \\.${BUTTON_CLASS}:not\\(:disabled\\):hover`));
+  });
+
+  it('every inventory, shop, trade, card table and chat log button uses the shared button class', () => {
+    let checked = 0;
+    for (const p of panels()) {
+      p.open();
+      const buttons = [...p.el().querySelectorAll<HTMLElement>('button, .usable')];
+      for (const b of buttons) {
+        expect(b.classList.contains(BUTTON_CLASS), `${p.name}: ${b.className} ${b.textContent}`).toBe(true);
+        checked++;
+      }
+    }
+    const bag = document.querySelector<HTMLElement>('.lush-inv-toggle')!;
+    expect(bag.classList.contains(BUTTON_CLASS)).toBe(true);
+    expect(checked).toBeGreaterThan(10);
+  });
+
+  it('every controls button, in walking and chat mode, uses the shared button class', () => {
+    const tray = document.createElement('div');
+    tray.id = 'control-tray';
+    document.body.append(tray);
+    const controls = new Controls({ tray, getCameraYaw: () => 0 });
+    try {
+      const walking = [...tray.querySelectorAll('button')];
+      expect(walking.map((b) => b.textContent)).toEqual(['Chat', 'Interact', 'Wave', 'Run']);
+      controls.openChat();
+      const chat = [...tray.querySelectorAll('button')];
+      expect(chat.length).toBeGreaterThan(26);
+      for (const b of [...walking, ...chat]) expect(b.classList.contains(BUTTON_CLASS), b.textContent ?? '').toBe(true);
+    } finally {
+      controls.closeChat();
+    }
   });
 });

@@ -2,7 +2,7 @@ import { ShedColour } from '../protocol';
 import { CARD_TABLE_POSITIONS, inCardTableReach, type CardTablePosition, type CardTableStore, type ShedCardValue } from '../state/cardTables';
 import type { Point } from '../state/shop';
 import { hudLayout, place } from './hudLayout';
-import { addPressFeedbackWithin, PanelMotion } from './theme';
+import { addPressFeedbackWithin, BUTTON_CLASS, PanelMotion } from './theme';
 import { SHED_COLOURS, isWild, shedCardElement, shedColourCss, shedColourName } from './shedCards';
 
 /** The card table messages the panel sends; Session implements this. */
@@ -35,7 +35,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text = '
 }
 
 function button(cls: string, text: string, onClick: () => void): HTMLButtonElement {
-  const b = el('button', cls, text);
+  const b = el('button', `${cls} ${BUTTON_CLASS}`, text);
   b.type = 'button';
   b.addEventListener('click', onClick);
   return b;
@@ -279,6 +279,7 @@ export class CardTablePanel {
     const cards = store.hand?.tableId === this.tableId ? store.hand.cards : [];
     this.hand.replaceChildren(...cards.map((c) => {
       const b = shedCardElement('button', c);
+      b.classList.add(BUTTON_CLASS);
       b.type = 'button';
       b.disabled = !myTurn;
       b.addEventListener('click', () => this.play(c));

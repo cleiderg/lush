@@ -2,7 +2,7 @@ import { encodeItemAction } from '../net/codec';
 import { EquipSlot, ItemActionKind, ItemKind } from '../protocol';
 import type { Equipment, ItemState } from '../state/items';
 import { hudLayout, place } from './hudLayout';
-import { addPressFeedback, addPressFeedbackWithin, PanelMotion } from './theme';
+import { addPressFeedback, addPressFeedbackWithin, BUTTON_CLASS, PanelMotion } from './theme';
 
 export interface HudOptions {
   parent: HTMLElement;
@@ -58,7 +58,7 @@ export class Hud {
     this.gold = el('div', 'lush-hud-gold');
     this.hud.append(this.hp, this.level, this.gold);
 
-    this.toggle = el('button', 'lush-inv-toggle', 'Bag');
+    this.toggle = el('button', `lush-inv-toggle ${BUTTON_CLASS}`, 'Bag');
     this.toggle.type = 'button';
     this.toggle.setAttribute('aria-label', 'Inventory');
     this.toggle.setAttribute('aria-expanded', 'false');
@@ -114,7 +114,7 @@ export class Hud {
       const cell = el('div', id ? 'lush-equip-slot' : 'lush-equip-slot empty');
       cell.dataset.slot = key;
       if (id) {
-        cell.classList.add('usable');
+        cell.classList.add('usable', BUTTON_CLASS);
         cell.addEventListener('click', () => this.opts.send?.(encodeItemAction(ItemActionKind.Unequip, 0, slot)));
       }
       cell.append(el('span', 'lush-equip-label', label), el('span', 'lush-equip-name', id ? name(id) : 'Empty'));
@@ -126,7 +126,7 @@ export class Hud {
       if (slot.itemId) {
         const action = slotAction(items.item(slot.itemId)?.kind);
         if (action !== null) {
-          cell.classList.add('usable');
+          cell.classList.add('usable', BUTTON_CLASS);
           cell.addEventListener('click', () => this.opts.send?.(encodeItemAction(action, i)));
         }
         cell.append(el('span', 'lush-slot-name', name(slot.itemId)));
@@ -156,9 +156,8 @@ function injectStyle(): void {
 .lush-hud { box-sizing: border-box; z-index: 5; display: flex; flex-direction: column; justify-content: center; padding: 6px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 10px; background: rgba(20,20,30,.72); color: #fff; font: 600 13px/17px system-ui, sans-serif; pointer-events: none; user-select: none; -webkit-user-select: none; }
 .lush-hud-hp { color: #ff8a80; }
 .lush-hud-gold { color: #ffd54f; }
-.lush-inv-toggle { box-sizing: border-box; z-index: 5; min-width: 44px; min-height: 44px; border: var(--lush-border-strong); border-radius: var(--lush-radius); background: var(--lush-panel-bg); color: var(--lush-text); box-shadow: var(--lush-shadow); font: 600 var(--lush-text-sm) var(--lush-font-title); letter-spacing: 0.04em; touch-action: manipulation; -webkit-tap-highlight-color: transparent; transition: transform var(--lush-transition), background var(--lush-transition), border-color var(--lush-transition); }
+.lush-inv-toggle { box-sizing: border-box; z-index: 5; min-width: 44px; min-height: 44px; border: var(--lush-border-strong); border-radius: var(--lush-radius); background: var(--lush-panel-bg); color: var(--lush-text); box-shadow: var(--lush-shadow); font: 600 var(--lush-text-sm) var(--lush-font-title); letter-spacing: 0.04em; }
 .lush-inv-toggle.on { background: var(--lush-surface-pressed); border-color: var(--lush-gold-bright); color: var(--lush-gold-bright); }
-.lush-inv-toggle.pressed { transform: scale(0.94); background: var(--lush-surface-pressed); box-shadow: var(--lush-shadow-pressed); }
 .lush-inv { box-sizing: border-box; z-index: 5; display: flex; flex-direction: column; gap: var(--lush-space-2); padding: var(--lush-space-2) var(--lush-space-3) var(--lush-space-3); font-size: 12px; line-height: 14px; overflow-y: auto; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
 .lush-inv[hidden] { display: none; }
 .lush-inv-title { font-size: var(--lush-text-lg); }

@@ -1,7 +1,7 @@
 import { ChatKeyboardState, LETTER_ROWS, SYMBOL_ROWS } from '../input/chatKeyboard';
 import { KeyMovement } from '../input/desktop';
 import { Joystick, toWorldMove, type Vec2 } from '../input/joystick';
-import { addPressFeedback } from './theme';
+import { addPressFeedback, BUTTON_CLASS } from './theme';
 
 export interface ControlsOptions {
   tray: HTMLElement;
@@ -132,7 +132,7 @@ export class Controls {
 
     const buttons = el('div', 'lush-actions');
     const mk = (label: string, fn: () => void): HTMLButtonElement => {
-      const b = el('button', 'lush-btn', label);
+      const b = el('button', `lush-btn ${BUTTON_CLASS}`, label);
       b.type = 'button';
       addPressFeedback(b);
       b.addEventListener('click', fn);
@@ -161,11 +161,11 @@ export class Controls {
     tray.classList.add('chat');
     const top = el('div', 'lush-chat-top');
     this.field = el('div', 'lush-field');
-    const send = el('button', 'lush-btn', 'Send');
+    const send = el('button', `lush-btn ${BUTTON_CLASS}`, 'Send');
     send.type = 'button';
     addPressFeedback(send);
     send.addEventListener('click', () => this.send());
-    const close = el('button', 'lush-btn', '✕');
+    const close = el('button', `lush-btn ${BUTTON_CLASS}`, '✕');
     close.type = 'button';
     addPressFeedback(close);
     close.setAttribute('aria-label', 'Close chat');
@@ -181,7 +181,7 @@ export class Controls {
     this.keyArea.replaceChildren();
     const symbols = this.kb.page === 'symbols';
     const key = (label: string, fn: () => void, cls = ''): HTMLButtonElement => {
-      const b = el('button', `lush-key ${cls}`.trim(), label);
+      const b = el('button', `lush-key ${BUTTON_CLASS} ${cls}`.trim(), label);
       b.type = 'button';
       addPressFeedback(b);
       // Keep taps from stealing focus or starting browser gestures.
@@ -219,17 +219,15 @@ export class Controls {
 .lush-stick.pressed { border-color: var(--lush-gold-bright); box-shadow: var(--lush-shadow), 0 0 12px var(--lush-gold-dim), inset 0 0 18px rgba(0, 0, 0, 0.6); }
 .lush-knob { width: 56px; height: 56px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, var(--lush-surface-pressed), var(--lush-surface-raised)); border: var(--lush-border-strong); box-shadow: var(--lush-shadow); box-sizing: border-box; pointer-events: none; }
 .lush-actions { display: grid; grid-template-columns: repeat(2, 80px); gap: 10px; align-self: flex-end; margin-bottom: 8px; }
-.lush-btn { height: 52px; border: var(--lush-border-strong); border-radius: var(--lush-radius); background: var(--lush-panel-bg); color: var(--lush-text); box-shadow: var(--lush-shadow); font: 600 var(--lush-text-md) var(--lush-font-title); letter-spacing: 0.04em; touch-action: manipulation; -webkit-tap-highlight-color: transparent; transition: transform var(--lush-transition), background var(--lush-transition), box-shadow var(--lush-transition), border-color var(--lush-transition); }
+.lush-btn { height: 52px; border: var(--lush-border-strong); border-radius: var(--lush-radius); background: var(--lush-panel-bg); color: var(--lush-text); box-shadow: var(--lush-shadow); font: 600 var(--lush-text-md) var(--lush-font-title); letter-spacing: 0.04em; }
 .lush-btn.on { background: var(--lush-active); border-color: var(--lush-gold-bright); color: var(--lush-gold-bright); }
-.lush-btn.pressed { transform: scale(0.94); background: var(--lush-surface-pressed); border-color: var(--lush-gold-bright); box-shadow: var(--lush-shadow-pressed); }
-@media (hover: hover) { .lush-btn:hover { border-color: var(--lush-gold-bright); color: var(--lush-gold-bright); } .lush-key:hover { border-color: var(--lush-gold); } }
+.lush-btn.pressed { background: var(--lush-surface-pressed); }
 .lush-chat-top { display: flex; gap: 6px; }
 .lush-chat-top .lush-btn { height: 40px; padding: 0 12px; }
 .lush-field { flex: 1; min-width: 0; height: 40px; line-height: 40px; padding: 0 8px; background: var(--lush-text); color: #1a1714; border: var(--lush-border-strong); border-radius: var(--lush-radius-sm); box-sizing: border-box; overflow: hidden; white-space: nowrap; font: 16px/38px var(--lush-font-body); }
 .lush-keys { display: flex; flex-direction: column; gap: 5px; flex: 1; }
 .lush-row { display: flex; justify-content: center; gap: 4px; flex: 1; }
-.lush-key { flex: 1; max-width: 40px; border: var(--lush-border); border-radius: var(--lush-radius-sm); background: var(--lush-surface); color: var(--lush-text); font: 600 17px var(--lush-font-body); touch-action: manipulation; -webkit-tap-highlight-color: transparent; transition: transform var(--lush-transition), background var(--lush-transition); }
-.lush-key.pressed { transform: scale(0.92); background: var(--lush-surface-pressed); border-color: var(--lush-gold-bright); }
+.lush-key { flex: 1; max-width: 40px; border: var(--lush-border); border-radius: var(--lush-radius-sm); background: var(--lush-surface); color: var(--lush-text); font: 600 17px var(--lush-font-body); }
 .lush-key.wide { max-width: 64px; }
 .lush-key.space { max-width: none; flex: 4; }
 `;
