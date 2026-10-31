@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 13
+  Current = 14
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -622,6 +622,80 @@ table SkillResult {
   level: ubyte;      // the level needed, for NeedLevel
 }
 
+// Bank (D-051, docs/specs/skills.md: Bank). 200 slots; every item stacks,
+// so one slot holds any number of one item. Gold is not banked.
+
+// BankDeposit.amount and BankWithdraw.amount: All means every one the player
+// has (deposit) or every one in the bank (withdraw).
+enum BankAmount : uint {
+  All = 4294967295
+}
+
+// One bank slot inside BankState. Packed to 16 bytes. The quantity is 64
+// bits so a fully stacked slot can never overflow.
+struct BankSlot {
+  item_id: uint16;   // ItemDef.id
+  quantity: uint64;
+}
+
+// Client -> server: open the bank at the booth (within 2 tiles). The server
+// replies with BankResult, and on success sends BankState.
+table BankOpen {
+}
+
+// Client -> server: close the bank panel. No reply.
+table BankClose {
+}
+
+// Server -> client: the whole bank, sent when it opens and whenever it
+// changes while open. Lists the filled slots in order, at most 200.
+table BankState {
+  slots: [BankSlot];
+}
+
+// Client -> server: move amount of item_id from the inventory into the bank
+// (BankAmount.All for every one). The server replies with BankResult.
+table BankDeposit {
+  item_id: ushort;   // ItemDef.id
+  amount: uint32;    // or BankAmount.All
+}
+
+// Client -> server: move amount of item_id from the bank into the inventory
+// (BankAmount.All for every one). The server replies with BankResult.
+table BankWithdraw {
+  item_id: ushort;   // ItemDef.id
+  amount: uint32;    // or BankAmount.All
+}
+
+// Client -> server: deposit the whole inventory. The server replies with
+// BankResult.
+table BankDepositInventory {
+}
+
+// Client -> server: deposit everything equipped. The server replies with
+// BankResult.
+table BankDepositEquipment {
+}
+
+// BankResult.code values.
+enum BankResultCode : ubyte {
+  Ok = 0,
+  TooFar = 1,          // more than 2 tiles from the bank booth
+  InCombat = 2,        // the bank can't be opened or used during combat
+  InPvpZone = 3,       // the bank can't be opened or used in the PvP zone
+  BankFull = 4,        // all 200 slots are used by other items
+  InventoryFull = 5,   // no room in the inventory for the withdrawal
+  NotEnoughItems = 6,  // fewer items than the amount asked for
+  Busy = 7,            // an earlier bank request is still being saved
+  NotOpen = 8          // the bank isn't open
+}
+
+// Server -> client: the outcome of a BankOpen, BankDeposit, BankWithdraw,
+// BankDepositInventory or BankDepositEquipment.
+table BankResult {
+  code: BankResultCode;
+}
+
 union Message {
   Hello,
   Welcome,
@@ -671,7 +745,15 @@ union Message {
   SkillAction,
   ResourceState,
   LevelUp,
-  SkillResult
+  SkillResult,
+  BankOpen,
+  BankClose,
+  BankState,
+  BankDeposit,
+  BankWithdraw,
+  BankDepositInventory,
+  BankDepositEquipment,
+  BankResult
 }
 
 table Envelope {

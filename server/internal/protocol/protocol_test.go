@@ -44,8 +44,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 13 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 13", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 14 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 14", ProtocolVersionCurrent)
 	}
 }
 
@@ -1327,9 +1327,6 @@ func TestSkillMessageIDs(t *testing.T) {
 			t.Fatalf("%v = %d, want %d", m, m, 45+i)
 		}
 	}
-	if len(EnumNamesMessage) != 50 {
-		t.Fatalf("Message has %d values, want 50 (NONE plus 49 messages)", len(EnumNamesMessage))
-	}
 }
 
 func TestSkillEnums(t *testing.T) {
@@ -1543,6 +1540,163 @@ func TestRoundTripSkillResult(t *testing.T) {
 		if m.Skill() != skill || m.Code() != code || m.ItemId() != item || m.Level() != level {
 			t.Fatalf("got %v %v %d %d, want %v %v %d %d",
 				m.Skill(), m.Code(), m.ItemId(), m.Level(), skill, code, item, level)
+		}
+	}
+}
+
+func TestBankMessageIDs(t *testing.T) {
+	want := []Message{
+		MessageBankOpen, MessageBankClose, MessageBankState, MessageBankDeposit, MessageBankWithdraw,
+		MessageBankDepositInventory, MessageBankDepositEquipment, MessageBankResult,
+	}
+	for i, m := range want {
+		if int(m) != 50+i {
+			t.Fatalf("%v = %d, want %d", m, m, 50+i)
+		}
+	}
+	if len(EnumNamesMessage) != 58 {
+		t.Fatalf("Message has %d values, want 58 (NONE plus 57 messages)", len(EnumNamesMessage))
+	}
+}
+
+// Messages with no fields: BankOpen, BankClose, BankDepositInventory and
+// BankDepositEquipment.
+func TestRoundTripEmptyBankMessages(t *testing.T) {
+	for _, w := range []struct {
+		typ   Message
+		build func(*flatbuffers.Builder) flatbuffers.UOffsetT
+	}{
+		{MessageBankOpen, func(b *flatbuffers.Builder) flatbuffers.UOffsetT { BankOpenStart(b); return BankOpenEnd(b) }},
+		{MessageBankClose, func(b *flatbuffers.Builder) flatbuffers.UOffsetT { BankCloseStart(b); return BankCloseEnd(b) }},
+		{MessageBankDepositInventory, func(b *flatbuffers.Builder) flatbuffers.UOffsetT {
+			BankDepositInventoryStart(b)
+			return BankDepositInventoryEnd(b)
+		}},
+		{MessageBankDepositEquipment, func(b *flatbuffers.Builder) flatbuffers.UOffsetT {
+			BankDepositEquipmentStart(b)
+			return BankDepositEquipmentEnd(b)
+		}},
+	} {
+		b := flatbuffers.NewBuilder(16)
+		buf := finish(b, w.typ, w.build(b))
+		open(t, buf, w.typ)
+	}
+}
+
+type bankSlot struct {
+	item uint16
+	qty  uint64
+}
+
+func buildBankState(slots []bankSlot) []byte {
+	b := flatbuffers.NewBuilder(4096)
+	BankStateStartSlotsVector(b, len(slots))
+	for i := len(slots) - 1; i >= 0; i-- {
+		CreateBankSlot(b, slots[i].item, slots[i].qty)
+	}
+	vec := b.EndVector(len(slots))
+	BankStateStart(b)
+	BankStateAddSlots(b, vec)
+	return finish(b, MessageBankState, BankStateEnd(b))
+}
+
+func TestRoundTripBankState(t *testing.T) {
+	full := make([]bankSlot, 200)
+	for i := range full {
+		full[i] = bankSlot{uint16(i + 1), uint64(i) * 123456789}
+	}
+	full[0].qty = 1
+	full[198] = bankSlot{65535, 1<<53 + 1}  // beyond a JS number
+	full[199] = bankSlot{65534, ^uint64(0)} // the largest quantity
+	for ci, slots := range [][]bankSlot{full, {{7, 4294967296}}, nil} {
+		buf := buildBankState(slots)
+
+		var m BankState
+		tbl := open(t, buf, MessageBankState)
+		m.Init(tbl.Bytes, tbl.Pos)
+		var got []bankSlot
+		var s BankSlot
+		for i := 0; i < m.SlotsLength(); i++ {
+			if !m.Slots(&s, i) {
+				t.Fatalf("case %d: slot %d missing", ci, i)
+			}
+			got = append(got, bankSlot{s.ItemId(), s.Quantity()})
+		}
+		if !reflect.DeepEqual(got, slots) {
+			t.Fatalf("case %d: got %+v, want %+v", ci, got, slots)
+		}
+	}
+}
+
+// Each extra bank slot adds exactly 16 bytes.
+func TestBankSlotIsSixteenBytes(t *testing.T) {
+	one := buildBankState([]bankSlot{{1, 2}})
+	two := buildBankState([]bankSlot{{1, 2}, {3, 4}})
+	if d := len(two) - len(one); d != 16 {
+		t.Fatalf("one more slot adds %d bytes, want 16", d)
+	}
+}
+
+func TestRoundTripBankDepositWithdraw(t *testing.T) {
+	if BankAmountAll != 4294967295 || len(EnumNamesBankAmount) != 1 {
+		t.Fatalf("BankAmount values changed: %v", EnumNamesBankAmount)
+	}
+	for _, w := range []struct {
+		item   uint16
+		amount uint32
+	}{
+		{1, 1}, {42, 5}, {65535, 1234}, {300, uint32(BankAmountAll)},
+	} {
+		b := flatbuffers.NewBuilder(32)
+		BankDepositStart(b)
+		BankDepositAddItemId(b, w.item)
+		BankDepositAddAmount(b, w.amount)
+		buf := finish(b, MessageBankDeposit, BankDepositEnd(b))
+		var d BankDeposit
+		tbl := open(t, buf, MessageBankDeposit)
+		d.Init(tbl.Bytes, tbl.Pos)
+		if d.ItemId() != w.item || d.Amount() != w.amount {
+			t.Fatalf("deposit: got %d %d, want %+v", d.ItemId(), d.Amount(), w)
+		}
+
+		b = flatbuffers.NewBuilder(32)
+		BankWithdrawStart(b)
+		BankWithdrawAddItemId(b, w.item)
+		BankWithdrawAddAmount(b, w.amount)
+		buf = finish(b, MessageBankWithdraw, BankWithdrawEnd(b))
+		var wd BankWithdraw
+		tbl = open(t, buf, MessageBankWithdraw)
+		wd.Init(tbl.Bytes, tbl.Pos)
+		if wd.ItemId() != w.item || wd.Amount() != w.amount {
+			t.Fatalf("withdraw: got %d %d, want %+v", wd.ItemId(), wd.Amount(), w)
+		}
+	}
+}
+
+func TestRoundTripBankResult(t *testing.T) {
+	codes := []BankResultCode{
+		BankResultCodeOk, BankResultCodeTooFar, BankResultCodeInCombat, BankResultCodeInPvpZone,
+		BankResultCodeBankFull, BankResultCodeInventoryFull, BankResultCodeNotEnoughItems,
+		BankResultCodeBusy, BankResultCodeNotOpen,
+	}
+	for i, code := range codes {
+		if int(code) != i {
+			t.Fatalf("%v = %d, want %d (new codes go at the end)", code, code, i)
+		}
+	}
+	if len(codes) != len(EnumNamesBankResultCode) {
+		t.Fatalf("BankResultCode has %d values, want %d", len(EnumNamesBankResultCode), len(codes))
+	}
+	for _, code := range codes {
+		b := flatbuffers.NewBuilder(16)
+		BankResultStart(b)
+		BankResultAddCode(b, code)
+		buf := finish(b, MessageBankResult, BankResultEnd(b))
+		var m BankResult
+		tbl := open(t, buf, MessageBankResult)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.Code() != code {
+			t.Fatalf("got %v, want %v", m.Code(), code)
 		}
 	}
 }

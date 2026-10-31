@@ -11,6 +11,8 @@ import {
   CardTableCatalog, CardTableInfo, CardTableLeave, CardTableReady, CardTableResult, CardTableResultCode, CardTableSit,
   CardTableState, ShedCard, ShedColour, ShedDraw, ShedHand, ShedPlay, ShedState, ShedSymbol,
   FishingSpotState, LevelUp, ResourceState, Skill, SkillAction, SkillResult, SkillResultCode, SkillStats, SkillTarget,
+  BankAmount, BankClose, BankDeposit, BankDepositEquipment, BankDepositInventory, BankOpen, BankResult, BankResultCode,
+  BankSlot, BankState, BankWithdraw,
 } from './index.js';
 
 function finish(b: flatbuffers.Builder, type: Message, msg: flatbuffers.Offset): Uint8Array {
@@ -40,7 +42,7 @@ function buildSnapshot(n: number): Uint8Array {
 
 describe('protocol', () => {
   it('exposes the version constant', () => {
-    expect(ProtocolVersion.Current).toBe(13);
+    expect(ProtocolVersion.Current).toBe(14);
   });
 
   it('keeps a 101-entity snapshot under 1200 bytes', () => {
@@ -657,7 +659,6 @@ describe('protocol', () => {
     expect([
       Message.SkillStats, Message.SkillAction, Message.ResourceState, Message.LevelUp, Message.SkillResult,
     ]).toEqual([45, 46, 47, 48, 49]);
-    expect(Object.values(Message).filter((v) => typeof v === 'number')).toHaveLength(50);
   });
 
   it('keeps Animation, Skill and SkillTarget values', () => {
@@ -756,5 +757,87 @@ describe('protocol', () => {
       const m = open(buf, Message.SkillResult, new SkillResult());
       expect([m.skill(), m.code(), m.itemId(), m.level()]).toEqual([skill, code, 100 + i, i * 3]);
     });
+  });
+
+  it('appends the bank messages to the end of Message', () => {
+    expect([
+      Message.BankOpen, Message.BankClose, Message.BankState, Message.BankDeposit, Message.BankWithdraw,
+      Message.BankDepositInventory, Message.BankDepositEquipment, Message.BankResult,
+    ]).toEqual([50, 51, 52, 53, 54, 55, 56, 57]);
+    expect(Object.values(Message).filter((v) => typeof v === 'number')).toHaveLength(58);
+  });
+
+  it('round-trips the bank messages with no fields', () => {
+    const cases: [Message, (b: flatbuffers.Builder) => flatbuffers.Offset][] = [
+      [Message.BankOpen, (b) => { BankOpen.startBankOpen(b); return BankOpen.endBankOpen(b); }],
+      [Message.BankClose, (b) => { BankClose.startBankClose(b); return BankClose.endBankClose(b); }],
+      [Message.BankDepositInventory, (b) => {
+        BankDepositInventory.startBankDepositInventory(b);
+        return BankDepositInventory.endBankDepositInventory(b);
+      }],
+      [Message.BankDepositEquipment, (b) => {
+        BankDepositEquipment.startBankDepositEquipment(b);
+        return BankDepositEquipment.endBankDepositEquipment(b);
+      }],
+    ];
+    const objs = [new BankOpen(), new BankClose(), new BankDepositInventory(), new BankDepositEquipment()];
+    cases.forEach(([type, build], i) => {
+      const b = new flatbuffers.Builder(16);
+      expect(open(finish(b, type, build(b)), type, objs[i])).toBe(objs[i]);
+    });
+  });
+
+  it('round-trips a full 200-slot BankState with 64-bit quantities', () => {
+    const full: [number, bigint][] = [];
+    for (let i = 0; i < 200; i++) full.push([i + 1, BigInt(i) * 123456789n]);
+    full[0][1] = 1n;
+    full[198] = [65535, 2n ** 53n + 1n];        // beyond a JS number
+    full[199] = [65534, 2n ** 64n - 1n];        // the largest quantity
+    for (const slots of [full, [[7, 4294967296n]] as [number, bigint][], [] as [number, bigint][]]) {
+      const b = new flatbuffers.Builder(4096);
+      BankState.startSlotsVector(b, slots.length);
+      for (let i = slots.length - 1; i >= 0; i--) BankSlot.createBankSlot(b, ...slots[i]);
+      const vec = b.endVector();
+      const buf = finish(b, Message.BankState, BankState.createBankState(b, vec));
+      const m = open(buf, Message.BankState, new BankState());
+      expect(m.slotsLength()).toBe(slots.length);
+      slots.forEach((want, i) => {
+        const s = m.slots(i)!;
+        expect([s.itemId(), s.quantity()]).toEqual(want);
+      });
+    }
+    expect(BankSlot.sizeOf()).toBe(16);
+  });
+
+  it('round-trips BankDeposit and BankWithdraw, including BankAmount.All', () => {
+    expect(BankAmount.All).toBe(4294967295);
+    const cases: [number, number][] = [[1, 1], [42, 5], [65535, 1234], [300, BankAmount.All]];
+    for (const [item, amount] of cases) {
+      let b = new flatbuffers.Builder(32);
+      let buf = finish(b, Message.BankDeposit, BankDeposit.createBankDeposit(b, item, amount));
+      const d = open(buf, Message.BankDeposit, new BankDeposit());
+      expect([d.itemId(), d.amount()]).toEqual([item, amount]);
+
+      b = new flatbuffers.Builder(32);
+      buf = finish(b, Message.BankWithdraw, BankWithdraw.createBankWithdraw(b, item, amount));
+      const w = open(buf, Message.BankWithdraw, new BankWithdraw());
+      expect([w.itemId(), w.amount()]).toEqual([item, amount]);
+    }
+  });
+
+  it('round-trips BankResult', () => {
+    const codes = [
+      BankResultCode.Ok, BankResultCode.TooFar, BankResultCode.InCombat, BankResultCode.InPvpZone,
+      BankResultCode.BankFull, BankResultCode.InventoryFull, BankResultCode.NotEnoughItems,
+      BankResultCode.Busy, BankResultCode.NotOpen,
+    ];
+    // New codes go at the end, so older codes keep their values.
+    codes.forEach((code, i) => expect(code).toBe(i));
+    expect(Object.values(BankResultCode).filter((v) => typeof v === 'number')).toHaveLength(codes.length);
+    for (const code of codes) {
+      const b = new flatbuffers.Builder(16);
+      const buf = finish(b, Message.BankResult, BankResult.createBankResult(b, code));
+      expect(open(buf, Message.BankResult, new BankResult()).code()).toBe(code);
+    }
   });
 });
