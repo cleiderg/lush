@@ -60,6 +60,39 @@ describe('Controls walking mode', () => {
     expect(s.controls.isRunning).toBe(false);
   });
 
+  it('keeps the joystick left and the action buttons right, styled from the theme', () => {
+    const s = setup();
+    controls = s.controls;
+    const [first, second] = [...s.tray.children];
+    expect(first.classList.contains('lush-stick')).toBe(true);
+    expect(second.classList.contains('lush-actions')).toBe(true);
+    const css = [...document.head.querySelectorAll('style')].map((x) => x.textContent).join('\n');
+    expect(css).toMatch(/justify-content: space-between/);
+    expect(css).toMatch(/\.lush-stick \{ width: 128px; height: 128px;[^}]*var\(--lush-border-strong\)/);
+    expect(css).toMatch(/\.lush-actions \{ display: grid; grid-template-columns: repeat\(2, 80px\)/);
+    expect(css).toMatch(/\.lush-btn \{ height: 52px;[^}]*var\(--lush-panel-bg\)[^}]*var\(--lush-font-title\)/);
+    expect(css).toMatch(/\.lush-btn\.pressed \{/);
+  });
+
+  it('pressing an action button or the joystick adds a pressed state', () => {
+    const s = setup();
+    controls = s.controls;
+    for (const label of ['Chat', 'Interact', 'Wave', 'Run']) {
+      const b = button(s.tray, label);
+      b.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1 }));
+      expect(b.classList.contains('pressed'), label).toBe(true);
+      b.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1 }));
+      expect(b.classList.contains('pressed'), label).toBe(false);
+    }
+    const stick = s.tray.querySelector('.lush-stick') as HTMLElement;
+    stick.setPointerCapture = () => {};
+    stick.getBoundingClientRect = () => ({ left: 0, top: 0, width: 128, height: 128, right: 128, bottom: 128, x: 0, y: 0 }) as DOMRect;
+    stick.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 2, clientX: 64, clientY: 64 }));
+    expect(stick.classList.contains('pressed')).toBe(true);
+    stick.dispatchEvent(new PointerEvent('pointerup', { pointerId: 2 }));
+    expect(stick.classList.contains('pressed')).toBe(false);
+  });
+
   it('WASD and arrows move; Enter opens chat', () => {
     const s = setup();
     controls = s.controls;
