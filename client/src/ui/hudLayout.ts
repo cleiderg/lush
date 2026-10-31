@@ -26,6 +26,11 @@ export interface HudLayout {
   tradePrompt: Rect;
   /** The PvP warning banner / in-zone indicator, a strip just above the control tray and below the panels. */
   pvp: Rect;
+  /**
+   * The Interact prompt (what Interact does now): a strip centred in the app column just under the top band.
+   * Panels open over it.
+   */
+  interact: Rect;
   /** The chat log, a strip at the bottom of the panel area just above the PvP strip; hidden while a panel is open. */
   chat: Rect;
 }
@@ -46,6 +51,8 @@ const TOGGLE = 52;
 const PROMPT_H = 88;
 const PVP_H = 36;
 const CHAT_H = 120;
+const INTERACT_W = 300;
+const INTERACT_H = 36;
 
 /**
  * Where the location panel, HUD, inventory and Retro toggles, inventory panel, shop panel and trade window go for a viewport of
@@ -78,7 +85,12 @@ export function hudLayout(width: number, height: number): HudLayout {
   const tradePrompt = { ...panel, h: Math.min(PROMPT_H, panel.h) };
   const chatH = Math.min(CHAT_H, panel.h);
   const chat = { x: panel.x, y: panel.y + panel.h - chatH, w: panel.w, h: chatH };
-  return { controls, location, hud, toggle, retro, panel, shop: { ...panel }, trade: { ...panel }, cardTable: { ...panel }, tradePrompt, pvp, chat };
+  const interactW = Math.min(INTERACT_W, appW - 2 * MARGIN);
+  const interact = { x: left + (appW - interactW) / 2, y: panelTop, w: interactW, h: INTERACT_H };
+  return {
+    controls, location, hud, toggle, retro, panel, shop: { ...panel }, trade: { ...panel }, cardTable: { ...panel }, tradePrompt, pvp,
+    chat, interact,
+  };
 }
 
 export function intersects(a: Rect, b: Rect): boolean {
