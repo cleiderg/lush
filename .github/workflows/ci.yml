@@ -98,6 +98,19 @@ jobs:
         if: steps.has.outputs.yes == 'true'
         working-directory: client
         run: npm run build
+      - name: Detect shots
+        id: shots
+        if: steps.has.outputs.yes == 'true'
+        run: if grep -q '"shots"' client/package.json; then echo "yes=true" >> "$GITHUB_OUTPUT"; else echo "yes=false" >> "$GITHUB_OUTPUT"; fi
+      - name: shots
+        if: steps.shots.outputs.yes == 'true'
+        working-directory: client
+        run: npx playwright install --with-deps chromium && npm run shots
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.shots.outputs.yes == 'true'
+        with:
+          name: shots
+          path: client/.shots/
 
   protocol:
     runs-on: ubuntu-latest
