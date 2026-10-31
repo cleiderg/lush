@@ -14,14 +14,14 @@ export interface SlotDef {
 }
 
 export const SLOTS: readonly SlotDef[] = [
-  // Held in the right hand, pointing forward (+Z is the facing direction).
-  { slot: 'weapon', part: 'armR', size: [0.05, 0.05, 0.6], offset: [0, -0.52, 0.22] },
-  // Cap over the top of the head.
-  { slot: 'head', part: 'head', size: [0.3, 0.12, 0.3], offset: [0, 0.27, 0] },
+  // Gripped in the right hand at the bottom of the sleeve, pointing forward (+Z is the facing direction).
+  { slot: 'weapon', part: 'armR', size: [0.06, 0.06, 0.62], offset: [0, -0.34, 0.22] },
+  // Cap over the top of the head and its hair (head pivot is the neck; the head is 0.56 tall).
+  { slot: 'head', part: 'head', size: [0.68, 0.2, 0.64], offset: [0, 0.55, 0] },
   // Shell slightly bigger than the torso so it covers the shirt.
-  { slot: 'body', part: 'torso', size: [0.44, 0.5, 0.24], offset: [0, 0.34, 0] },
+  { slot: 'body', part: 'torso', size: [0.6, 0.5, 0.4], offset: [0, 0.27, 0] },
   // Flat board on the outside of the left forearm.
-  { slot: 'shield', part: 'armL', size: [0.05, 0.38, 0.32], offset: [-0.09, -0.32, 0.04] },
+  { slot: 'shield', part: 'armL', size: [0.05, 0.4, 0.36], offset: [-0.11, -0.24, 0.02] },
 ];
 
 /** Flat colours for known items (docs/specs/gameplay.md), by catalog name. */
