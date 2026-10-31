@@ -11,6 +11,7 @@ import { Npcs } from './npcs';
 import { ChatText } from './chatText';
 import { AreaMarkers, loadAreas } from './gameAreas';
 import { CardTables, loadCardTables } from './cardTables';
+import { Nature } from './nature';
 import { Props, loadProps } from './propKit';
 import { SkyRig } from './sky';
 import type { CampusData } from './mapData';
@@ -40,6 +41,8 @@ export class WorldScene {
   readonly map = new CampusMap(loadCampus());
   readonly areas = new AreaMarkers(loadAreas());
   readonly cardTables = new CardTables(loadCardTables());
+  /** Grass tufts and flowers, instanced per map chunk. */
+  readonly nature = new Nature(loadCampus(), { exclude: [loadCardTables().plaza] });
   /** Campus props from props.json, merged per chunk. */
   readonly props = new Props(loadProps());
   /** Sun, ambient, sky colour and fog, following WorldView.sky. */
@@ -65,11 +68,17 @@ export class WorldScene {
     this.sky.update(undefined, 0, 0);
     this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.areas.group, this.player.root, this.remotes.group, this.shadows.group, this.healthBars.group);
     // After the players: tests find the remote-player instanced meshes as the first ones in the scene.
-    this.scene.add(this.cardTables.group, this.props.group);
+    this.scene.add(this.cardTables.group, this.props.group, this.nature.group);
+    // Cull again for the camera actually rendering, in case its aspect changed since the last view.
+    this.scene.onBeforeRender = (_renderer, _scene, camera) => this.nature.cull(camera);
     // The local player is drawn (at the origin) before the first view arrives, as a plain mesh would be.
     this.player.update(0, 0, 0, 0);
     this.remotes.update([], undefined, 0, this.player);
     this.shadows.update([{ x: 0, z: 0, radius: PLAYER_SHADOW_RADIUS }]);
+    // Nature starts culled as for a camera following the origin, where the player is drawn until the first view.
+    const start = new CameraRig(this.rig.camera.aspect);
+    start.follow(0, 0);
+    this.nature.cull(start.camera);
   }
 
   update(view: WorldView): void {
@@ -102,6 +111,7 @@ export class WorldScene {
     }
     this.shadows.update(this.shadowList(view));
     this.rig.follow(local.x, local.z);
+    this.nature.cull(this.rig.camera);
     this.sky.update(view.sky, local.x, local.z);
     // Hitsplats join the scene with the first hit, so a view without hits leaves the graph as it was.
     if (view.hits?.length && !this.hitsplats.group.parent) this.scene.add(this.hitsplats.group);
@@ -165,6 +175,24 @@ export function countDrawCalls(root: THREE.Object3D): number {
   return n;
 }
 
+/**
+ * Whether the renderer would draw `mesh` for `frustum`. Like three.js, an instanced mesh is culled by
+ * the bounding sphere of all its instances, and only when frustumCulled is set.
+ */
+function inView(frustum: THREE.Frustum, mesh: THREE.Mesh): boolean {
+  if (!mesh.frustumCulled) return true;
+  const inst = mesh as THREE.InstancedMesh;
+  let s: THREE.Sphere;
+  if (inst.isInstancedMesh) {
+    if (!inst.boundingSphere) inst.computeBoundingSphere();
+    s = inst.boundingSphere!.clone();
+  } else {
+    if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+    s = mesh.geometry.boundingSphere!.clone();
+  }
+  return frustum.intersectsSphere(s.applyMatrix4(mesh.matrixWorld));
+}
+
 /** Draw calls after frustum culling, as the renderer would issue them for `camera`. */
 export function countDrawCallsInView(root: THREE.Object3D, camera: THREE.Camera): number {
   camera.updateMatrixWorld();
@@ -177,11 +205,7 @@ export function countDrawCallsInView(root: THREE.Object3D, camera: THREE.Camera)
     if (!mesh.isMesh) return;
     const inst = o as THREE.InstancedMesh;
     if (inst.isInstancedMesh && inst.count === 0) return;
-    if (mesh.frustumCulled && !inst.isInstancedMesh) {
-      if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
-      const s = mesh.geometry.boundingSphere!.clone().applyMatrix4(mesh.matrixWorld);
-      if (!frustum.intersectsSphere(s)) return;
-    }
+    if (!inView(frustum, mesh)) return;
     n++;
   });
   return n;
@@ -199,10 +223,7 @@ export function countTrianglesInView(root: THREE.Object3D, camera: THREE.Camera)
     if (!mesh.isMesh) return;
     const inst = o as THREE.InstancedMesh;
     const g = mesh.geometry;
-    if (!inst.isInstancedMesh) {
-      if (!g.boundingSphere) g.computeBoundingSphere();
-      if (!frustum.intersectsSphere(g.boundingSphere!.clone().applyMatrix4(mesh.matrixWorld))) return;
-    }
+    if (!inView(frustum, mesh)) return;
     const per = (g.index ? g.index.count : g.getAttribute('position').count) / 3;
     tris += per * (inst.isInstancedMesh ? inst.count : 1);
   });
