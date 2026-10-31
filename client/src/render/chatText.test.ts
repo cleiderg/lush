@@ -2,7 +2,15 @@ import { Window } from 'happy-dom';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { WorldScene } from './scene';
-import { CHAT_HEIGHT, MAX_CHAT_CHARS, clipChat } from './chatText';
+import {
+  CHAT_BUBBLE_CLASS,
+  CHAT_BUBBLE_CSS,
+  CHAT_HEIGHT,
+  CHAT_TAIL_CLASS,
+  MAX_CHAT_CHARS,
+  bubbleOpacity,
+  clipChat,
+} from './chatText';
 import { CHARACTER_HEIGHT } from './character';
 import type { ChatBubbleView, WorldView } from './worldView';
 
@@ -144,5 +152,64 @@ describe('overhead chat text', () => {
     const long = 'x'.repeat(200);
     expect([...clipChat(long)]).toHaveLength(MAX_CHAT_CHARS);
     expect(clipChat('short')).toBe('short');
+  });
+  it('#383 AC1: bubble opacity follows the view, defaults to 1, and 0 hides the bubble', () => {
+    const w = new WorldScene();
+    w.update(view([{ id: 1, text: 'fading' }]));
+    const label = w.chat.shown.get(1)!;
+    expect(label.element.style.opacity).toBe('1');
+    expect(label.visible).toBe(true);
+
+    w.update(view([{ id: 1, text: 'fading', opacity: 0.4 }]));
+    expect(w.chat.shown.get(1)).toBe(label);
+    expect(label.element.style.opacity).toBe('0.4');
+    expect(label.visible).toBe(true);
+
+    w.update(view([{ id: 1, text: 'fading', opacity: 0 }]));
+    expect(label.element.style.opacity).toBe('0');
+    // CSS2DRenderer gives invisible objects display:none.
+    expect(label.visible).toBe(false);
+
+    w.update(view([{ id: 1, text: 'fading', opacity: 1 }]));
+    expect(label.element.style.opacity).toBe('1');
+    expect(label.visible).toBe(true);
+  });
+
+  it('#383 AC1: clamps opacity to 0..1 and treats missing as 1', () => {
+    expect(bubbleOpacity(undefined)).toBe(1);
+    expect(bubbleOpacity(Number.NaN)).toBe(1);
+    expect(bubbleOpacity(-0.5)).toBe(0);
+    expect(bubbleOpacity(2)).toBe(1);
+    expect(bubbleOpacity(0.25)).toBe(0.25);
+  });
+
+  it('#383 AC2: each bubble has the bubble class, themed rounded italic serif CSS, and a tail', () => {
+    const w = new WorldScene();
+    w.update(view([
+      { id: 0, text: 'Smell that?' },
+      { id: 1, text: 'Old brandy and older mud.' },
+    ]));
+    // The bubble rule: rounded corners, italic serif, colours from the theme's custom properties.
+    const rule = CHAT_BUBBLE_CSS.match(new RegExp(`:host\\(\\.${CHAT_BUBBLE_CLASS}\\)\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+    expect(rule).toMatch(/border-radius:\s*var\(--lush-radius\b/);
+    expect(rule).toMatch(/font-style:\s*italic/);
+    expect(rule).toMatch(/font-family:\s*var\(--lush-font-body\b[^;]*serif/);
+    expect(rule).toMatch(/[^-]color:\s*var\(--lush-text\b/);
+    expect(rule).toMatch(/background:\s*var\(--lush-panel-bg/);
+    expect(rule).toMatch(/border:\s*var\(--lush-border\b/);
+    expect(rule).toMatch(/pointer-events:\s*none/);
+    const tailRule = CHAT_BUBBLE_CSS.match(new RegExp(`\\.${CHAT_TAIL_CLASS}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+    expect(tailRule).toMatch(/background:\s*var\(--lush-panel-bg/);
+
+    for (const id of [0, 1]) {
+      const el = w.chat.shown.get(id)!.element;
+      expect(el.classList.contains(CHAT_BUBBLE_CLASS)).toBe(true);
+      const root = el.shadowRoot!;
+      expect(root).not.toBeNull();
+      expect(root.querySelector('style')!.textContent).toBe(CHAT_BUBBLE_CSS);
+      expect(root.querySelectorAll(`.${CHAT_TAIL_CLASS}`)).toHaveLength(1);
+      expect(root.querySelector('slot')).not.toBeNull();
+    }
+    expect(w.chat.shown.get(1)!.element.textContent).toBe('Old brandy and older mud.');
   });
 });

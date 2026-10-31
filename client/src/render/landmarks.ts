@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import type { MeshBuilder } from './campusMap';
+import {
+  DOWN, UP, band, door, faces, framedWindow, offset, panel, quad, ring, slab, walls,
+  type DoorLook, type Face, type P, type Ring, type WindowLook,
+} from './facade';
 import type { Building, CampusData } from './mapData';
 
 /**
@@ -27,70 +31,6 @@ export function isLandmark(id: number): boolean {
 }
 
 const DM = 0.1;
-const UP = [0, 1, 0];
-const DOWN = [0, -1, 0];
-
-type P = { x: number; z: number };
-
-interface Ring {
-  pts: P[];
-  /** Outward unit normal of edge i (from pts[i] to pts[i + 1]). */
-  normals: P[];
-}
-
-function ring(p: number[]): Ring {
-  const pts: P[] = [];
-  for (let i = 0; i < p.length; i += 2) pts.push({ x: p[i] * DM, z: p[i + 1] * DM });
-  let area = 0;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) area += pts[j].x * pts[i].z - pts[i].x * pts[j].z;
-  const ccw = area > 0;
-  const normals = pts.map((a, i) => {
-    const c = pts[(i + 1) % pts.length];
-    const dx = c.x - a.x, dz = c.z - a.z;
-    const l = Math.hypot(dx, dz) || 1;
-    return ccw ? { x: dz / l, z: -dx / l } : { x: -dz / l, z: dx / l };
-  });
-  return { pts, normals };
-}
-
-/** The outline moved `d` metres outward (negative: inward), mitred at the corners. */
-function offset(r: Ring, d: number): P[] {
-  const n = r.pts.length;
-  return r.pts.map((p, i) => {
-    const a = r.normals[(i + n - 1) % n], b = r.normals[i];
-    const k = d / Math.max(0.25, 1 + a.x * b.x + a.z * b.z);
-    return { x: p.x + (a.x + b.x) * k, z: p.z + (a.z + b.z) * k };
-  });
-}
-
-function quad(b: MeshBuilder, a: number[], c: number[], d: number[], e: number[], want: number[], color: number): void {
-  b.tri(a, c, d, want, color);
-  b.tri(a, d, e, want, color);
-}
-
-/** Walls along a closed outline from y0 to y1, facing the ring's outward normals. */
-function walls(b: MeshBuilder, r: Ring, pts: P[], y0: number, y1: number, color: number): void {
-  for (let i = 0; i < pts.length; i++) {
-    const a = pts[i], c = pts[(i + 1) % pts.length], n = r.normals[i];
-    quad(b, [a.x, y0, a.z], [c.x, y0, c.z], [c.x, y1, c.z], [a.x, y1, a.z], [n.x, 0, n.z], color);
-  }
-}
-
-/** A flat polygon at height y. */
-function slab(b: MeshBuilder, pts: P[], y: number, color: number, want: number[] = UP): void {
-  const v = pts.map((p) => new THREE.Vector2(p.x, p.z));
-  for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(v, [])) {
-    b.tri([v[i].x, y, v[i].y], [v[j].x, y, v[j].y], [v[k].x, y, v[k].y], want, color);
-  }
-}
-
-/** The flat band between two outlines with matching vertices (a ledge or soffit). */
-function band(b: MeshBuilder, inner: P[], outer: P[], y: number, want: number[], color: number): void {
-  for (let i = 0; i < inner.length; i++) {
-    const j = (i + 1) % inner.length;
-    quad(b, [inner[i].x, y, inner[i].z], [inner[j].x, y, inner[j].z], [outer[j].x, y, outer[j].z], [outer[i].x, y, outer[i].z], want, color);
-  }
-}
 
 /**
  * A box of half-size hu (along unit u) by hv (across), from y0 to y1, centred on (cx, cz).
@@ -119,16 +59,6 @@ function pyramid(b: MeshBuilder, cx: number, cz: number, u: P, h: number, y0: nu
   }
 }
 
-interface Edge { a: P; t: P; n: P; len: number }
-
-function edges(r: Ring): Edge[] {
-  return r.pts.map((a, i) => {
-    const c = r.pts[(i + 1) % r.pts.length];
-    const len = Math.hypot(c.x - a.x, c.z - a.z);
-    return { a, t: { x: (c.x - a.x) / (len || 1), z: (c.z - a.z) / (len || 1) }, n: r.normals[i], len };
-  });
-}
-
 /** Evenly spaced positions along an edge, keeping `margin` clear of both corners. */
 function along(len: number, spacing: number, margin: number): number[] {
   const count = Math.floor((len - 2 * margin) / spacing) + 1;
@@ -137,42 +67,55 @@ function along(len: number, spacing: number, margin: number): number[] {
   return Array.from({ length: count }, (_, i) => start + i * spacing);
 }
 
-/** Window panes standing just proud of the wall, one row from y0 to y1. */
-function windows(b: MeshBuilder, r: Ring, y0: number, y1: number, spacing: number, width: number, color: number): void {
-  const off = 0.06;
-  for (const e of edges(r)) {
+/** Where a door is: the face index, its centre along that face and its width. */
+interface Doorway { face: number; s: number; w: number }
+
+/** Whether something `w` wide centred `s` along face `i` would overlap the doorway. */
+function blocks(d: Doorway | undefined, i: number, s: number, w: number): boolean {
+  return !!d && d.face === i && Math.abs(s - d.s) < (w + d.w) / 2 + 0.3;
+}
+
+/** A door at the middle of the longest face of `pts` (the ring's outline by default). */
+function mainDoor(b: MeshBuilder, r: Ring, w: number, h: number, look: DoorLook, pts: P[] = r.pts): Doorway {
+  const fs = faces(r, pts);
+  const i = fs.reduce((m, f, k) => (f.len > fs[m].len ? k : m), 0);
+  door(b, fs[i], fs[i].len / 2, w, h, look);
+  return { face: i, s: fs[i].len / 2, w };
+}
+
+/** Framed windows standing just proud of the wall, one row from y0 to y1, clear of the doorway. */
+function windows(b: MeshBuilder, r: Ring, y0: number, y1: number, spacing: number, width: number, look: WindowLook, avoid?: Doorway): void {
+  faces(r).forEach((e, i) => {
     for (const s of along(e.len, spacing, width / 2 + 0.6)) {
-      const p0 = { x: e.a.x + e.t.x * (s - width / 2) + e.n.x * off, z: e.a.z + e.t.z * (s - width / 2) + e.n.z * off };
-      const p1 = { x: p0.x + e.t.x * width, z: p0.z + e.t.z * width };
-      quad(b, [p0.x, y0, p0.z], [p1.x, y0, p1.z], [p1.x, y1, p1.z], [p0.x, y1, p0.z], [e.n.x, 0, e.n.z], color);
+      if (!blocks(avoid, i, s, width)) framedWindow(b, e, s, width, y0, y1, look);
     }
-  }
+  });
 }
 
-/** One long glazed ribbon per edge, from y0 to y1. */
-function ribbons(b: MeshBuilder, r: Ring, y0: number, y1: number, margin: number, color: number): void {
-  const off = 0.06;
-  for (const e of edges(r)) {
+/** One long framed glazed ribbon per edge, from y0 to y1. */
+function ribbons(b: MeshBuilder, r: Ring, y0: number, y1: number, margin: number, look: WindowLook): void {
+  for (const e of faces(r)) {
     if (e.len < 2 * margin + 1) continue;
-    const p0 = { x: e.a.x + e.t.x * margin + e.n.x * off, z: e.a.z + e.t.z * margin + e.n.z * off };
-    const p1 = { x: p0.x + e.t.x * (e.len - 2 * margin), z: p0.z + e.t.z * (e.len - 2 * margin) };
-    quad(b, [p0.x, y0, p0.z], [p1.x, y0, p1.z], [p1.x, y1, p1.z], [p0.x, y1, p0.z], [e.n.x, 0, e.n.z], color);
+    panel(b, e, margin - 0.12, e.len - margin + 0.12, y0 - 0.12, y1 + 0.12, 0.04, look.frame);
+    panel(b.glass, e, margin, e.len - margin, y0, y1, 0.07, look.glass);
+    b.windows++;
   }
 }
 
-/** Vertical fins or pilasters standing `depth` out from the wall. */
-function fins(b: MeshBuilder, r: Ring, y0: number, y1: number, spacing: number, depth: number, thick: number, color: number): void {
-  for (const e of edges(r)) {
+/** Vertical fins or pilasters standing `depth` out from the wall, clear of the doorway. */
+function fins(b: MeshBuilder, r: Ring, y0: number, y1: number, spacing: number, depth: number, thick: number, color: number, avoid?: Doorway): void {
+  faces(r).forEach((e, i) => {
     for (const s of along(e.len, spacing, thick + 0.3)) {
+      if (blocks(avoid, i, s, thick)) continue;
       const cx = e.a.x + e.t.x * s + e.n.x * (depth / 2), cz = e.a.z + e.t.z * s + e.n.z * (depth / 2);
       box(b, cx, cz, e.t, thick / 2, depth / 2, y0, y1, color);
     }
-  }
+  });
 }
 
 /** Square columns standing just inside the outline, under an overhang. */
 function columns(b: MeshBuilder, r: Ring, y0: number, y1: number, spacing: number, size: number, color: number): void {
-  for (const e of edges(r)) {
+  for (const e of faces(r)) {
     for (const s of along(e.len, spacing, 1.2)) {
       const cx = e.a.x + e.t.x * s - e.n.x * (size / 2 + 0.2), cz = e.a.z + e.t.z * s - e.n.z * (size / 2 + 0.2);
       box(b, cx, cz, e.t, size / 2, size / 2, y0, y1, color);
@@ -190,7 +133,7 @@ function cornice(b: MeshBuilder, r: Ring, d: number, y0: number, y1: number, col
 
 /** Entrance canopy on the longest edge: a slab standing out 0.8 m on two posts. */
 function canopy(b: MeshBuilder, r: Ring, width: number, y: number, color: number): void {
-  const e = edges(r).reduce((m, x) => (x.len > m.len ? x : m));
+  const e = faces(r).reduce((m, x) => (x.len > m.len ? x : m));
   const w = Math.min(width, e.len - 2);
   if (w < 2) return;
   const depth = 0.8;
@@ -257,7 +200,7 @@ function roofSpots(r: Ring, u: P, count: number, maxHalf: number): Spot[] {
 }
 
 function longestDirection(r: Ring): P {
-  return edges(r).reduce((m, x) => (x.len > m.len ? x : m)).t;
+  return faces(r).reduce((m, x) => (x.len > m.len ? x : m)).t;
 }
 
 // Flat colours. Concrete and stucco tones only: no school colours or branding.
@@ -272,8 +215,14 @@ const STUCCO_TRIM = 0xb8a88f;
 const PLINTH = 0x9b8b74;
 const ROOF = 0x8a8274;
 const PLANT = 0xa7a49c;
+const DOOR_WOOD = 0x6b4630;
+const STEP = 0xb5ada0;
 const SANDSTONE = 0xd2ae86;
 const SANDSTONE_TRIM = 0xb48f6a;
+
+const DARK_WINDOWS: WindowLook = { frame: CONCRETE_LIGHT, glass: GLASS_DARK, blind: GLASS_DARK };
+const STUCCO_WINDOWS: WindowLook = { frame: 0xf0ebe0, glass: GLASS_DARK, blind: GLASS_DARK, sill: STUCCO_TRIM };
+const SANDSTONE_WINDOWS: WindowLook = { frame: SANDSTONE_TRIM, glass: GLASS, blind: GLASS_DARK, sill: SANDSTONE_TRIM };
 
 /**
  * Langson Library podium: a recessed dark-glass ground floor behind a colonnade, then two
@@ -282,11 +231,12 @@ const SANDSTONE_TRIM = 0xb48f6a;
 function langsonPodium(b: MeshBuilder, r: Ring, h: number): void {
   const ground = 3.6;
   const inner = offset(r, -1.6);
-  walls(b, r, inner, 0, ground, GLASS_DARK);
+  walls(b.glass, r, inner, 0, ground, GLASS_DARK);
+  mainDoor(b, r, 2.4, 2.6, { frame: CONCRETE_DARK, leaf: GLASS, step: CONCRETE }, inner);
   band(b, inner, r.pts, ground, DOWN, CONCRETE_DARK);
   columns(b, r, 0, ground, 5, 0.6, CONCRETE);
   walls(b, r, r.pts, ground, h, CONCRETE);
-  for (let y = ground; y + 3 <= h; y += (h - ground) / 2) windows(b, r, y + 0.7, y + 2.6, 2.5, 1.6, GLASS_DARK);
+  for (let y = ground; y + 3 <= h; y += (h - ground) / 2) windows(b, r, y + 0.7, y + 2.6, 2.5, 1.6, DARK_WINDOWS);
   fins(b, r, ground, h, 2.5, 0.5, 0.25, CONCRETE_LIGHT);
   slab(b, r.pts, h, ROOF);
 }
@@ -294,11 +244,18 @@ function langsonPodium(b: MeshBuilder, r: Ring, h: number): void {
 /** Langson Library top storey: a glazed ribbon under a deep overhanging crown and a penthouse. */
 function langsonTop(b: MeshBuilder, r: Ring, y0: number, h: number): void {
   walls(b, r, r.pts, y0, h - 0.8, CONCRETE);
-  ribbons(b, r, y0 + 0.8, h - 1.6, 1.2, GLASS_DARK);
+  ribbons(b, r, y0 + 0.8, h - 1.6, 1.2, DARK_WINDOWS);
   fins(b, r, y0 + 0.8, h - 1.6, 3, 0.2, 0.15, CONCRETE_LIGHT);
   cornice(b, r, 0.5, h - 0.8, h, CONCRETE_LIGHT, ROOF);
   const u = longestDirection(r);
-  for (const s of roofSpots(r, u, 1, 6)) box(b, s.x, s.z, u, s.h, s.h * 0.6, h, h + 2.4, CONCRETE_DARK);
+  for (const s of roofSpots(r, u, 1, 6)) {
+    box(b, s.x, s.z, u, s.h, s.h * 0.6, h, h + 2.4, CONCRETE_DARK);
+    // Roof access door on the penthouse's long side.
+    const v = { x: -u.z, z: u.x };
+    const a = { x: s.x - u.x * s.h + v.x * s.h * 0.6, z: s.z - u.z * s.h + v.z * s.h * 0.6 };
+    const face: Face = { a, t: u, n: v, len: 2 * s.h };
+    door(b, face, s.h, 0.9, 2, { frame: CONCRETE_LIGHT, leaf: GLASS_DARK, step: CONCRETE }, h);
+  }
 }
 
 /**
@@ -312,8 +269,9 @@ function aldrichHall(b: MeshBuilder, r: Ring, h: number): void {
   band(b, r.pts, out, plinth, UP, PLINTH);
   walls(b, r, r.pts, plinth, top, STUCCO);
   const floor = (top - plinth) / 2;
-  for (let i = 0; i < 2; i++) windows(b, r, plinth + i * floor + 0.9, plinth + i * floor + 2.7, 3.2, 1.4, GLASS_DARK);
-  fins(b, r, plinth, top, 3.2, 0.3, 0.4, CONCRETE_LIGHT);
+  const entry = mainDoor(b, r, 1.6, 2.4, { frame: STUCCO_TRIM, leaf: DOOR_WOOD, step: PLINTH });
+  for (let i = 0; i < 2; i++) windows(b, r, plinth + i * floor + 0.9, plinth + i * floor + 2.7, 3.2, 1.4, STUCCO_WINDOWS, i === 0 ? entry : undefined);
+  fins(b, r, plinth, top, 3.2, 0.3, 0.4, CONCRETE_LIGHT, entry);
   cornice(b, r, 0.4, top, h, STUCCO_TRIM, ROOF);
   canopy(b, r, 6, 3.2, STUCCO_TRIM);
   const u = longestDirection(r);
@@ -325,13 +283,14 @@ function studentCenter(b: MeshBuilder, r: Ring, h: number): void {
   const top = h - 1;
   walls(b, r, r.pts, 0, top, SANDSTONE);
   const floors = 3, fh = top / floors;
-  for (let i = 0; i < floors; i++) windows(b, r, i * fh + 0.7, i * fh + fh - 0.9, 3, 2.4, GLASS);
+  const entry = mainDoor(b, r, 2, 2.6, { frame: SANDSTONE_TRIM, leaf: GLASS, step: STEP });
+  for (let i = 0; i < floors; i++) windows(b, r, i * fh + 0.7, i * fh + fh - 0.9, 3, 2.4, SANDSTONE_WINDOWS, i === 0 ? entry : undefined);
   cornice(b, r, 0.3, top, h, SANDSTONE_TRIM, ROOF);
   canopy(b, r, 8, 3.4, SANDSTONE_TRIM);
   const u = longestDirection(r);
   const spots = roofSpots(r, u, 5, 4);
   spots.forEach((s, i) => {
-    if (i < 3) pyramid(b, s.x, s.z, u, s.h, h, s.h * 0.8, SKYLIGHT);
+    if (i < 3) pyramid(b.glass, s.x, s.z, u, s.h, h, s.h * 0.8, SKYLIGHT);
     else box(b, s.x, s.z, u, s.h * 0.7, s.h * 0.5, h, h + 1.6, PLANT);
   });
 }

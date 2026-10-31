@@ -203,7 +203,8 @@ export function bakeParkNature(data: ParkNatureData, at: (xDm: number, zDm: numb
   const counts = new Map<string, number>();
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
-  const v = new THREE.Vector3();
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3(), e = new THREE.Vector3();
+  const color = new THREE.Color();
   const tint = mulberry32(TINT_SEED);
   for (const [t, x, z, rot, scale, stretch] of data.items) {
     const type = data.types[t];
@@ -213,11 +214,16 @@ export function bakeParkNature(data: ParkNatureData, at: (xDm: number, zDm: numb
     s.set(scale / 100, (scale / 100) * (stretch / 100), scale / 100);
     m.compose(p.set(x * DM, 0, z * DM), q, s);
     const k = TINT_MIN + tint() * TINT_RANGE;
-    const src = models[t], dst = at(x, z);
-    for (let i = 0; i < src.pos.length; i += 3) {
-      v.set(src.pos[i], src.pos[i + 1], src.pos[i + 2]).applyMatrix4(m);
-      dst.pos.push(v.x, v.y, v.z);
-      dst.col.push(src.col[i] * k, src.col[i + 1] * k, src.col[i + 2] * k);
+    const pos = models[t].pos, col = models[t].col, dst = at(x, z);
+    for (let i = 0; i < pos.length; i += 9) {
+      a.fromArray(pos, i).applyMatrix4(m);
+      b.fromArray(pos, i + 3).applyMatrix4(m);
+      c.fromArray(pos, i + 6).applyMatrix4(m);
+      // The triangle's own normal, so tri() keeps the winding as it is.
+      n.subVectors(b, a).cross(e.subVectors(c, a));
+      // Builder colours are in the working (linear) space; tri() takes sRGB hex, as getHex() gives.
+      color.setRGB(col[i] * k, col[i + 1] * k, col[i + 2] * k);
+      dst.tri(a.toArray(), b.toArray(), c.toArray(), n.toArray(), color.getHex());
     }
   }
   return counts;
