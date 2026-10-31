@@ -44,6 +44,9 @@ type Player struct {
 
 	// XP is the player's combat XP total. Change it with AddXP.
 	XP int
+	// SkillXP is the player's XP in each skill, in tenths of a point (see
+	// SkillXPScale), kept apart from combat XP. Change it with AddSkillXP.
+	SkillXP [NumSkills]int
 	// HP is the player's current hitpoints, from 0 to MaxHP.
 	HP int
 	// LastCombat is when the player last dealt or took damage; zero if never.
