@@ -1,6 +1,7 @@
 import type { ServerMessage } from '../net/codec';
 import { CardTableStore } from './cardTables';
 import { ChatStore } from './chat';
+import { SharedClock } from './clock';
 import type { CollisionGrid } from './collision';
 import { HitQueue } from './combat';
 import { Interpolator } from './interpolation';
@@ -43,6 +44,8 @@ export class GameState {
   readonly cardTables = new CardTableStore();
   /** Chat log and overhead messages from the server's ChatMessages. */
   readonly chat = new ChatStore();
+  /** The server's clock (UTC ms), kept as an offset from the local one; drives the sun. */
+  readonly clock = new SharedClock();
 
   /** Gives prediction the collision grid; it applies now and after every Welcome. */
   setCollision(grid: CollisionGrid | null): void {
@@ -57,6 +60,7 @@ export class GameState {
       // A missing or zero speed (older server) keeps the current value.
       if (msg.walkSpeed) this.walkSpeed = msg.walkSpeed;
       if (msg.runSpeed) this.runSpeed = msg.runSpeed;
+      if (msg.serverTimeMs) this.clock.sync(msg.serverTimeMs);
       this.prediction = new Prediction(msg.spawn, this.collision);
       this.interp.clear();
       this.animation = 0;
