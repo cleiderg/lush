@@ -5,7 +5,7 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 | File | What |
 |---|---|
 | `source/osm-central.json` | Committed OSM snapshot (`node shared/map/fetch.mjs` refreshes it; needs network) |
-| `build.mjs` | `node shared/map/build.mjs [outDir] [--no-nature]` writes `campus.json`, `collision.bin`, `areas.json`, `cardtables.json`, `props.json` and `parknature.json` (skipped with `--no-nature`). Offline and deterministic |
+| `build.mjs` | `node shared/map/build.mjs [outDir] [--no-nature]` writes `campus.json`, `collision.bin`, `areas.json`, `cardtables.json`, `props.json`, `skills.json` and `parknature.json` (skipped with `--no-nature`). Offline and deterministic |
 | `campus.json` | Compact map for rendering |
 | `collision.bin` | Collision grid for client and server |
 | `areas.mjs` | Gameplay places (spawn, shop, area polygons, card tables) in metres; edit here, then rebuild |
@@ -13,6 +13,8 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 | `cardtables.json` | Card table plaza and its 4 tables |
 | `props.mjs` | Prop types, placement seed and busy-area rules; edit here, then rebuild |
 | `props.json` | Campus props (benches, lamp posts, bins, ..., food carts, string lights and table-top cups, plates and pizza boxes), visual only |
+| `skills.mjs` | M9 skill tree counts, pond shape and fishing spot counts, placement seed and clearances; edit here, then rebuild |
+| `skills.json` | M9 woodcutting trees, pond and fishing spots, bank booth and grill, for client and server |
 | `parknature.mjs` | Aldrich Park nature types, seed, densities and clearances; edit here, then rebuild |
 | `parknature.json` | Aldrich Park trees, rocks, bushes, flower beds, picnic blankets and birds, visual only |
 | `config.mjs` | Bounding box, origin, chunk size, cell size |
@@ -96,7 +98,23 @@ Visual-only campus props (`docs/specs/visual-style.md`, Props). They never chang
 - `types[]`: prop type names; a prop's type is an index into this list (order from `PROP_TYPES` in `props.mjs`).
 - `props[]`: `[type, x, z, rot]`. `x`, `z` the footprint centre; `rot` whole degrees, clockwise seen from above, 0 = front facing south.
 
-`build.mjs` places them with one seeded generator (`PROP_SEED`), so the file is byte-identical on every build. Busy areas (spawn, shop, card plaza centre) get a 3 × 3 block of 10 × 10 m cells around their centre; every cell that is at least half walkable gets `BUSY_TYPES` different types (the build fails if one doesn't fit). Every area in `areas.json` without props gets a small cluster near its centre. No prop centre is on a blocked cell or inside a building, near the spawn point, in front of the shop stall or on a card table.
+`build.mjs` places them with one seeded generator (`PROP_SEED`), so the file is byte-identical on every build. Busy areas (spawn, shop, card plaza centre) get a 3 × 3 block of 10 × 10 m cells around their centre; every cell that is at least half walkable gets `BUSY_TYPES` different types (the build fails if one doesn't fit). Every area in `areas.json` without props gets a small cluster near its centre. No prop centre is on a blocked cell or inside a building, near the spawn point, in front of the shop stall, on a card table, or on the bank booth or grill.
+
+## `skills.json`
+
+Milestone 9 skill objects from `docs/specs/map.md` (Gameplay areas: Bank booth, Grill, Trees, Pond) and `docs/specs/skills.md`, so client and server agree on where they are. Kept out of `areas.json` and `collision.bin`, which don't change: the pond is not blocked in the grid yet (pond collision comes later, #399). Same units: integer decimetres, x east, z south.
+
+`{version, units, bank, grill, trees, pond}`
+
+- `version`: 1.
+- `bank`, `grill`: `{x, z}`, the bank booth and grill (`BANK_BOOTH` and `GRILL` in `parknature.mjs`) snapped to the centre of their collision cell, next to the shop stall and inside the safe circle. The build fails if either cell is blocked or outside the safe circle, and props keep `STATION_CLEAR` m (plus their footprint) from both.
+- `trees[]`: `{id, kind, x, z}`. `kind` is `"tree"`, `"oak"` or `"eucalyptus"` (12, 6 and 4, from `SKILL_TREES`); `id` is `<kind>-<n>` with n from 1, stable across builds. Each is on a cell centre of walkable park grass (same rule as the nature), outside the safe circle by `SAFE_MARGIN` m, off paths and plazas, clear of props and the pond's shore, with walkable cells on all four sides and at least `SKILL_TREE_SPACING` m from every other skill tree. Eucalyptus stand on the park's east side (x of at least 40 m).
+- `pond`: `{p, active, spots}`.
+  - `p`: the hand-made pond outline near (-90, -20), a closed polygon `[x0,z0,x1,z1,...]` (last point not repeated). The build moves it up to `POND_SHIFT` m from `POND_CENTRE` until it and `POND_SHORE` m around it are open park grass, clear of props and outside the safe circle.
+  - `active`: `{net, rod}`, how many fishing spots of each kind exist at once (2 and 2).
+  - `spots[]`: `{id, kind, x, z}`, candidate positions on the outline the active spots move between; `kind` is `"net"` or `"rod"`, `id` is `<kind>-<n>`. Spread evenly round the edge, kinds in turn, each with a walkable cell outside the pond next to it.
+
+`build.mjs` places them after the props and before the nature, with their own seeded generator (`SKILLS_SEED`), so the file is byte-identical on every build and doesn't depend on `--no-nature`. The nature keeps its canopies off the skill trees and stays out of the pond and its shore.
 
 ## `parknature.json`
 
@@ -108,4 +126,4 @@ Visual-only Aldrich Park nature (`docs/specs/visual-style.md`, Ground and nature
 - `types[]`: nature type names; an item's type is an index into this list (order from `NATURE_TYPES` in `parknature.mjs`).
 - `items[]`: `[type, x, z, rot, scale, stretch]`. `x`, `z` the centre; `rot` whole degrees, clockwise seen from above; `scale` uniform scale in percent; `stretch` extra height scale in percent.
 
-`build.mjs` places them after the props with their own seeded generator (`NATURE_SEED`), so the file is byte-identical on every build and the props don't move. The park is split into 20 × 20 m blocks aligned to the origin; each gets trees, bushes, rocks and flower beds in proportion to its walkable grass (in the park, on a walkable cell, off paths, plazas and the card plaza), and every block at least half grass gets at least one tree, rock or bush (the build fails if one doesn't fit). Picnic blankets and small groups of birds go on open grass around the spawn. Nothing is placed on a path, plaza, blocked cell or prop, or within 3 m of the spawn point, the shop stall, or the M9 bank booth and grill spots.
+`build.mjs` places them after the props with their own seeded generator (`NATURE_SEED`), so the file is byte-identical on every build and the props don't move. The park is split into 20 × 20 m blocks aligned to the origin; each gets trees, bushes, rocks and flower beds in proportion to its walkable grass (in the park, on a walkable cell, off paths, plazas and the card plaza), and every block at least half grass gets at least one tree, rock or bush (the build fails if one doesn't fit). Picnic blankets and small groups of birds go on open grass around the spawn. Nothing is placed on a path, plaza, blocked cell or prop, in the pond or its shore, under a skill tree's canopy, or within 3 m of the spawn point, the shop stall, or the M9 bank booth and grill.
