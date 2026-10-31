@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 11
+  Current = 12
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -129,6 +129,7 @@ table Welcome {
   tick_rate: ubyte; // server ticks per second
   walk_speed: float; // metres per second (D-044)
   run_speed: float;  // metres per second (D-044)
+  server_time_ms: ulong; // server clock when sent: Unix epoch milliseconds, UTC (D-050)
 }
 
 // Client -> server, one per client tick.

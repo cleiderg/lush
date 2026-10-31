@@ -39,7 +39,7 @@ function buildSnapshot(n: number): Uint8Array {
 
 describe('protocol', () => {
   it('exposes the version constant', () => {
-    expect(ProtocolVersion.Current).toBe(11);
+    expect(ProtocolVersion.Current).toBe(12);
   });
 
   it('keeps a 101-entity snapshot under 1200 bytes', () => {
@@ -71,6 +71,7 @@ describe('protocol', () => {
     Welcome.addTickRate(b, 20);
     Welcome.addWalkSpeed(b, 4);
     Welcome.addRunSpeed(b, 7);
+    Welcome.addServerTimeMs(b, BigInt('1798761600000'));
     const buf = finish(b, Message.Welcome, Welcome.endWelcome(b));
     const m = open(buf, Message.Welcome, new Welcome());
     expect(m.playerId()).toBe(42);
@@ -80,6 +81,7 @@ describe('protocol', () => {
     expect(m.tickRate()).toBe(20);
     expect(m.walkSpeed()).toBe(4);
     expect(m.runSpeed()).toBe(7);
+    expect(m.serverTimeMs()).toBe(BigInt('1798761600000'));
   });
 
   it('round-trips Input', () => {
