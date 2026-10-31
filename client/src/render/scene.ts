@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Character } from './character';
+import { Character, CombatAnims } from './character';
 import { CameraRig } from './cameraRig';
 import { MAX_REMOTE_PLAYERS, RemotePlayers } from './remotePlayers';
 import { BlobShadows, PLAYER_SHADOW_RADIUS, npcShadowRadius, type ShadowEntry } from './blobShadows';
@@ -57,6 +57,8 @@ export class WorldScene {
   private readonly shadowEntries: { x: number; z: number; radius: number }[] = [];
   private readonly bars: { x: number; z: number; ratio: number }[] = [];
   readonly hitsplats = new Hitsplats();
+  /** Attack swings and hit flinches, started by the view's hits. */
+  readonly combat = new CombatAnims();
   readonly chat = new ChatText();
   /** Created on the first view that carries groundItems, so views without it leave the scene as before. */
   private groundItems: GroundItems | null = null;
@@ -91,10 +93,11 @@ export class WorldScene {
     this.lastX = local.x;
     this.lastZ = local.z;
     const time = this.now() / 1000;
-    this.player.update(local.x, local.z, local.heading, dist, local.animation ?? 0, time);
+    this.combat.update(view.hits, time);
+    this.player.update(local.x, local.z, local.heading, dist, local.animation ?? 0, time, this.combat.pose(local.id, time));
     const lookup = view.entities;
     this.player.setEquipment(lookup?.entityInfo(local.id)?.equipment, lookup);
-    this.remotes.update(view.remotes, lookup, time, this.player);
+    this.remotes.update(view.remotes, lookup, time, this.player, this.combat);
     if (view.groundItems) {
       if (!this.groundItems) {
         this.groundItems = new GroundItems();
