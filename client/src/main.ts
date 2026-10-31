@@ -17,6 +17,7 @@ import { Controls } from './ui/controls';
 import { Hud } from './ui/hud';
 import { PvpWarning } from './ui/pvpWarning';
 import { RestartBanner } from './ui/restartBanner';
+import { LocationPanel } from './ui/locationPanel';
 import { localRetroStore, RetroToggle } from './ui/retroToggle';
 import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
 import { applyTheme } from './ui/theme';
@@ -98,6 +99,7 @@ const cardTable = new CardTablePanel({
     shop.close();
   },
 });
+const locationPanel = new LocationPanel({ parent: document.body, position: () => game.prediction.pos, clock: game.clock });
 const pvpWarning = new PvpWarning({ parent: document.body, position: () => game.prediction.pos });
 const trade = new TradePanel({
   parent: document.body,
@@ -134,6 +136,7 @@ new GameLoop({
     shop.update();
     cardTable.update();
     pvpWarning.update();
+    locationPanel.update();
     const m = controls.worldMove();
     // Inputs the server will never see would pile up unacknowledged; Welcome resets prediction anyway.
     if (!session.connected) return;

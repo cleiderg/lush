@@ -26,6 +26,8 @@ export const THEME: Readonly<Record<string, string>> = {
   '--lush-text-muted': '#b5a68c',
   '--lush-accent': '#e0a04a',
   '--lush-active': '#5b7a3a',
+  /** The PvP zone and other danger: red. */
+  '--lush-danger': '#e5533d',
   '--lush-radius': '10px',
   '--lush-radius-sm': '6px',
   '--lush-radius-round': '50%',
@@ -52,6 +54,7 @@ export const FONT_FACE_CSS = FONT_FILES.map(
 /** Shared classes any panel can use; the existing panels move onto them in later issues. */
 const SHARED_CSS = `
 .lush-panel { background: var(--lush-panel-bg); border: var(--lush-border); border-radius: var(--lush-radius); box-shadow: var(--lush-shadow); color: var(--lush-text); font-family: var(--lush-font-body); }
+.lush-danger { color: var(--lush-danger); }
 .lush-title { font-family: var(--lush-font-title); color: var(--lush-accent); letter-spacing: 0.06em; font-size: var(--lush-text-sm); }
 `;
 

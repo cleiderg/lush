@@ -112,7 +112,7 @@ function injectStyle(): void {
   styled = true;
   const s = document.createElement('style');
   s.textContent = `
-.lush-time-panel { position: fixed; top: 80px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; gap: 4px; padding: 4px; border-radius: 8px; background: rgba(20, 16, 12, 0.8); }
+.lush-time-panel { position: fixed; top: 92px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; gap: 4px; padding: 4px; border-radius: 8px; background: rgba(20, 16, 12, 0.8); }
 .lush-time-panel button { border: 1px solid #a07a40; border-radius: 6px; background: #3a2c1c; color: #f4e4c4; font: 600 12px serif; padding: 4px 8px; touch-action: manipulation; }
 .lush-time-panel button[aria-pressed="true"] { background: #6a4a24; }
 `;
