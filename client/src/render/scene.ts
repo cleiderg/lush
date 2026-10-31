@@ -114,7 +114,7 @@ export class WorldScene {
         this.npcs = new Npcs();
         this.scene.add(this.npcs.group);
       }
-      this.npcs.update(view.npcs);
+      this.npcs.update(view.npcs, time, this.combat);
     } else if (this.npcs) {
       this.npcs.update([]);
     }

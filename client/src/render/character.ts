@@ -177,20 +177,36 @@ const REST: CombatPose = { attack: 0, flinch: 0 };
 /**
  * Attack swings and flinches started by combat hits, keyed by entity id. Render-side timers only: the hits
  * come from the read-only view. A hit makes its attacker swing (even a miss) and its target flinch (unless
- * it missed). Ids that are never drawn, such as NPCs, simply expire.
+ * it missed). NPCs read the raw timers (attackElapsed, struckElapsed) and flinch at misses too.
  */
 export class CombatAnims {
   private readonly attacks = new Map<number, number>();
   private readonly flinches = new Map<number, number>();
+  /** Every target, hit or missed: NPCs flinch at a miss too. */
+  private readonly struck = new Map<number, number>();
 
   /** Starts the animations for `hits` at `time` seconds, and forgets finished ones. */
   update(hits: readonly HitView[] | undefined, time: number): void {
     for (const [id, start] of this.attacks) if (time - start >= ATTACK_DURATION) this.attacks.delete(id);
     for (const [id, start] of this.flinches) if (time - start >= FLINCH_DURATION) this.flinches.delete(id);
+    for (const [id, start] of this.struck) if (time - start >= FLINCH_DURATION) this.struck.delete(id);
     for (const h of hits ?? []) {
       if (h.attacker !== undefined) this.attacks.set(h.attacker, time);
       if (h.damage > 0) this.flinches.set(h.target, time);
+      this.struck.set(h.target, time);
     }
+  }
+
+  /** Seconds since entity `id` started its attack, or undefined when it is not attacking. */
+  attackElapsed(id: number, time: number): number | undefined {
+    const a = this.attacks.get(id);
+    return a === undefined ? undefined : time - a;
+  }
+
+  /** Seconds since entity `id` was last the target of a hit or a miss, or undefined when not flinching. */
+  struckElapsed(id: number, time: number): number | undefined {
+    const s = this.struck.get(id);
+    return s === undefined ? undefined : time - s;
   }
 
   /** The pose of entity `id` at `time` seconds; the rest pose when it is neither attacking nor hit. */
