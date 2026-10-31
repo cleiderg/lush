@@ -33,11 +33,11 @@ export interface SkyLook {
  * references: night-cave.jpg (dark, readable) and day-tavern.jpg (warm late afternoon).
  */
 const KEYS: readonly [number, SkyLook][] = [
-  [-0.3, { sky: 0x0a0e1c, fog: 0x0c101c, fogNear: 30, fogFar: 160, ambientSky: 0x4a5a8c, ambientGround: 0x201a14, ambient: 0.45, light: 0x9fb4e0, lightIntensity: 0.35 }],
-  [-0.08, { sky: 0x252a4a, fog: 0x3a3450, fogNear: 40, fogFar: 180, ambientSky: 0x6a6a9a, ambientGround: 0x2e2420, ambient: 0.7, light: 0xb0a0d0, lightIntensity: 0.25 }],
-  [0.02, { sky: 0x6f7fae, fog: 0xd88f68, fogNear: 50, fogFar: 220, ambientSky: 0xb08a9a, ambientGround: 0x4a3626, ambient: 0.95, light: 0xff8a4a, lightIntensity: 0.9 }],
-  [0.25, { sky: 0x8db2d6, fog: 0xe8c4a0, fogNear: 70, fogFar: 260, ambientSky: 0xd8d4e0, ambientGround: 0x5e4a30, ambient: 1.2, light: 0xffc685, lightIntensity: 2.4 }],
-  [0.9, { sky: 0x7db4e6, fog: 0xc4dbea, fogNear: 80, fogFar: 300, ambientSky: 0xe4eeff, ambientGround: 0x6a5a3a, ambient: 1.45, light: 0xfff2de, lightIntensity: 2.7 }],
+  [-0.3, { sky: 0x0a0e1c, fog: 0x0e1018, fogNear: 30, fogFar: 160, ambientSky: 0x58607a, ambientGround: 0x2a2218, ambient: 0.55, light: 0xa8b8e0, lightIntensity: 0.4 }],
+  [-0.08, { sky: 0x252a4a, fog: 0x3a3450, fogNear: 40, fogFar: 180, ambientSky: 0x7a7298, ambientGround: 0x3a2c22, ambient: 0.8, light: 0xb0a0d0, lightIntensity: 0.3 }],
+  [0.02, { sky: 0x6f7fae, fog: 0xd88f68, fogNear: 50, fogFar: 220, ambientSky: 0xc09a90, ambientGround: 0x5a4230, ambient: 1.1, light: 0xff9050, lightIntensity: 1.1 }],
+  [0.25, { sky: 0x8db2d6, fog: 0xe8c4a0, fogNear: 70, fogFar: 260, ambientSky: 0xe6dccc, ambientGround: 0x6e5838, ambient: 1.5, light: 0xffc27a, lightIntensity: 2.6 }],
+  [0.9, { sky: 0x7db4e6, fog: 0xc4dbea, fogNear: 80, fogFar: 300, ambientSky: 0xe4eeff, ambientGround: 0x6a5a3a, ambient: 1.6, light: 0xfff2de, lightIntensity: 2.5 }],
 ];
 
 const ca = new THREE.Color();
