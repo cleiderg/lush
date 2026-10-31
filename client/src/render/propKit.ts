@@ -119,13 +119,31 @@ function bench(b: MeshBuilder): void {
   for (let i = 0; i < 2; i++) box(b, -0.8, 0.55 + i * 0.16, -0.27, 0.8, 0.67 + i * 0.16, -0.21, WOOD_LIGHT);
 }
 
-function lampPost(b: MeshBuilder): void {
+/** Where a lit prop's glass sits in its model (metres, before rotation), and whether it holds a flame. */
+export interface LampHead {
+  readonly min: readonly [number, number, number];
+  readonly max: readonly [number, number, number];
+  readonly flame: boolean;
+}
+
+/** The glass of every prop type that lights up at night. Props marks it to glow while LampLights has it lit. */
+export const LAMP_HEADS: Readonly<Record<string, LampHead>> = {
+  lamp_post: { min: [-0.1, 2.72, 0.39], max: [0.1, 2.98, 0.59], flame: false },
+  lantern: { min: [-0.08, 0.98, 0.18], max: [0.08, 1.18, 0.34], flame: true },
+};
+
+function glass(b: MeshBuilder, type: string): void {
+  const { min, max } = LAMP_HEADS[type];
+  box(b, min[0], min[1], min[2], max[0], max[1], max[2], GLOW);
+}
+
+function lampPost(b: MeshBuilder, withGlass = true): void {
   prism(b, 0, 0, 0.18, 0.14, 0, 0.3, 6, IRON);
   prism(b, 0, 0, 0.06, 0.05, 0.3, 3.2, 6, IRON);
-  // Arm reaching forward and a hanging lamp head (lit at night later).
+  // Arm reaching forward and a hanging lamp head (lit by LampLights).
   box(b, -0.03, 3.1, -0.03, 0.03, 3.16, 0.55, IRON);
   box(b, -0.12, 2.68, 0.37, 0.12, 2.72, 0.61, IRON);
-  box(b, -0.1, 2.72, 0.39, 0.1, 2.98, 0.59, GLOW);
+  if (withGlass) glass(b, 'lamp_post');
   prism(b, 0, 0.49, 0.18, 0.02, 2.98, 3.12, 4, IRON);
 }
 
@@ -229,12 +247,12 @@ function lowWall(b: MeshBuilder): void {
   box(b, -1.04, 0.55, -0.24, 1.04, 0.62, 0.24, CONCRETE_DARK);
 }
 
-function lantern(b: MeshBuilder): void {
-  // Standing lantern: short post with a hook and a hanging glass lantern (lit at night later).
+function lantern(b: MeshBuilder, withGlass = true): void {
+  // Standing lantern: short post with a hook and a hanging glass lantern (lit by LampLights).
   box(b, -0.04, 0, -0.04, 0.04, 1.4, 0.04, IRON);
   box(b, -0.03, 1.36, -0.03, 0.03, 1.4, 0.3, IRON);
   box(b, -0.11, 0.95, 0.15, 0.11, 0.98, 0.37, IRON);
-  box(b, -0.08, 0.98, 0.18, 0.08, 1.18, 0.34, GLOW);
+  if (withGlass) glass(b, 'lantern');
   prism(b, 0, 0.26, 0.14, 0.02, 1.18, 1.3, 4, IRON);
 }
 
@@ -284,7 +302,7 @@ function sacks(b: MeshBuilder): void {
   sack(b, 0.2, 0, 0.1, 0.85);
 }
 
-const MODELS: Record<string, (b: MeshBuilder) => void> = {
+const MODELS: Record<string, (b: MeshBuilder, withGlass?: boolean) => void> = {
   bench, lamp_post: lampPost, bin, bike_rack: bikeRack, sign, planter, picnic_table: picnicTable, umbrella, scooter,
   fence, low_wall: lowWall, lantern, notice_board: noticeBoard, crate: crates, sack: sacks,
 };
@@ -292,32 +310,66 @@ const MODELS: Record<string, (b: MeshBuilder) => void> = {
 /** Every prop type the kit can draw. */
 export const PROP_KIT = Object.keys(MODELS);
 
-/** Builds the model for one prop type into `b` (at the origin, unrotated). */
-export function buildProp(b: MeshBuilder, type: string): void {
+/**
+ * Builds the model for one prop type into `b` (at the origin, unrotated). With `withGlass` false, lamp heads
+ * (LAMP_HEADS) are left out so they can be drawn with an emissive material.
+ */
+export function buildProp(b: MeshBuilder, type: string, withGlass = true): void {
   const f = MODELS[type];
   if (!f) throw new Error(`unknown prop type ${type}`);
-  f(b);
+  f(b, withGlass);
 }
 
 /** One prop type's model on its own. */
-export function propGeometry(type: string): THREE.BufferGeometry {
+export function propGeometry(type: string, withGlass = true): THREE.BufferGeometry {
   const b = new MeshBuilder();
-  buildProp(b, type);
+  buildProp(b, type, withGlass);
   return b.geometry();
+}
+
+/** A lamp type's glass on its own, at the origin and unrotated. */
+export function glassGeometry(type: string): THREE.BufferGeometry {
+  const b = new MeshBuilder();
+  glass(b, type);
+  return b.geometry();
+}
+
+/**
+ * Adds an emissive term to a Lambert shader for vertices whose `glow` attribute is 1, coloured by the
+ * `lampGlow` uniform. Lamp glass then glows inside the merged prop meshes without a draw call of its own.
+ */
+export function addLampGlow(shader: THREE.WebGLProgramParametersWithUniforms, glow: { value: THREE.Color }): void {
+  shader.uniforms.lampGlow = glow;
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', '#include <common>\nattribute float glow;\nvarying float vGlow;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = glow;');
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>\nuniform vec3 lampGlow;\nvarying float vGlow;')
+    .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vGlow * lampGlow;');
 }
 
 /**
  * The props from props.json. They never move, so every chunk's props are merged into one mesh with one
  * shared material: the props cost one draw call per 64 m chunk that has any, however many props it holds,
- * and chunks out of view are culled.
+ * and chunks out of view are culled. Lamp glass is marked with a `glow` vertex attribute and shines with
+ * `glow.value` (black by day; LampLights sets it at night).
  */
 export class Props {
   readonly group = new THREE.Group();
   readonly material = new THREE.MeshLambertMaterial({ vertexColors: true });
+  /** Emissive colour of every lamp head; one uniform, so all lamps glow together. */
+  readonly glow = { value: new THREE.Color(0x000000) };
 
   constructor(data: PropsData, chunkSize = 64) {
     this.group.name = 'props';
-    const models = data.types.map((t) => propGeometry(t));
+    this.material.onBeforeCompile = (shader) => addLampGlow(shader, this.glow);
+    this.material.customProgramCacheKey = () => 'props-lamp-glow';
+    // Each type is its body (glow 0) plus, for lamps, its glass (glow 1).
+    const models = data.types.map((t) => {
+      const parts: [THREE.BufferGeometry, number][] = [[propGeometry(t, false), 0]];
+      if (LAMP_HEADS[t]) parts.push([glassGeometry(t), 1]);
+      return parts;
+    });
     const chunks = new Map<string, number[][]>();
     for (const p of data.props) {
       const key = `${Math.floor((p[1] * DM) / chunkSize)},${Math.floor((p[2] * DM) / chunkSize)}`;
@@ -331,27 +383,31 @@ export class Props {
     const normalMat = new THREE.Matrix3();
     for (const [key, list] of [...chunks].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
       let verts = 0;
-      for (const [t] of list) verts += models[t].getAttribute('position').count;
+      for (const [t] of list) for (const [g] of models[t]) verts += g.getAttribute('position').count;
       const P = new Float32Array(verts * 3), N = new Float32Array(verts * 3), C = new Float32Array(verts * 3);
+      const G = new Float32Array(verts);
       let o = 0;
       for (const [t, x, z, rot] of list) {
         // Rotation is clockwise seen from above, in degrees: 0 faces south (+z), 90 faces west.
         m.makeRotationY((-rot * Math.PI) / 180).setPosition(x * DM, 0, z * DM);
         normalMat.getNormalMatrix(m);
-        const g = models[t];
-        const gp = g.getAttribute('position'), gn = g.getAttribute('normal'), gc = g.getAttribute('color');
-        for (let i = 0; i < gp.count; i++, o++) {
-          pos.fromBufferAttribute(gp, i).applyMatrix4(m);
-          nrm.fromBufferAttribute(gn, i).applyMatrix3(normalMat);
-          P.set([pos.x, pos.y, pos.z], o * 3);
-          N.set([nrm.x, nrm.y, nrm.z], o * 3);
-          C.set([gc.getX(i), gc.getY(i), gc.getZ(i)], o * 3);
+        for (const [g, glow] of models[t]) {
+          const gp = g.getAttribute('position'), gn = g.getAttribute('normal'), gc = g.getAttribute('color');
+          for (let i = 0; i < gp.count; i++, o++) {
+            pos.fromBufferAttribute(gp, i).applyMatrix4(m);
+            nrm.fromBufferAttribute(gn, i).applyMatrix3(normalMat);
+            P.set([pos.x, pos.y, pos.z], o * 3);
+            N.set([nrm.x, nrm.y, nrm.z], o * 3);
+            C.set([gc.getX(i), gc.getY(i), gc.getZ(i)], o * 3);
+            G[o] = glow;
+          }
         }
       }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(P, 3));
       g.setAttribute('normal', new THREE.BufferAttribute(N, 3));
       g.setAttribute('color', new THREE.BufferAttribute(C, 3));
+      g.setAttribute('glow', new THREE.BufferAttribute(G, 1));
       g.computeBoundingSphere();
       const mesh = new THREE.Mesh(g, this.material);
       mesh.name = `props:${key}`;
@@ -360,7 +416,7 @@ export class Props {
       mesh.receiveShadow = true;
       this.group.add(mesh);
     }
-    for (const g of models) g.dispose();
+    for (const parts of models) for (const [g] of parts) g.dispose();
   }
 
   dispose(): void {
