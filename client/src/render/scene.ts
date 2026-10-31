@@ -13,6 +13,7 @@ import { AreaMarkers, loadAreas } from './gameAreas';
 import { CardTables, loadCardTables } from './cardTables';
 import { Nature } from './nature';
 import { Props, loadProps } from './propKit';
+import { loadParkNature } from './parkNature';
 import { DEFAULT_SKY, SkyRig } from './sky';
 import { LampLights, lampSources } from './lights';
 import type { CampusData } from './mapData';
@@ -39,7 +40,8 @@ function makeGround(b: CampusData['bounds']): THREE.Mesh {
 export class WorldScene {
   readonly scene = new THREE.Scene();
   readonly rig = new CameraRig();
-  readonly map = new CampusMap(loadCampus());
+  /** The campus, with Aldrich Park's trees, rocks, bushes, flower beds, picnic blankets and birds baked into its chunks. */
+  readonly map = new CampusMap(loadCampus(), loadParkNature());
   readonly areas = new AreaMarkers(loadAreas());
   readonly cardTables = new CardTables(loadCardTables());
   /** Grass tufts and flowers, instanced per map chunk. */

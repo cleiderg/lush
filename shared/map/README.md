@@ -5,7 +5,7 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 | File | What |
 |---|---|
 | `source/osm-central.json` | Committed OSM snapshot (`node shared/map/fetch.mjs` refreshes it; needs network) |
-| `build.mjs` | `node shared/map/build.mjs [outDir]` writes `campus.json`, `collision.bin`, `areas.json`, `cardtables.json` and `props.json`. Offline and deterministic |
+| `build.mjs` | `node shared/map/build.mjs [outDir] [--no-nature]` writes `campus.json`, `collision.bin`, `areas.json`, `cardtables.json`, `props.json` and `parknature.json` (skipped with `--no-nature`). Offline and deterministic |
 | `campus.json` | Compact map for rendering |
 | `collision.bin` | Collision grid for client and server |
 | `areas.mjs` | Gameplay places (spawn, shop, area polygons, card tables) in metres; edit here, then rebuild |
@@ -13,6 +13,8 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 | `cardtables.json` | Card table plaza and its 4 tables |
 | `props.mjs` | Prop types, placement seed and busy-area rules; edit here, then rebuild |
 | `props.json` | Campus props (benches, lamp posts, bins, ...), visual only |
+| `parknature.mjs` | Aldrich Park nature types, seed, densities and clearances; edit here, then rebuild |
+| `parknature.json` | Aldrich Park trees, rocks, bushes, flower beds, picnic blankets and birds, visual only |
 | `config.mjs` | Bounding box, origin, chunk size, cell size |
 
 ## Coordinates
@@ -95,3 +97,15 @@ Visual-only campus props (`docs/specs/visual-style.md`, Props). They never chang
 - `props[]`: `[type, x, z, rot]`. `x`, `z` the footprint centre; `rot` whole degrees, clockwise seen from above, 0 = front facing south.
 
 `build.mjs` places them with one seeded generator (`PROP_SEED`), so the file is byte-identical on every build. Busy areas (spawn, shop, card plaza centre) get a 3 × 3 block of 10 × 10 m cells around their centre; every cell that is at least half walkable gets `BUSY_TYPES` different types (the build fails if one doesn't fit). Every area in `areas.json` without props gets a small cluster near its centre. No prop centre is on a blocked cell or inside a building, near the spawn point, in front of the shop stall or on a card table.
+
+## `parknature.json`
+
+Visual-only Aldrich Park nature (`docs/specs/visual-style.md`, Ground and nature; Props, Aldrich Park): trees of three kinds, two rock shapes, bushes, flower beds, picnic blankets and birds. Like the props, it never changes `collision.bin` (`--no-nature` builds the same grid) and the server ignores it. Same units: integer decimetres, x east, z south.
+
+`{version, units, types, items}`
+
+- `version`: 1.
+- `types[]`: nature type names; an item's type is an index into this list (order from `NATURE_TYPES` in `parknature.mjs`).
+- `items[]`: `[type, x, z, rot, scale, stretch]`. `x`, `z` the centre; `rot` whole degrees, clockwise seen from above; `scale` uniform scale in percent; `stretch` extra height scale in percent.
+
+`build.mjs` places them after the props with their own seeded generator (`NATURE_SEED`), so the file is byte-identical on every build and the props don't move. The park is split into 20 × 20 m blocks aligned to the origin; each gets trees, bushes, rocks and flower beds in proportion to its walkable grass (in the park, on a walkable cell, off paths, plazas and the card plaza), and every block at least half grass gets at least one tree, rock or bush (the build fails if one doesn't fit). Picnic blankets and small groups of birds go on open grass around the spawn. Nothing is placed on a path, plaza, blocked cell or prop, or within 3 m of the spawn point, the shop stall, or the M9 bank booth and grill spots.

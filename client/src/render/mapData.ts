@@ -119,3 +119,22 @@ export function parseProps(json: string): PropsData {
   if (d.version !== 1) throw new Error(`unsupported props.json version ${d.version}`);
   return d;
 }
+
+/**
+ * One Aldrich Park nature placement: [type index into `types`, x, z, rotation in whole degrees,
+ * scale in percent, extra height stretch in percent]. x and z in integer decimetres.
+ */
+export type NatureItem = [number, number, number, number, number, number];
+/** parknature.json: visual-only trees, rocks, bushes, flower beds, picnic blankets and birds placed by shared/map/build.mjs. */
+export interface ParkNatureData {
+  version: number;
+  units: string;
+  types: string[];
+  items: NatureItem[];
+}
+
+export function parseParkNature(json: string): ParkNatureData {
+  const d = JSON.parse(json) as ParkNatureData;
+  if (d.version !== 1) throw new Error(`unsupported parknature.json version ${d.version}`);
+  return d;
+}

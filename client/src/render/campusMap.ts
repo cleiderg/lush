@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import campusRaw from '../../../shared/map/campus.json?raw';
-import { GREEN_GRASS, GREEN_PITCH, GREEN_WATER, GREEN_WOOD, parseCampus, type CampusData, type Green } from './mapData';
+import { GREEN_GRASS, GREEN_PITCH, GREEN_WATER, GREEN_WOOD, parseCampus, type CampusData, type Green, type ParkNatureData } from './mapData';
 import { buildLandmark, isLandmark } from './landmarks';
 import { mulberry32 } from './rng';
 import { GROUND_KINDS, GROUND_PLAZA, SurfaceBuilder, makeGroundMaterial } from './groundSurfaces';
@@ -10,6 +10,9 @@ import {
 } from './facade';
 import { DEFAULT_SKY } from './sky';
 import type { SkyView } from './worldView';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { pointInPolygon } from './nature';
+import { bakeParkNature } from './parkNature';
 
 const DM = 0.1;
 const Y_GREEN = 0.01;
@@ -387,6 +390,8 @@ export interface MapStats {
   landmarks: number[];
   /** Wall material, windows and doors of each generic building, by id. */
   facades: Map<number, FacadeDetail>;
+  /** Aldrich Park nature placements baked into the chunks, per type (empty without parknature.json data). */
+  nature: Map<string, number>;
 }
 
 /** Warm light from inside a lit window. */
@@ -493,6 +498,52 @@ function buildChunks(data: CampusData): Built {
   return result;
 }
 
+interface BakedNature {
+  /** Extra triangles per chunk key. */
+  builders: Map<string, MeshBuilder>;
+  counts: Map<string, number>;
+}
+
+/** Baked nature per nature data and campus data; both are never changed after loading. */
+const baked = new WeakMap<ParkNatureData, WeakMap<CampusData, BakedNature>>();
+
+/**
+ * Aldrich Park nature (parknature.json) as extra triangles per chunk. Each placement joins the chunk of
+ * the largest green area it stands on (the park's own polygon): that chunk has a merged mesh already, and
+ * its bounds span the area, so the nature adds no draw call and no chunk, and is culled with the park.
+ */
+function bakeNature(data: CampusData, nature: ParkNatureData): BakedNature {
+  let byCampus = baked.get(nature);
+  if (!byCampus) baked.set(nature, (byCampus = new WeakMap()));
+  const cached = byCampus.get(data);
+  if (cached) return cached;
+  const { minX, minZ } = data.bounds;
+  const keyAt = (xDm: number, zDm: number): string =>
+    `${Math.floor((xDm - minX) * DM / data.chunkSize)},${Math.floor((zDm - minZ) * DM / data.chunkSize)}`;
+  const greens = data.green.map((g) => {
+    const box = [Infinity, Infinity, -Infinity, -Infinity];
+    let area = 0;
+    for (let i = 0, j = g.p.length - 2; i < g.p.length; j = i, i += 2) {
+      box[0] = Math.min(box[0], g.p[i]); box[1] = Math.min(box[1], g.p[i + 1]);
+      box[2] = Math.max(box[2], g.p[i]); box[3] = Math.max(box[3], g.p[i + 1]);
+      area += g.p[j] * g.p[i + 1] - g.p[i] * g.p[j + 1];
+    }
+    // The same chunk buildChunks puts the green polygon in: the one under its bounding-box centre.
+    return { g, box, area: Math.abs(area), key: keyAt((box[0] + box[2]) / 2, (box[1] + box[3]) / 2) };
+  }).sort((a, b) => b.area - a.area);
+  const builders = new Map<string, MeshBuilder>();
+  const counts = bakeParkNature(nature, (xDm, zDm) => {
+    const hit = greens.find(({ g, box }) => xDm >= box[0] && xDm <= box[2] && zDm >= box[1] && zDm <= box[3] && pointInPolygon(g.p, xDm, zDm));
+    const key = hit ? hit.key : keyAt(xDm, zDm);
+    let b = builders.get(key);
+    if (!b) builders.set(key, (b = new MeshBuilder()));
+    return b;
+  });
+  const result = { builders, counts };
+  byCampus.set(data, result);
+  return result;
+}
+
 /** Finished geometry per builder of a built map, made the first time a CampusMap needs it. */
 const finished = new WeakMap<object, THREE.BufferGeometry>();
 
@@ -521,20 +572,27 @@ export class CampusMap {
   /** One material per ground kind (GROUND_DIRT, GROUND_STONE, GROUND_PAVED, GROUND_PLAZA). */
   readonly surfaceMaterials = GROUND_KINDS.map((k) => makeGroundMaterial(k));
 
-  constructor(data: CampusData) {
+  /** `nature` (parknature.json) is baked into the chunk meshes, so the park's trees and rocks cost no extra draw calls. */
+  constructor(data: CampusData, nature?: ParkNatureData) {
     this.group.name = 'campus-map';
     const glow = { value: this.windowGlow };
     this.material.onBeforeCompile = (shader) => addWindowGlow(shader, glow);
     this.material.customProgramCacheKey = () => 'campus-window-glow';
     const { builders, surfaces, extruded, landmarks, facades } = buildChunks(data);
+    const extra = nature ? bakeNature(data, nature) : null;
+    const keys = new Set([...builders.keys(), ...(extra?.builders.keys() ?? [])]);
 
     let triangles = 0;
-    for (const key of [...builders.keys()].sort()) {
-      const b = builders.get(key)!;
-      triangles += b.triangles;
+    for (const key of [...keys].sort()) {
+      const b = builders.get(key) ?? new MeshBuilder();
+      const nb = extra?.builders.get(key);
+      triangles += b.triangles + (nb?.triangles ?? 0);
       // Every chunk mesh carries `glow` (all 0 without windows) so the patched shader never reads a stale value.
       // A chunk with only ground surfaces has no merged mesh of its own, just a holder for them.
-      const chunk = b.triangles > 0 ? new THREE.Mesh(shared(b, () => b.geometry(true)), this.material) : new THREE.Group();
+      const geometry = nb
+        ? shared(nb, () => (b.triangles > 0 ? mergeGeometries([b.geometry(true), nb.geometry(true)])! : nb.geometry(true)))
+        : b.triangles > 0 ? shared(b, () => b.geometry(true)) : null;
+      const chunk = geometry ? new THREE.Mesh(geometry, this.material) : new THREE.Group();
       chunk.name = `chunk-${key}`;
       chunk.matrixAutoUpdate = false;
       chunk.castShadow = true;
@@ -551,7 +609,7 @@ export class CampusMap {
       }
       this.group.add(chunk);
     }
-    this.stats = { chunks: builders.size, triangles, extruded: [...extruded], landmarks: [...landmarks], facades: new Map(facades) };
+    this.stats = { chunks: keys.size, triangles, extruded: [...extruded], landmarks: [...landmarks], facades: new Map(facades), nature: new Map(extra?.counts) };
   }
 
   /** Light the windows from sunset to sunrise, as the lamps (DEFAULT_SKY when `sky` is missing). */
