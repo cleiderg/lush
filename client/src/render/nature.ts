@@ -1,0 +1,303 @@
+import * as THREE from 'three';
+import { GREEN_GRASS, GREEN_WATER, type CampusData } from './mapData';
+import { mulberry32 } from './rng';
+
+/** Grass tufts per square metre of grass. Placeholder until profiled on an iPhone 13 (PRD 13, Q2). */
+export const GRASS_TUFTS_PER_M2 = 0.5;
+/** Small flowers per square metre of grass. Placeholder until profiled on an iPhone 13 (PRD 13, Q2). */
+export const FLOWERS_PER_M2 = 0.05;
+/** Seed for the scatter, so every client places the same tufts. */
+export const NATURE_SEED = 0x6e617475;
+/** Extra clearance (metres) past a path's edge, so blades don't poke onto it. */
+const PATH_MARGIN = 0.3;
+/** Probes per chunk that decide whether it has any grass for tufts (see scatterNature). */
+const ANCHOR_PROBES = 4096;
+const MIN_SCALE = 0.7;
+const SCALE_RANGE = 0.6;
+
+const TUFT_BASE = 0x4f8a3a;
+const TUFT_TIP = 0x8cc56a;
+const STEM = 0x3d7a33;
+/** White, pink, lavender and red, like the dots of flowers on the day reference's grass. */
+export const FLOWER_COLORS = [0xf4f1ea, 0xe88fb4, 0xa98ad6, 0xd9534f];
+
+export interface NatureOptions {
+  tuftsPerM2?: number;
+  flowersPerM2?: number;
+  seed?: number;
+}
+
+/** One placed tuft or flower. Metres; `kind` is the tuft shape or the flower colour index. */
+export interface Scatter { x: number; z: number; rot: number; scale: number; kind: number }
+export interface ChunkScatter { cx: number; cz: number; tufts: Scatter[]; flowers: Scatter[] }
+
+type Box = [number, number, number, number];
+interface Poly { p: number[]; box: Box }
+interface Seg { x0: number; z0: number; x1: number; z1: number; r2: number; box: Box }
+
+function bbox(p: number[], pad = 0): Box {
+  const b: Box = [Infinity, Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < p.length; i += 2) {
+    b[0] = Math.min(b[0], p[i]); b[1] = Math.min(b[1], p[i + 1]);
+    b[2] = Math.max(b[2], p[i]); b[3] = Math.max(b[3], p[i + 1]);
+  }
+  return [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad];
+}
+
+const overlaps = (a: Box, b: Box): boolean => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+const inBox = (b: Box, x: number, z: number): boolean => x >= b[0] && x <= b[2] && z >= b[1] && z <= b[3];
+
+/** Even-odd point in polygon; `p` is a closed polygon [x0,z0,x1,z1,...]. */
+export function pointInPolygon(p: number[], x: number, z: number): boolean {
+  let inside = false;
+  for (let i = 0, j = p.length - 2; i < p.length; j = i, i += 2) {
+    const xi = p[i], zi = p[i + 1], xj = p[j], zj = p[j + 1];
+    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/** Squared distance from (x, z) to the segment. */
+export function segmentDistance2(x: number, z: number, x0: number, z0: number, x1: number, z1: number): number {
+  const dx = x1 - x0, dz = z1 - z0;
+  const len2 = dx * dx + dz * dz;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - x0) * dx + (z - z0) * dz) / len2));
+  const ex = x0 + t * dx - x, ez = z0 + t * dz - z;
+  return ex * ex + ez * ez;
+}
+
+const polys = (list: { p: number[] }[]): Poly[] => list.map((g) => ({ p: g.p, box: bbox(g.p) }));
+const hit = (list: Poly[], x: number, z: number): boolean => list.some((g) => inBox(g.box, x, z) && pointInPolygon(g.p, x, z));
+
+function chunkSeed(seed: number, salt: number, cx: number, cz: number): number {
+  return seed ^ Math.imul(cx + 1, 73856093) ^ Math.imul(cz + 1, 19349663) ^ Math.imul(salt, 83492791);
+}
+
+const cache = new WeakMap<CampusData, Map<string, ChunkScatter[]>>();
+
+/**
+ * Seeded tuft and flower positions, per map chunk. Candidates are spread uniformly over each chunk
+ * and kept only on grass (green k=0), off paths (within half their width plus a margin), buildings
+ * and water. Every candidate draws the same number of random values, so a lower density keeps a
+ * prefix of the same candidates.
+ */
+export function scatterNature(data: CampusData, opts: NatureOptions = {}): ChunkScatter[] {
+  const tuftsPerM2 = opts.tuftsPerM2 ?? GRASS_TUFTS_PER_M2;
+  const flowersPerM2 = opts.flowersPerM2 ?? FLOWERS_PER_M2;
+  const seed = opts.seed ?? NATURE_SEED;
+  const key = `${tuftsPerM2}/${flowersPerM2}/${seed}`;
+  let byKey = cache.get(data);
+  if (!byKey) cache.set(data, (byKey = new Map()));
+  const cached = byKey.get(key);
+  if (cached) return cached;
+
+  // Everything below is in decimetres, like campus.json.
+  const chunkDm = data.chunkSize * 10;
+  const { minX, minZ, maxX, maxZ } = data.bounds;
+  const grass = polys(data.green.filter((g) => g.k === GREEN_GRASS));
+  const water = polys(data.green.filter((g) => g.k === GREEN_WATER));
+  const buildings = polys(data.buildings);
+  const segs: Seg[] = [];
+  for (const w of data.paths) {
+    const r = w.w / 2 + PATH_MARGIN * 10;
+    for (let i = 0; i + 3 < w.p.length; i += 2) {
+      const s = [w.p[i], w.p[i + 1], w.p[i + 2], w.p[i + 3]];
+      segs.push({ x0: s[0], z0: s[1], x1: s[2], z1: s[3], r2: r * r, box: bbox(s, r) });
+    }
+  }
+
+  const out: ChunkScatter[] = [];
+  const nx = Math.ceil((maxX - minX) / chunkDm), nz = Math.ceil((maxZ - minZ) / chunkDm);
+  for (let cz = 0; cz < nz; cz++) {
+    for (let cx = 0; cx < nx; cx++) {
+      const box: Box = [minX + cx * chunkDm, minZ + cz * chunkDm, minX + (cx + 1) * chunkDm, minZ + (cz + 1) * chunkDm];
+      const g = grass.filter((x) => overlaps(x.box, box));
+      if (g.length === 0) continue;
+      const w = water.filter((x) => overlaps(x.box, box));
+      const b = buildings.filter((x) => overlaps(x.box, box));
+      const s = segs.filter((x) => overlaps(x.box, box));
+      const ok = (x: number, z: number): boolean =>
+        hit(g, x, z) && !hit(w, x, z) && !hit(b, x, z) &&
+        !s.some((q) => inBox(q.box, x, z) && segmentDistance2(x, z, q.x0, q.z0, q.x1, q.z1) < q.r2);
+      const sample = (n: number, salt: number, kinds: number): Scatter[] => {
+        const rnd = mulberry32(chunkSeed(seed, salt, cx, cz));
+        const res: Scatter[] = [];
+        for (let i = 0; i < n; i++) {
+          const x = box[0] + rnd() * chunkDm, z = box[1] + rnd() * chunkDm;
+          const rot = rnd() * Math.PI * 2, scale = MIN_SCALE + rnd() * SCALE_RANGE, kind = Math.floor(rnd() * kinds);
+          if (ok(x, z)) res.push({ x: x / 10, z: z / 10, rot, scale, kind });
+        }
+        return res;
+      };
+      // Which chunks have tufts, and so the meshes and draw calls, must not depend on the density:
+      // a chunk is used only when a fixed set of probes finds grass, and then has at least one
+      // tuft, at the first probe hit.
+      const anchor = sample(ANCHOR_PROBES, 3, 1).slice(0, 1);
+      if (anchor.length === 0) continue;
+      const area = data.chunkSize * data.chunkSize;
+      const tufts = sample(Math.round(area * tuftsPerM2), 1, TUFT_SHAPES.length);
+      const flowers = sample(Math.round(area * flowersPerM2), 2, FLOWER_COLORS.length);
+      if (tufts.length === 0) tufts.push(anchor[0]);
+      out.push({ cx, cz, tufts, flowers });
+    }
+  }
+  byKey.set(key, out);
+  return out;
+}
+
+/** Blades as [angle, lean, height, half width]; each blade is one triangle from the base to its tip. */
+type Blade = [number, number, number, number];
+const TUFT_SHAPES: Blade[][] = [
+  // Tall and narrow: three blades.
+  [[0.3, 0.12, 0.34, 0.035], [2.4, 0.1, 0.3, 0.035], [4.4, 0.13, 0.36, 0.035]],
+  // Short and spread: five blades.
+  [[0, 0.16, 0.22, 0.03], [1.3, 0.18, 0.18, 0.03], [2.5, 0.15, 0.26, 0.03], [3.8, 0.17, 0.2, 0.03], [5.1, 0.16, 0.24, 0.03]],
+];
+
+/** Instance variants: one per tuft shape, then the flower. */
+export const TUFT_VARIANTS = TUFT_SHAPES.length;
+export const FLOWER_VARIANT = TUFT_SHAPES.length;
+/** Height (metres) of the culling box over each chunk's tufts and flowers. */
+const CULL_HEIGHT = 0.6;
+
+/** Accumulates vertices tagged with the variant (`part`) they belong to. */
+class Builder {
+  readonly pos: number[] = [];
+  readonly col: number[] = [];
+  readonly part: number[] = [];
+  private readonly c = new THREE.Color();
+
+  vertex(part: number, x: number, y: number, z: number, color: number): void {
+    this.c.setHex(color);
+    this.pos.push(x, y, z);
+    this.col.push(this.c.r, this.c.g, this.c.b);
+    this.part.push(part);
+  }
+
+  /** Normals point up, so tufts and flowers shade like the ground under them. */
+  geometry(): THREE.BufferGeometry {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+    const n = new Float32Array(this.pos.length);
+    for (let i = 1; i < n.length; i += 3) n[i] = 1;
+    g.setAttribute('normal', new THREE.BufferAttribute(n, 3));
+    g.setAttribute('part', new THREE.Float32BufferAttribute(this.part, 1));
+    g.computeBoundingSphere();
+    return g;
+  }
+}
+
+/**
+ * Every tuft shape and the flower in one geometry. Each instance shows only the part matching its
+ * `variant`, so a whole chunk of mixed tufts and flowers is a single InstancedMesh and draw call.
+ */
+export function natureGeometry(): THREE.BufferGeometry {
+  const b = new Builder();
+  TUFT_SHAPES.forEach((blades, part) => {
+    for (const [a, lean, h, hw] of blades) {
+      const dx = Math.cos(a), dz = Math.sin(a);
+      const bx = dx * 0.03, bz = dz * 0.03;
+      b.vertex(part, bx - dz * hw, 0, bz + dx * hw, TUFT_BASE);
+      b.vertex(part, bx + dz * hw, 0, bz - dx * hw, TUFT_BASE);
+      b.vertex(part, dx * lean, h, dz * lean, TUFT_TIP);
+    }
+  });
+  // A stem and a five-petal head; the white petals take the instance colour.
+  const h = 0.16, r = 0.055;
+  b.vertex(FLOWER_VARIANT, -0.012, 0, 0, STEM);
+  b.vertex(FLOWER_VARIANT, 0.012, 0, 0, STEM);
+  b.vertex(FLOWER_VARIANT, 0, h, 0, STEM);
+  for (let i = 0; i < 5; i++) {
+    const a0 = (i / 5) * Math.PI * 2, a1 = ((i + 1) / 5) * Math.PI * 2;
+    b.vertex(FLOWER_VARIANT, 0, h + 0.01, 0, 0xffffff);
+    b.vertex(FLOWER_VARIANT, Math.cos(a0) * r, h, Math.sin(a0) * r, 0xffffff);
+    b.vertex(FLOWER_VARIANT, Math.cos(a1) * r, h, Math.sin(a1) * r, 0xffffff);
+  }
+  return b.geometry();
+}
+
+/** Lambert, with vertices of the parts an instance doesn't show collapsed to a point. */
+function natureMaterial(): THREE.MeshLambertMaterial {
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  m.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float part;\nattribute float variant;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nif (abs(part - variant) > 0.5) transformed = vec3(0.0);');
+  };
+  m.customProgramCacheKey = () => 'nature';
+  return m;
+}
+
+export interface NatureStats { chunks: number; tufts: number; flowers: number }
+
+/**
+ * Grass tufts and flowers: one InstancedMesh per map chunk, so the draw calls don't depend on the
+ * density. Chunks are culled by a tight box around their instances (see cull), since a whole
+ * chunk's bounding sphere reaches far above the flat ground.
+ */
+export class Nature {
+  readonly group = new THREE.Group();
+  readonly stats: NatureStats;
+  private readonly geometry = natureGeometry();
+  private readonly material = natureMaterial();
+  private readonly boxes: THREE.Box3[] = [];
+  private readonly frustum = new THREE.Frustum();
+  private readonly viewProj = new THREE.Matrix4();
+
+  constructor(data: CampusData, opts: NatureOptions = {}) {
+    this.group.name = 'nature';
+    const white = new THREE.Color(0xffffff), color = new THREE.Color();
+    let tufts = 0, flowers = 0;
+    for (const c of scatterNature(data, opts)) {
+      const list = [...c.tufts, ...c.flowers];
+      const g = new THREE.BufferGeometry();
+      // Shared attributes are uploaded once; only the per-instance variant differs per chunk.
+      for (const [name, attr] of Object.entries(this.geometry.attributes)) g.setAttribute(name, attr);
+      g.boundingSphere = this.geometry.boundingSphere;
+      const variant = new Float32Array(list.length);
+      const m = new THREE.InstancedMesh(g, this.material, list.length);
+      const a = m.instanceMatrix.array as Float32Array;
+      const box = new THREE.Box3();
+      list.forEach((t, i) => {
+        // Rotation about y, uniform scale, translation (column-major).
+        const cos = Math.cos(t.rot) * t.scale, sin = Math.sin(t.rot) * t.scale, o = i * 16;
+        a[o] = cos; a[o + 2] = -sin;
+        a[o + 5] = t.scale;
+        a[o + 8] = sin; a[o + 10] = cos;
+        a[o + 12] = t.x; a[o + 14] = t.z; a[o + 15] = 1;
+        const flower = i >= c.tufts.length;
+        variant[i] = flower ? FLOWER_VARIANT : t.kind;
+        m.setColorAt(i, flower ? color.setHex(FLOWER_COLORS[t.kind]) : white);
+        box.expandByPoint(new THREE.Vector3(t.x, 0, t.z));
+      });
+      g.setAttribute('variant', new THREE.InstancedBufferAttribute(variant, 1));
+      box.expandByScalar(0.5);
+      box.min.y = 0;
+      box.max.y = CULL_HEIGHT;
+      m.computeBoundingSphere();
+      m.name = `nature-${c.cx},${c.cz}`;
+      m.matrixAutoUpdate = false;
+      m.frustumCulled = false;
+      m.receiveShadow = true;
+      this.boxes.push(box);
+      this.group.add(m);
+      tufts += c.tufts.length;
+      flowers += c.flowers.length;
+    }
+    this.stats = { chunks: this.group.children.length, tufts, flowers };
+  }
+
+  /** Show only the chunks whose box is in the camera's view. */
+  cull(camera: THREE.Camera): void {
+    camera.updateMatrixWorld();
+    this.frustum.setFromProjectionMatrix(this.viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    this.group.children.forEach((m, i) => (m.visible = this.frustum.intersectsBox(this.boxes[i])));
+  }
+
+  dispose(): void {
+    this.geometry.dispose();
+    this.material.dispose();
+    for (const m of this.group.children) (m as THREE.InstancedMesh).dispose();
+  }
+}
