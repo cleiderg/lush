@@ -113,6 +113,8 @@ export class WorldScene {
     this.player.setEquipment(lookup?.entityInfo(local.id)?.equipment, lookup);
     this.remotes.update(view.remotes, lookup, time, this.player, this.combat);
     this.skills.update(view.felledTrees);
+    this.skills.setFishingSpots(view.fishingSpots);
+    this.skills.setProgress(view.activeResource, view.resourceProgress);
     if (view.groundItems) {
       if (!this.groundItems) {
         this.groundItems = new GroundItems();
