@@ -1,0 +1,25 @@
+{
+  "gather_interval_combat_ticks": 4,
+  "cook_interval_combat_ticks": 4,
+  "tree_fall_one_in": 8,
+  "fishing_spot_move_min_s": 180,
+  "fishing_spot_move_max_s": 300,
+  "range_tiles": 1,
+  "range_diagonal": true,
+  "trees": [
+    {"key": "tree",       "name": "Tree",       "level": 1,  "xp": 25,   "chance_low": 0.25, "chance_high": 0.75, "respawn_s": 15, "log": "logs"},
+    {"key": "oak",        "name": "Oak",        "level": 15, "xp": 37.5, "chance_low": 0.12, "chance_high": 0.50, "respawn_s": 30, "log": "oak_logs"},
+    {"key": "eucalyptus", "name": "Eucalyptus", "level": 25, "xp": 67.5, "chance_low": 0.06, "chance_high": 0.32, "respawn_s": 60, "log": "eucalyptus_logs"}
+  ],
+  "fishing_spots": [
+    {"key": "net_spot", "name": "Net spot", "level": 1, "tool": "small_net", "chance_low": 0.25, "chance_high": 0.75,
+     "catches": [{"item": "raw_shrimp", "level": 1, "xp": 10}]},
+    {"key": "rod_spot", "name": "Rod spot", "level": 5, "tool": "fishing_rod", "chance_low": 0.20, "chance_high": 0.60,
+     "catches": [{"item": "raw_sardine", "level": 5, "xp": 20}, {"item": "raw_trout", "level": 20, "xp": 50}]}
+  ],
+  "cooking": [
+    {"raw": "raw_shrimp",  "cooked": "shrimp",  "burnt": "burnt_fish", "level": 1,  "xp": 30, "burn_chance": 0.5, "stops_burning_level": 15},
+    {"raw": "raw_sardine", "cooked": "sardine", "burnt": "burnt_fish", "level": 5,  "xp": 40, "burn_chance": 0.5, "stops_burning_level": 20},
+    {"raw": "raw_trout",   "cooked": "trout",   "burnt": "burnt_fish", "level": 15, "xp": 70, "burn_chance": 0.5, "stops_burning_level": 30}
+  ]
+}

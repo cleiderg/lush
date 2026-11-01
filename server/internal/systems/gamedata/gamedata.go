@@ -27,6 +27,8 @@ const (
 	RulesFile = "rules.json"
 	// CardTablesFile lists the card room's tables (docs/specs/card-tables.md).
 	CardTablesFile = "cardtables.json"
+	// SkillsFile holds the woodcutting, fishing and cooking tables (docs/specs/skills.md).
+	SkillsFile = "skills.json"
 )
 
 // ItemID identifies an item type. 0 is never a valid id.
@@ -98,11 +100,22 @@ type Item struct {
 	LevelToEquip int `json:"level_to_equip"` // combat level to equip or eat; 0 for loot
 	ShopBuysFor  int `json:"shop_buys_for"`  // gold the shop pays for one; 0 if it won't buy
 	Heals        int `json:"heals"`          // HP restored when eaten; food only, else 0
+	// NoStack makes a loot item take one inventory slot each (logs, fish, tools).
+	NoStack bool `json:"no_stack"`
+	// ToolSkill, ToolLevel and ToolBonus make the item a skill tool: the skill
+	// it works for, the skill level needed and the chance added to both ends of
+	// the success range. Hatchets are weapons that are also tools.
+	ToolSkill Skill   `json:"tool_skill"`
+	ToolLevel int     `json:"tool_level"`
+	ToolBonus float64 `json:"tool_bonus"`
 }
 
 // Stackable reports whether any number of this item fits in one inventory
-// slot. Loot stacks; equipment and food don't.
-func (it Item) Stackable() bool { return it.Kind == KindLoot }
+// slot. Loot stacks unless NoStack is set; equipment and food don't.
+func (it Item) Stackable() bool { return it.Kind == KindLoot && !it.NoStack }
+
+// IsTool reports whether the item is a skill tool.
+func (it Item) IsTool() bool { return it.ToolSkill != SkillNone }
 
 // Drop is one item roll on an NPC kill.
 type Drop struct {
@@ -231,6 +244,8 @@ type Data struct {
 	Rules Rules
 	// CardTables are the card room's tables, in file order.
 	CardTables []CardTable
+	// Skills holds the woodcutting, fishing and cooking tables.
+	Skills Skills
 
 	itemByID  map[ItemID]int
 	itemByKey map[string]int
@@ -299,7 +314,7 @@ func Load(fsys fs.FS) (*Data, error) {
 	for _, f := range []struct {
 		name string
 		v    any
-	}{{ItemsFile, &d.Items}, {NPCsFile, &d.NPCs}, {ShopFile, &d.Shop}, {RulesFile, &d.Rules}, {CardTablesFile, &d.CardTables}} {
+	}{{ItemsFile, &d.Items}, {NPCsFile, &d.NPCs}, {ShopFile, &d.Shop}, {RulesFile, &d.Rules}, {CardTablesFile, &d.CardTables}, {SkillsFile, &d.Skills}} {
 		if err := decode(fsys, f.name, f.v); err != nil {
 			return nil, err
 		}
@@ -361,6 +376,9 @@ func (d *Data) index() error {
 		}
 		if it.Kind == KindFood && it.Heals <= 0 {
 			return fmt.Errorf("gamedata: %s: food needs a positive heals", where)
+		}
+		if err := it.validateTool(where); err != nil {
+			return err
 		}
 		if it.ShopBuysFor < 0 {
 			return fmt.Errorf("gamedata: %s: negative shop_buys_for", where)
@@ -472,7 +490,10 @@ func (d *Data) index() error {
 		}
 		s.Item = id
 	}
-	return d.validateCardTables()
+	if err := d.validateCardTables(); err != nil {
+		return err
+	}
+	return d.validateSkills()
 }
 
 // validateCardTables checks every card table has a unique non-zero id, 2 to 4

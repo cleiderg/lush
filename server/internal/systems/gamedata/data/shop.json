@@ -7,6 +7,11 @@
     {"item": "cardboard_shield", "price": 10},
     {"item": "bike_helmet", "price": 80},
     {"item": "boba", "price": 5},
-    {"item": "burrito", "price": 15}
+    {"item": "burrito", "price": 15},
+    {"item": "bronze_hatchet", "price": 30},
+    {"item": "steel_hatchet", "price": 200},
+    {"item": "small_net", "price": 20},
+    {"item": "fishing_rod", "price": 40},
+    {"item": "shrimp", "price": 6}
   ]
 }
