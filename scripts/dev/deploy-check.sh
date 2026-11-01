@@ -7,6 +7,14 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
 
+# Keeps only systemd-analyze output about our units. Verify also loads the
+# runner's own /usr/lib/systemd units and warns about them; those aren't ours.
+# ExecStart paths don't exist on the checking machine, so ignore those too.
+filter_verify() {
+  grep -E 'lush-(production|staging)\.service' \
+    | grep -v -e 'is not executable' -e 'No such file or directory' -e 'Failed to prepare filesystem' || true
+}
+
 if [[ "${1:-}" == "--self-test" ]]; then
   tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
   fail=0
@@ -29,6 +37,23 @@ if [[ "${1:-}" == "--self-test" ]]; then
   expect_fail "hardcoded Caddy hostname" 's#{$LUSH_STAGING_HOST}#staging.example.com#' caddy/Caddyfile
   expect_fail "HTTP/3 enabled" 's#protocols h1 h2#protocols h1 h2 h3#' caddy/Caddyfile
   expect_fail "root user" 's#^User=lush#User=root#' systemd/lush-production.service
+  # Only lines about our own units count; warnings from the runner's system
+  # units (e.g. "CPUAccounting= has been removed") must not.
+  noisy="/usr/lib/systemd/system/foo.service:3: Support for option CPUAccounting= has been removed
+lush-staging.service: Unknown key name 'Bogus' in section 'Service', ignoring."
+  if [[ "$(filter_verify <<<"$noisy")" == "lush-staging.service: Unknown key name 'Bogus' in section 'Service', ignoring." ]]; then
+    echo "self-test: system unit warnings ignored, our unit errors kept (ok)"
+  else echo "self-test: verify output filter is wrong"; fail=1; fi
+  if command -v systemd-analyze >/dev/null 2>&1; then
+    expect_fail_systemd() {
+      rm -rf "$tmp/d"; cp -R "$root/deploy" "$tmp/d"
+      sed -i.bak -e 's#^\[Service\]#[Service]\nBogusDirective=1\nType=nonsense#' "$tmp/d/systemd/lush-staging.service"; rm -f "$tmp/d/systemd/lush-staging.service.bak"
+      if "$0" "$tmp/d" >/dev/null 2>&1; then
+        echo "self-test: bad systemd unit was NOT rejected"; fail=1
+      else echo "self-test: bad systemd unit rejected (ok)"; fi
+    }
+    expect_fail_systemd
+  else echo "self-test: systemd-analyze not found, skipping real-unit check"; fi
   exit $fail
 fi
 
@@ -136,10 +161,8 @@ fi
 # systemd-analyze verify
 if [[ -z "${DEPLOY_CHECK_NO_SYSTEMD:-}" ]]; then
   if command -v systemd-analyze >/dev/null 2>&1; then
-    # Verify resolves ExecStart paths on this machine; they don't exist here, so
-    # ignore only that complaint.
     out="$(systemd-analyze verify "$dir"/systemd/lush-production.service "$dir"/systemd/lush-staging.service 2>&1 || true)"
-    out="$(grep -v -e 'is not executable' -e 'No such file or directory' -e 'Failed to prepare filesystem' <<<"$out" || true)"
+    out="$(filter_verify <<<"$out")"
     if [[ -n "$out" ]]; then echo "$out" >&2; bad "systemd-analyze verify reported problems"; fi
   elif [[ "${CI:-}" == "true" ]]; then
     bad "systemd-analyze not installed (required when CI=true)"
