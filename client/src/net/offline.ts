@@ -25,7 +25,7 @@ export const OFFLINE_PLACES: Readonly<Record<string, { x: number; z: number }>> 
 };
 
 /** UI panels offline mode can open with fixed data (`?offline&panel=<name>`, npm run shots). */
-export const OFFLINE_PANELS = ['inventory', 'shop', 'trade', 'card-table', 'chat-log', 'big-map'] as const;
+export const OFFLINE_PANELS = ['inventory', 'shop', 'trade', 'card-table', 'chat-log', 'big-map', 'skills'] as const;
 export type OfflinePanel = (typeof OFFLINE_PANELS)[number];
 
 /** Where a panel's shot starts when the URL names no place: within reach of the shop stall or card table. */
