@@ -7,6 +7,7 @@ import { HitQueue } from './combat';
 import { Interpolator } from './interpolation';
 import { ItemState } from './items';
 import { type PendingInput, Prediction, RUN_SPEED, WALK_SPEED } from './prediction';
+import { SkillState } from './skills';
 import { TradeStore } from './trade';
 
 export interface PlayerView {
@@ -44,6 +45,8 @@ export class GameState {
   readonly cardTables = new CardTableStore();
   /** Chat log and overhead messages from the server's ChatMessages. */
   readonly chat = new ChatStore();
+  /** Skill levels and XP, felled trees, fishing spot positions, and LevelUp and SkillResult events to drain. */
+  readonly skills = new SkillState();
   /** The server's clock (UTC ms), kept as an offset from the local one; drives the sun. */
   readonly clock = new SharedClock();
 
@@ -70,6 +73,7 @@ export class GameState {
       this.trade.clear();
       this.cardTables.clear();
       this.chat.clearOverheads();
+      this.skills.reset();
     } else if (msg.type === 'restartCountdown') {
       this.restartSeconds = msg.seconds;
     } else if (msg.type === 'snapshot') {
@@ -114,6 +118,14 @@ export class GameState {
       this.cardTables.setHand(msg);
     } else if (msg.type === 'combatHit') {
       this.hits.push(msg.tick, msg.hits);
+    } else if (msg.type === 'skillStats') {
+      this.skills.setStats(msg.skills);
+    } else if (msg.type === 'resourceState') {
+      this.skills.setResources(msg.felledTrees, msg.fishingSpots);
+    } else if (msg.type === 'levelUp') {
+      this.skills.levelUps.push({ entityId: msg.entityId, skill: msg.skill, level: msg.level });
+    } else if (msg.type === 'skillResult') {
+      this.skills.results.push({ skill: msg.skill, code: msg.code, itemId: msg.itemId, level: msg.level });
     } else if (msg.type === 'chat') {
       this.chat.push(msg.speakerId, msg.text, now);
     }
