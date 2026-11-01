@@ -70,6 +70,33 @@ describe('Student Center cut-away walls (AC2)', () => {
     crossed += faded;
   });
 
+  it('leaves no unfaded wall or roof in the way of the player, seen from any rig angle', () => {
+    const { scene, cut, go } = rig();
+    const geo = cut.mesh.geometry;
+    // What the shader draws: a triangle fades by the lesser alpha of its two segment tags.
+    const alpha = (v: number) => Math.min(cut.fade.alpha[geo.getAttribute('cut').getX(v)], cut.fade.alpha[geo.getAttribute('cut2').getX(v)]);
+    let hits = 0;
+    for (const spot of [INSIDE, { x: 40.5, z: -354.5 }, { x: 40.5, z: -350 }, { x: 49, z: -348 }]) {
+      for (const pitch of [0.6, 1, 1.3]) {
+        scene.rig.pitch = pitch;
+        for (let yaw = 0; yaw < 2 * Math.PI; yaw += 0.4) {
+          go(spot, 0, yaw);
+          go(spot, CUTAWAY_FADE_MS, yaw);
+          const cam = scene.rig.camera.position;
+          for (const y of [0.5, 1, 1.7]) {
+            const to = new THREE.Vector3(spot.x, y, spot.z).sub(cam);
+            const ray = new THREE.Raycaster(cam.clone(), to.clone().normalize(), 0, to.length() - 0.05);
+            for (const h of ray.intersectObject(cut.mesh, false)) {
+              hits++;
+              expect(alpha(h.face!.a), `yaw ${yaw} pitch ${pitch} y ${y}`).toBe(0);
+            }
+          }
+        }
+      }
+    }
+    expect(hits).toBeGreaterThan(0);
+  });
+
   it('fades some wall at most rig angles', () => {
     expect(crossed).toBeGreaterThanOrEqual(6);
   });

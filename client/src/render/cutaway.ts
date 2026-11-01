@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import areasRaw from '../../../shared/map/areas.json?raw';
 import { CAFE_DOOR } from './cafeInterior';
 import { addWindowGlow } from './campusMap';
-import { faces, ring } from './facade';
+import { faces, ring, type Face } from './facade';
 import { parseAreas } from './mapData';
 
 /**
@@ -10,7 +10,8 @@ import { parseAreas } from './mapData';
  * local player is in the café, the building's roof and the walls between the camera and the player fade
  * out so the room shows; outside, the roof is solid. Visual only; reads positions, changes no game state.
  *
- * The building is one mesh with a per-vertex `cut` index (-1 fixed, 0 roof, 1.. a wall segment). Faded
+ * The building is one mesh with per-vertex `cut` and `cut2` indices (0 roof, 1.. a wall segment; a small
+ * piece of trim over a segment boundary carries both and fades when either does). Faded
  * parts are dithered away in the fragment shader, so the material stays opaque and the fade needs no
  * sorting and no extra draw call. While nothing is faded the building is drawn inside its map chunk as
  * before, so being outside adds no draw call.
@@ -22,6 +23,8 @@ export const CUTAWAY_FADE_MS = 300;
 export const CUTAWAY_SEGMENT_M = 6;
 /** Triangles starting at or above the roof line `top` (less this) are roof. */
 const ROOF_EPS = 0.01;
+/** Wall triangles this long or longer along their face (whole walls, glazing bands) are split at segment boundaries. */
+const SPLIT_MIN_M = CUTAWAY_SEGMENT_M / 2;
 
 export interface WallSegment { ax: number; az: number; bx: number; bz: number }
 
@@ -108,39 +111,85 @@ export class CutawayFade {
 }
 
 /**
- * Give every vertex of the building's non-indexed `geometry` a `cut` attribute: 0 for roof triangles
- * (at or above `top`), otherwise 1 + the index of the nearest wall segment.
+ * The building's non-indexed `geometry` with per-vertex `cut` and `cut2` attributes: 0 for roof triangles
+ * (at or above `top`), otherwise 1 + the index of its wall segments (as in `wallSegments(footprint, maxLen)`).
+ * A wall face is one quad however long it is, so long wall triangles are split at the boundaries of their
+ * nearest face's segments; otherwise a segment could cross the camera's line and own no triangles. Shorter
+ * ones (at most two segments, as segments are at least maxLen / 2 long) keep the first and last segment
+ * they touch in `cut` and `cut2`, which adds no triangles.
  */
-export function tagCutaway(geometry: THREE.BufferGeometry, segments: readonly WallSegment[], top: number): void {
-  const pos = geometry.getAttribute('position') as THREE.BufferAttribute;
-  const cut = new Float32Array(pos.count);
-  for (let t = 0; t + 2 < pos.count; t += 3) {
-    let x = 0, z = 0, ymin = Infinity;
-    for (let k = 0; k < 3; k++) {
-      x += pos.getX(t + k) / 3;
-      z += pos.getZ(t + k) / 3;
-      ymin = Math.min(ymin, pos.getY(t + k));
-    }
-    let id = 0;
-    if (ymin < top - ROOF_EPS) {
-      let best = Infinity;
-      segments.forEach((s, i) => {
-        const dx = s.bx - s.ax, dz = s.bz - s.az;
-        const u = Math.max(0, Math.min(1, ((x - s.ax) * dx + (z - s.az) * dz) / (dx * dx + dz * dz || 1)));
-        const d = Math.hypot(x - (s.ax + dx * u), z - (s.az + dz * u));
-        if (d < best) { best = d; id = i + 1; }
-      });
-    }
-    cut[t] = cut[t + 1] = cut[t + 2] = id;
+export function tagCutaway(geometry: THREE.BufferGeometry, footprint: number[], top: number, maxLen = CUTAWAY_SEGMENT_M): THREE.BufferGeometry {
+  const fs: { f: Face; n: number; first: number }[] = [];
+  for (const f of faces(ring(footprint))) {
+    const n = Math.max(1, Math.ceil(f.len / maxLen));
+    fs.push({ f, n, first: fs.length ? fs[fs.length - 1].first + fs[fs.length - 1].n : 0 });
   }
-  geometry.setAttribute('cut', new THREE.BufferAttribute(cut, 1));
+  const names = Object.keys(geometry.attributes);
+  const attrs = names.map((k) => geometry.getAttribute(k) as THREE.BufferAttribute);
+  const out: number[][] = attrs.map(() => []);
+  const cut: number[] = [], cut2: number[] = [];
+  const vertex = (i: number) => attrs.map((a) => Array.from({ length: a.itemSize }, (_, c) => a.getComponent(i, c)));
+  const emit = (tri: number[][][], id: number, id2 = id) => {
+    for (const v of tri) v.forEach((vals, a) => out[a].push(...vals));
+    cut.push(id, id, id);
+    cut2.push(id2, id2, id2);
+  };
+  const lerp = (p: number[][], q: number[][], u: number) => p.map((vals, a) => vals.map((x, c) => x + (q[a][c] - x) * u));
+  /** Sutherland-Hodgman: the part of polygon `poly` where `s(v) * sign >= bound * sign`. */
+  const clip = (poly: number[][][], s: (v: number[][]) => number, bound: number, sign: number) => {
+    const res: number[][][] = [];
+    poly.forEach((p, i) => {
+      const q = poly[(i + 1) % poly.length];
+      const dp = (s(p) - bound) * sign, dq = (s(q) - bound) * sign;
+      if (dp >= 0) res.push(p);
+      if (dp >= 0 !== dq >= 0) res.push(lerp(p, q, dp / (dp - dq)));
+    });
+    return res;
+  };
+  const pos = geometry.getAttribute('position') as THREE.BufferAttribute;
+  for (let t = 0; t + 2 < pos.count; t += 3) {
+    const tri = [vertex(t), vertex(t + 1), vertex(t + 2)];
+    const ymin = Math.min(pos.getY(t), pos.getY(t + 1), pos.getY(t + 2));
+    if (ymin >= top - ROOF_EPS) {
+      emit(tri, 0);
+      continue;
+    }
+    const x = (pos.getX(t) + pos.getX(t + 1) + pos.getX(t + 2)) / 3, z = (pos.getZ(t) + pos.getZ(t + 1) + pos.getZ(t + 2)) / 3;
+    let face = fs[0], best = Infinity;
+    for (const g of fs) {
+      const u = Math.max(0, Math.min(g.f.len, (x - g.f.a.x) * g.f.t.x + (z - g.f.a.z) * g.f.t.z));
+      const d = Math.hypot(x - (g.f.a.x + g.f.t.x * u), z - (g.f.a.z + g.f.t.z * u));
+      if (d < best) { best = d; face = g; }
+    }
+    const { f, n, first } = face;
+    const along = (v: number[][]) => (v[0][0] - f.a.x) * f.t.x + (v[0][2] - f.a.z) * f.t.z;
+    const piece = f.len / n;
+    const ss = tri.map(along);
+    if (Math.max(...ss) - Math.min(...ss) < SPLIT_MIN_M) {
+      const j = (s: number) => Math.max(0, Math.min(n - 1, Math.floor(s / piece)));
+      emit(tri, first + j(Math.min(...ss) + 1e-3) + 1, first + j(Math.max(...ss) - 1e-3) + 1);
+      continue;
+    }
+    for (let j = 0; j < n; j++) {
+      let poly = tri;
+      if (j > 0) poly = clip(poly, along, piece * j, 1);
+      if (j < n - 1 && poly.length >= 3) poly = clip(poly, along, piece * (j + 1), -1);
+      for (let k = 1; k + 1 < poly.length; k++) emit([poly[0], poly[k], poly[k + 1]], first + j + 1);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  names.forEach((k, a) => g.setAttribute(k, new THREE.BufferAttribute(new Float32Array(out[a]), attrs[a].itemSize)));
+  g.setAttribute('cut', new THREE.BufferAttribute(new Float32Array(cut), 1));
+  g.setAttribute('cut2', new THREE.BufferAttribute(new Float32Array(cut2), 1));
+  g.computeBoundingSphere();
+  return g;
 }
 
-/** Patch a Lambert shader so vertices fade by `cutAlpha[cut]` (cut < 0 never fades), dithered on screen. */
+/** Patch a Lambert shader so vertices fade by the lesser of `cutAlpha[cut]` and `cutAlpha[cut2]`, dithered on screen. */
 function addCutaway(shader: { uniforms: Record<string, THREE.IUniform>; vertexShader: string; fragmentShader: string }, alpha: THREE.IUniform<Float32Array>, n: number): void {
   shader.uniforms.cutAlpha = alpha;
-  shader.vertexShader = `attribute float cut;\nvarying float vCut;\nuniform float cutAlpha[${n}];\n` +
-    shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvCut = cut < 0.0 ? 1.0 : cutAlpha[int(cut + 0.5)];');
+  shader.vertexShader = `attribute float cut;\nattribute float cut2;\nvarying float vCut;\nuniform float cutAlpha[${n}];\n` +
+    shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvCut = min(cutAlpha[int(cut + 0.5)], cutAlpha[int(cut2 + 0.5)]);');
   shader.fragmentShader = 'varying float vCut;\n' +
     shader.fragmentShader.replace(
       'void main() {',
@@ -159,7 +208,7 @@ export interface CutawayParts {
   /** The chunk's geometry with the building in it, and without it. */
   baked: THREE.BufferGeometry;
   open: THREE.BufferGeometry;
-  /** The building alone. Tagged here. */
+  /** The building alone; tagged and split by segment here (tagCutaway). */
   building: THREE.BufferGeometry;
   /** Footprint `p` in decimetres and the roof line (metres). */
   footprint: number[];
@@ -182,7 +231,6 @@ export class Cutaway {
 
   constructor(private readonly parts: CutawayParts) {
     this.segments = wallSegments(parts.footprint);
-    tagCutaway(parts.building, this.segments, parts.top);
     this.fade = new CutawayFade(this.segments.length);
     this.target = new Float32Array(this.fade.alpha.length).fill(1);
     this.alpha = { value: this.fade.alpha };
@@ -193,7 +241,7 @@ export class Cutaway {
       addCutaway(shader, this.alpha, n);
     };
     material.customProgramCacheKey = () => `campus-window-glow-cutaway-${n}`;
-    this.mesh = new THREE.Mesh(parts.building, material);
+    this.mesh = new THREE.Mesh(tagCutaway(parts.building, parts.footprint, parts.top), material);
     this.mesh.name = 'student-center-cutaway';
     this.mesh.matrixAutoUpdate = false;
     this.mesh.receiveShadow = true;
