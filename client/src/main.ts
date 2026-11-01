@@ -82,6 +82,7 @@ const hud = new Hud({
     skills.setOpen(false);
     shop.close();
     cardTable.close();
+    bank.close();
     bigMap.close();
   },
 });
