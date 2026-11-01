@@ -29,6 +29,19 @@ if [[ "${1:-}" == "--self-test" ]]; then
   expect_fail "hardcoded Caddy hostname" 's#{$LUSH_STAGING_HOST}#staging.example.com#' caddy/Caddyfile
   expect_fail "HTTP/3 enabled" 's#protocols h1 h2#protocols h1 h2 h3#' caddy/Caddyfile
   expect_fail "root user" 's#^User=lush#User=root#' systemd/lush-production.service
+  if command -v systemd-analyze >/dev/null 2>&1; then
+    expect_fail_systemd() { # name, sed expression, file
+      rm -rf "$tmp/d"; cp -R "$root/deploy" "$tmp/d"
+      sed -i.bak -e "$2" "$tmp/d/$3"; rm -f "$tmp/d/$3.bak"
+      if "$0" "$tmp/d" 2>&1 | grep -q 'systemd-analyze verify reported problems'; then
+        echo "self-test: $1 rejected by systemd-analyze (ok)"
+      else echo "self-test: $1 was NOT rejected by systemd-analyze"; fail=1; fi
+    }
+    expect_fail_systemd "unknown unit directive" 's#^Restart=.*#BogusDirective=1#' systemd/lush-staging.service
+    expect_fail_systemd "missing ExecStart" '/^ExecStart=/d' systemd/lush-staging.service
+  else
+    echo "self-test: systemd-analyze not found, skipping unit verify cases"
+  fi
   exit $fail
 fi
 
@@ -139,6 +152,9 @@ if [[ -z "${DEPLOY_CHECK_NO_SYSTEMD:-}" ]]; then
     # Verify resolves ExecStart paths on this machine; they don't exist here, so
     # ignore only that complaint.
     out="$(systemd-analyze verify "$dir"/systemd/lush-production.service "$dir"/systemd/lush-staging.service 2>&1 || true)"
+    # Keep only lines about our own units: verify also prints warnings about
+    # unrelated system units on the host (e.g. CI runner services).
+    out="$(grep -e 'lush-production\.service' -e 'lush-staging\.service' <<<"$out" || true)"
     out="$(grep -v -e 'is not executable' -e 'No such file or directory' -e 'Failed to prepare filesystem' <<<"$out" || true)"
     if [[ -n "$out" ]]; then echo "$out" >&2; bad "systemd-analyze verify reported problems"; fi
   elif [[ "${CI:-}" == "true" ]]; then
