@@ -25,12 +25,3 @@ export const CARD_TABLES = [
   { id: 3, x: -25, z: -53 },
   { id: 4, x: -19, z: -53 },
 ];
-
-/** OSM building way of the Student Center. */
-export const STUDENT_CENTER_WAY = 157979894;
-/**
- * Student Center café on the ground floor, in whole metres: `floor` is the walkable room [x0, z0, x1, z1)
- * (10 x 8 m, at the building's south side facing the park), `door` the cells cut through its south wall to the outside.
- * The building's cells round the floor stay blocked and are the café's walls. build.mjs writes `interiors` in areas.json.
- */
-export const CAFE = { id: 'student_center_cafe', floor: [40, -355, 50, -347], door: [44, -347, 46, -346] };
