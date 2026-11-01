@@ -10,8 +10,13 @@ export const FLOAT_TEXT_MS = 1200;
 export const FLOAT_TEXT_RISE_M = 1;
 /** Start height of a number's bottom edge above the player's feet: over the chat bubble. */
 export const FLOAT_TEXT_HEIGHT = CHARACTER_HEIGHT + 1.0;
-/** Vertical gap between numbers born in the same frame. */
-export const FLOAT_TEXT_STACK = 0.4;
+/** Line height of a number, in CSS pixels. */
+export const FLOAT_TEXT_LINE_PX = 18;
+/**
+ * Screen-space gap between stacked numbers, in CSS pixels. Stacking in pixels rather than metres keeps numbers apart
+ * at every zoom: at the default camera distance a metre is only about 11 px tall on a phone.
+ */
+export const FLOAT_TEXT_STACK_PX = 20;
 /** Most numbers shown at once; the oldest goes first past this. */
 export const MAX_FLOAT_TEXTS = 32;
 /** Gain ids remembered, so a repeated id never spawns twice. */
@@ -36,7 +41,7 @@ export function gainText(g: GainView): string {
 export interface FloatText {
   readonly id: number;
   readonly bornMs: number;
-  /** Slot in its birth frame, for stacking. */
+  /** Stack slot: the lowest one free among the numbers showing when it was born. */
   readonly slot: number;
   readonly label: CSS2DObject;
 }
@@ -59,7 +64,13 @@ export class FloatTexts {
   }
 
   update(view: { local: PlayerView; gains?: readonly GainView[] }, nowMs: number): void {
-    let slot = 0;
+    for (let i = this.texts.length - 1; i >= 0; i--) {
+      const t = this.texts[i];
+      if (nowMs - t.bornMs >= FLOAT_TEXT_MS) {
+        this.group.remove(t.label);
+        this.texts.splice(i, 1);
+      }
+    }
     for (const g of view.gains ?? []) {
       if (this.seen.has(g.id)) continue;
       this.seen.add(g.id);
@@ -67,19 +78,15 @@ export class FloatTexts {
       const el = document.createElement('div');
       el.className = FLOAT_TEXT_CLASS;
       el.textContent = gainText(g);
-      el.style.cssText = `color:${g.kind === 'xp' ? XP_COLOR : GOLD_COLOR};font:bold 15px ${THEME['--lush-font-body']};text-shadow:0 1px 2px #000,0 0 3px #000;white-space:nowrap;pointer-events:none;user-select:none;`;
+      el.style.cssText = `color:${g.kind === 'xp' ? XP_COLOR : GOLD_COLOR};font:bold 15px ${THEME['--lush-font-body']};text-shadow:0 1px 2px #000,0 0 3px #000;line-height:${FLOAT_TEXT_LINE_PX}px;white-space:nowrap;pointer-events:none;user-select:none;`;
       const label = new CSS2DObject(el);
       label.center.set(0.5, 1);
       label.name = `gain-${g.id}`;
+      const slot = this.freeSlot();
+      // The label is anchored at its bottom edge, so bottom padding lifts the text by whole lines on screen.
+      el.style.paddingBottom = `${slot * FLOAT_TEXT_STACK_PX}px`;
       this.group.add(label);
-      this.texts.push({ id: g.id, bornMs: nowMs, slot: slot++, label });
-    }
-    for (let i = this.texts.length - 1; i >= 0; i--) {
-      const t = this.texts[i];
-      if (nowMs - t.bornMs >= FLOAT_TEXT_MS) {
-        this.group.remove(t.label);
-        this.texts.splice(i, 1);
-      }
+      this.texts.push({ id: g.id, bornMs: nowMs, slot, label });
     }
     while (this.texts.length > MAX_FLOAT_TEXTS) this.group.remove(this.texts.shift()!.label);
 
@@ -89,7 +96,13 @@ export class FloatTexts {
       const opacity = floatOpacity(age);
       t.label.element.style.opacity = String(opacity);
       t.label.visible = opacity > 0;
-      t.label.position.set(p.x, FLOAT_TEXT_HEIGHT + t.slot * FLOAT_TEXT_STACK + (age / FLOAT_TEXT_MS) * FLOAT_TEXT_RISE_M, p.z);
+      t.label.position.set(p.x, FLOAT_TEXT_HEIGHT + (age / FLOAT_TEXT_MS) * FLOAT_TEXT_RISE_M, p.z);
     }
+  }
+
+  private freeSlot(): number {
+    let slot = 0;
+    while (this.texts.some((t) => t.slot === slot)) slot++;
+    return slot;
   }
 }

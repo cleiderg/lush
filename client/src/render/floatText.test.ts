@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { WorldScene, countDrawCalls } from './scene';
 import {
   FLOAT_TEXT_HEIGHT,
+  FLOAT_TEXT_LINE_PX,
   FLOAT_TEXT_MS,
   FLOAT_TEXT_RISE_M,
   GOLD_COLOR,
@@ -18,6 +19,8 @@ function clocked() {
   const w = new WorldScene(() => t);
   return { w, advance: (ms: number) => (t += ms) };
 }
+/** Pixels a number is lifted on screen by its stack slot. */
+const lift = (t: { label: { element: HTMLElement } }) => parseFloat(t.label.element.style.paddingBottom || '0');
 const rgb = (hex: string) => {
   const e = document.createElement('div');
   e.style.color = hex;
@@ -77,11 +80,25 @@ describe('floating gain numbers', () => {
     one.w.update(view([{ id: 1, kind: 'xp', amount: 1 }]));
     const many = clocked();
     many.w.update(view(Array.from({ length: 20 }, (_, i) => ({ id: i, kind: 'gold' as const, amount: i }))));
-    const ys = many.w.floatTexts.active.map((t) => t.label.position.y);
-    expect(new Set(ys).size).toBe(20);
-    const sorted = [...ys].sort((a, b) => a - b);
-    for (let i = 1; i < sorted.length; i++) expect(sorted[i] - sorted[i - 1]).toBeGreaterThan(0.3);
+    // Stacked in screen pixels, a full line apart, so they stay apart at every camera zoom.
+    const lifts = many.w.floatTexts.active.map(lift).sort((a, b) => a - b);
+    expect(lifts[0]).toBe(0);
+    for (let i = 1; i < lifts.length; i++) expect(lifts[i] - lifts[i - 1]).toBeGreaterThanOrEqual(FLOAT_TEXT_LINE_PX);
+    for (const t of many.w.floatTexts.active) expect(t.label.element.style.lineHeight).toBe(`${FLOAT_TEXT_LINE_PX}px`);
     expect(many.w.floatTexts.active).toHaveLength(20);
     expect(countDrawCalls(many.w.floatTexts.group)).toBe(countDrawCalls(one.w.floatTexts.group));
+  });
+
+  it('a gain in a later frame stacks above numbers still showing, and reuses a slot once it is free', () => {
+    const { w, advance } = clocked();
+    w.update(view([{ id: 1, kind: 'xp', amount: 1 }]));
+    advance(100);
+    w.update(view([{ id: 2, kind: 'gold', amount: 1 }]));
+    const [first, second] = w.floatTexts.active;
+    expect(lift(second) - lift(first)).toBeGreaterThanOrEqual(FLOAT_TEXT_LINE_PX);
+    advance(FLOAT_TEXT_MS - 50);
+    w.update(view([{ id: 3, kind: 'xp', amount: 1 }]));
+    expect(w.floatTexts.active.map((t) => t.id)).toEqual([2, 3]);
+    expect(lift(w.floatTexts.active[1])).toBe(0);
   });
 });
