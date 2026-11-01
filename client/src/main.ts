@@ -26,6 +26,7 @@ import { BigMap, Minimap } from './ui/minimap';
 import { PlayerPortrait } from './ui/playerPortrait';
 import { localRetroStore, RetroToggle } from './ui/retroToggle';
 import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
+import { SkillsPanel } from './ui/skillsPanel';
 import { applyTheme, BUTTON_CLASS } from './ui/theme';
 import { mountTimePanel } from './ui/timePanel';
 import { TradePanel } from './ui/tradePanel';
@@ -76,6 +77,20 @@ const hud = new Hud({
   items: game.items,
   send,
   onOpen: () => {
+    skills.setOpen(false);
+    shop.close();
+    cardTable.close();
+    bigMap.close();
+  },
+});
+// The Skills tab beside the inventory: the two swap in the panel area.
+const skills = new SkillsPanel({
+  parent: document.body,
+  skills: game.skills,
+  items: game.items,
+  inventory: hud,
+  onOpen: () => {
+    hud.setOpen(false);
     shop.close();
     cardTable.close();
     bigMap.close();
@@ -88,6 +103,7 @@ const shop = new ShopPanel({
   position: () => game.prediction.pos,
   onOpen: () => {
     hud.setOpen(false);
+    skills.setOpen(false);
     cardTable.close();
     bigMap.close();
   },
@@ -105,6 +121,7 @@ const cardTable = new CardTablePanel({
   position: () => game.prediction.pos,
   onOpen: () => {
     hud.setOpen(false);
+    skills.setOpen(false);
     shop.close();
     bigMap.close();
   },
@@ -124,6 +141,7 @@ const trade = new TradePanel({
   send,
   onOpen: () => {
     hud.setOpen(false);
+    skills.setOpen(false);
     shop.close();
     cardTable.close();
     bigMap.close();
@@ -138,6 +156,7 @@ const bigMap = new BigMap({
   remotes: remotePositions,
   onOpen: () => {
     hud.setOpen(false);
+    skills.setOpen(false);
     shop.close();
     cardTable.close();
   },
@@ -154,7 +173,7 @@ const chatLog = new ChatLog({
   parent: document.body,
   lines: () => game.chat.log,
   playerId: () => game.playerId,
-  covered: () => anyOpen([hud, shop, trade, cardTable, bigMap]),
+  covered: () => anyOpen([hud, skills, shop, trade, cardTable, bigMap]),
 });
 // Developer-only time control (?debug): overrides the shared time the sky follows.
 mountTimePanel(location.search, { parent: document.body, clock: game.clock });
@@ -189,6 +208,10 @@ function openOfflinePanel(panel: OfflinePanel): void {
       return cardTable.isOpen;
     },
     'chat-log': () => game.chat.log.length > 0,
+    skills: () => {
+      skills.setOpen(true);
+      return skills.isOpen;
+    },
     'big-map': () => {
       bigMap.open();
       return bigMap.isOpen;

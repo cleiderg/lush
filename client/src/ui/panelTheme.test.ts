@@ -8,6 +8,8 @@ import { CardTablePanel } from './cardTablePanel';
 import { ChatLog } from './chatLog';
 import { Hud } from './hud';
 import { SHOP_STALL, ShopPanel } from './shopPanel';
+import { SkillsPanel } from './skillsPanel';
+import { SkillState } from '../state/skills';
 import { Controls } from './controls';
 import { applyTheme, BUTTON_CLASS, BUTTON_CSS, MIN_TAP_PX, PANEL_ANIM_MS, SHARED_CSS, THEME } from './theme';
 import { TradePanel } from './tradePanel';
@@ -43,6 +45,7 @@ function panels(): Case[] {
   const send = (): void => undefined;
 
   const hud = new Hud({ parent: document.body, items, send, viewport: () => VP });
+  const skills = new SkillsPanel({ parent: document.body, skills: new SkillState(), items, inventory: hud, viewport: () => VP });
   const shop = new ShopPanel({ parent: document.body, items, send, position: () => ({ ...SHOP_STALL }), viewport: () => VP });
   const store = new TradeStore();
   const trade = new TradePanel({ parent: document.body, trade: store, items, send, viewport: () => VP });
@@ -54,10 +57,11 @@ function panels(): Case[] {
   const ctable = new CardTablePanel({ parent: document.body, tables, session, viewport: () => VP });
   let covered = true;
   const chat = new ChatLog({ parent: document.body, lines: () => [], playerId: () => ME, covered: () => covered, viewport: () => VP });
-  disposers.push(() => hud.dispose(), () => shop.dispose(), () => trade.dispose(), () => ctable.dispose(), () => chat.dispose());
+  disposers.push(() => skills.dispose(), () => hud.dispose(), () => shop.dispose(), () => trade.dispose(), () => ctable.dispose(), () => chat.dispose());
 
   return [
     { name: 'inventory', el: () => hud.panel, open: () => hud.setOpen(true), close: () => hud.setOpen(false), isOpen: () => hud.isOpen },
+    { name: 'skills', el: () => skills.panel, open: () => skills.setOpen(true), close: () => skills.setOpen(false), isOpen: () => skills.isOpen },
     { name: 'shop', el: () => shop.panel, open: () => void shop.tryOpen(), close: () => shop.close(), isOpen: () => shop.isOpen },
     {
       name: 'trade',
@@ -217,7 +221,9 @@ describe('panel buttons (#387 AC3)', () => {
     for (const p of panels()) {
       p.open();
       const buttons = [...p.el().querySelectorAll<HTMLButtonElement>('button')].filter((b) => !b.disabled);
-      if (p.name === 'inventory' || p.name === 'chat log') expect(buttons, p.name).toHaveLength(0);
+      if (p.name === 'chat log') expect(buttons, p.name).toHaveLength(0);
+      // The inventory's only buttons are its Inventory / Skills tabs (#466).
+      else if (p.name === 'inventory') expect(buttons.map((b) => b.textContent), p.name).toEqual(['Inventory', 'Skills']);
       else expect(buttons.length, p.name).toBeGreaterThan(0);
       for (const b of buttons) {
         const label = `${p.name}: ${b.className} ${b.textContent}`;
@@ -286,7 +292,7 @@ describe('button hover and tap feedback (#410 AC1)', () => {
     expect(BUTTON_CSS).toMatch(new RegExp(`@media \\(hover: hover\\) \\{ \\.${BUTTON_CLASS}:not\\(:disabled\\):hover`));
   });
 
-  it('every inventory, shop, trade, card table and chat log button uses the shared button class', () => {
+  it('every inventory, skills, shop, trade, card table and chat log button uses the shared button class', () => {
     let checked = 0;
     for (const p of panels()) {
       p.open();
