@@ -68,9 +68,10 @@ describe('path surfaces and plazas in the map build (AC1)', () => {
 
 describe('collision and areas unchanged (AC2)', () => {
   // SHA-256 of the files as committed before path surfaces were added (#379); collision.bin and areas.json
-  // since the Student Center café was opened (#403).
+  // since the Student Center café was opened (#403), and collision.bin since the fountain's basin was blocked (#432).
+  // fountain.test.ts shows collision.bin matches the café-era d200274d... with only the basin cells cleared.
   const BEFORE: Record<string, string> = {
-    'collision.bin': 'd200274d182381d7f1d7b66e72478a8fd7812c18b90cb062ea39c235f351b07b',
+    'collision.bin': '508a67e180de0bd073f9cc9727252eb8388bef21a5188acd5bbe189a70637181',
     'areas.json': 'e01fb98497195c33d38138fd3a0b7baeb34a79b2bc75ee394deddd40a9ac02e0',
     'cardtables.json': '4b50c37498188920ab254d2bd62389dac46482cc442acd471718c42d88ce2ee9',
   };
