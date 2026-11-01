@@ -1,11 +1,11 @@
-import { EquipSlot, ItemKind, ShedColour, ShedSymbol } from '../protocol';
+import { EquipSlot, ItemKind, ShedColour, ShedSymbol, Skill } from '../protocol';
 import type { ItemInfo, ServerMessage, ShedCardValue } from './codec';
 import { OFFLINE_PLAYER_ID, seededRandom, type OfflineOptions } from './offline';
 
 /**
  * Fixed panel data for offline mode (`?offline&panel=<name>`, npm run shots): an item catalog with
  * a shop, the player's stats and inventory, a card table where bots sit in a Shed game with the
- * player, chat lines and, for the trade shot, an open trade with a bot. All of it comes from the
+ * player, skill levels and XP, chat lines and, for the trade shot, an open trade with a bot. All of it comes from the
  * seed, as decoded server messages, after the offline Welcome; online sessions never get any.
  */
 
@@ -45,6 +45,9 @@ const CHAT = [
 ];
 const CHAT_LINES = 6;
 
+/** XP at which levels 1 to 16 start (the OSRS table the server uses), so offline skill XP fits its level. */
+const LEVEL_XP = [0, 83, 174, 276, 388, 512, 650, 801, 969, 1154, 1358, 1584, 1833, 2107, 2411, 2746];
+
 /** Random integer in [lo, hi]. */
 function between(rand: () => number, lo: number, hi: number): number {
   return lo + Math.floor(rand() * (hi - lo + 1));
@@ -77,6 +80,15 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
     { type: 'itemCatalog', items: CATALOG.map((d) => ({ ...d })) },
     { type: 'playerStats', hp: between(rand, 10, maxHp), maxHp, combatLevel: between(rand, 3, 20), xp: between(rand, 100, 5000), gold: between(rand, 50, 900) },
     { type: 'inventory', slots, equipment: { weapon: 1, head: 0, body: 4, shield: 0 } },
+    {
+      type: 'skillStats',
+      skills: [Skill.Woodcutting, Skill.Fishing, Skill.Cooking].map((skill) => {
+        const level = between(rand, 1, LEVEL_XP.length - 1);
+        // Somewhere inside the level, with a half point (XP comes in tenths).
+        const xp = LEVEL_XP[level - 1] + between(rand, 0, LEVEL_XP[level] - LEVEL_XP[level - 1] - 1) + 0.5;
+        return { skill, level, xp };
+      }),
+    },
     { type: 'cardTableCatalog', tables: [{ id: OFFLINE_TABLE_ID, seats: 4, stake: 10 }] },
   ];
 

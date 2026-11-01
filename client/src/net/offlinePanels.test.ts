@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SKILLS, XP_TABLE } from '../state/skills';
 import { GameState } from '../state/world';
 import { decode, type ServerMessage } from './codec';
 import { nearBank } from '../state/bank';
@@ -21,6 +22,7 @@ function panelState(game: GameState) {
     mySeat: game.cardTables.mySeat,
     chat: game.chat.log,
     bank: game.bank.slots,
+    skills: SKILLS.map((sk) => ({ level: game.skills.level(sk), xp: game.skills.xp(sk) })),
   };
 }
 
@@ -105,6 +107,19 @@ describe('offline panel data', () => {
     for (const slot of s.bank!) expect(s.catalog.some((d) => d.id === slot.itemId)).toBe(true);
     for (const panel of OFFLINE_PANELS.filter((p) => p !== 'bank')) {
       expect(stateFor(offlineOptions(`?offline&panel=${panel}`)!).bank).toBeNull();
+    }
+  });
+
+  it('gives each skill a level above 1 or some XP, with XP inside its level (#466)', () => {
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const s = stateFor(offlineOptions(`?offline&seed=${seed}&panel=skills`)!);
+      expect(s.skills).toHaveLength(3);
+      for (const { level, xp } of s.skills) {
+        expect(level).toBeGreaterThanOrEqual(1);
+        expect(xp).toBeGreaterThan(0);
+        expect(xp).toBeGreaterThanOrEqual(XP_TABLE[level]);
+        expect(xp).toBeLessThan(XP_TABLE[level + 1]);
+      }
     }
   });
 
