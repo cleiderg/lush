@@ -376,6 +376,36 @@ func TestBankTransferOutlivesDisconnect(t *testing.T) {
 	}
 }
 
+// AC2 (#471): a player removed from the world after a withdrawal keeps the
+// bank as it was then when they resume, not the bank loaded at first join.
+func TestBankKeptAcrossResume(t *testing.T) {
+	b := newBankRig(t, newBankStore(), 200)
+	_, item := b.seeded(t, "tok")
+	c, id := b.join("tok")
+	c.send(bankOpen())
+	b.bankReply(c)
+	c.send(bankWithdraw(uint16(item), 1))
+	if code, slots := b.bankReply(c); code != protocol.BankResultCodeOk || len(slots) != 0 {
+		t.Fatalf("withdraw: code %v slots %v, want Ok and an empty bank", code, slots)
+	}
+	held := b.w.Player(id).Inv.Count(item)
+
+	c.c.CloseNow()
+	tickUntil(t, b.rig, "the disconnect", func() bool { return session.Disconnected(b.sess, id) })
+	b.clock.Advance(2 * b.d.Rules.LogoutCombatLock())
+	tickUntil(t, b.rig, "the player to be removed", func() bool { return b.w.Player(id) == nil })
+
+	c2, id2 := b.join("tok")
+	p := b.w.Player(id2)
+	if p.Bank.Count(item) != 0 || p.Inv.Count(item) != held {
+		t.Fatalf("resumed with bank %d and inventory %d of item %d, want 0 and %d", p.Bank.Count(item), p.Inv.Count(item), item, held)
+	}
+	c2.send(bankOpen())
+	if code, slots := b.bankReply(c2); code != protocol.BankResultCodeOk || len(slots) != 0 {
+		t.Fatalf("open after resume: code %v slots %v, want Ok and an empty bank", code, slots)
+	}
+}
+
 func tickUntil(t *testing.T, r *rig, what string, cond func() bool) {
 	t.Helper()
 	for deadline := time.Now().Add(5 * time.Second); !cond(); time.Sleep(time.Millisecond) {
