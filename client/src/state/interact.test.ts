@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { EntityKind } from '../protocol';
 import { CARD_TABLE_POSITIONS, CARD_TABLE_REACH_TILES, inCardTableReach } from './cardTables';
+import { BANK_BOOTH, nearBank } from './bank';
 import { TILE_METRES } from './shop';
 import {
   ATTACK_RANGE_TILES, inPickUpRange, inPolygon, inPvpZone, nearestCardTable, nearestPickUp, pickInteractTarget, PICKUP_RANGE_TILES, PVP_ZONES,
@@ -223,5 +224,37 @@ describe('PvP zone test', () => {
   it('the areas.json PvP zone contains its own interior and not the spawn', () => {
     expect(inPvpZone({ x: 300, z: -350 })).toBe(true);
     expect(inPvpZone({ x: areas.spawn.x / 10, z: areas.spawn.z / 10 })).toBe(false);
+  });
+});
+
+describe('the bank booth (#467 AC1)', () => {
+  const booth = { x: 50, z: 50 };
+  const at = (dx: number, dz: number) => ({ x: booth.x + dx, z: booth.z + dz });
+
+  it('BANK_BOOTH is the skills.json bank point in metres', () => {
+    const skills = JSON.parse(readFileSync(resolve(repo, 'shared/map/skills.json'), 'utf8'));
+    expect(BANK_BOOTH).toEqual({ x: skills.bank.x / 10, z: skills.bank.z / 10 });
+  });
+
+  it('is within 2 tiles in a straight line, as the server measures it', () => {
+    expect(nearBank(at(1.4, 1.4), booth)).toBe(true);
+    expect(nearBank(at(-2, 0), booth)).toBe(true);
+    expect(nearBank(at(1.5, 1.5), booth)).toBe(false);
+    expect(nearBank(at(2.1, 0), booth)).toBe(false);
+    expect(nearBank(at(0, -2.1), booth)).toBe(false);
+  });
+
+  it('is targeted within 2 tiles of the shared position', () => {
+    expect(pickInteractTarget({ pos: BANK_BOOTH, stall: STALL, entities: [] })).toEqual({ type: 'bank' });
+    expect(pickInteractTarget({ pos: { x: BANK_BOOTH.x + 1.4, z: BANK_BOOTH.z - 1.4 }, stall: STALL, entities: [] })).toEqual({ type: 'bank' });
+    expect(pickInteractTarget({ pos: { x: BANK_BOOTH.x + 3, z: BANK_BOOTH.z }, stall: STALL, entities: [] })).toBeNull();
+  });
+
+  it('comes after the shop stall and before card tables, ground items, NPCs and players', () => {
+    const pos = at(0.5, 0.5);
+    const table = { id: 9, x: pos.x, z: pos.z };
+    const crowd = { stall: STALL, bank: booth, cardTables: [table], groundItems: [ground(3, pos.x, pos.z)], entities: [npc(5, pos.x, pos.z), player(6, pos.x, pos.z)] };
+    expect(pickInteractTarget({ pos, ...crowd })).toEqual({ type: 'bank' });
+    expect(pickInteractTarget({ pos, ...crowd, stall: pos })).toEqual({ type: 'shop' });
   });
 });

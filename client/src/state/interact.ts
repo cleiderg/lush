@@ -1,5 +1,6 @@
 import areas from '../../../shared/map/areas.json';
 import { EntityKind } from '../protocol';
+import { BANK_BOOTH, nearBank } from './bank';
 import { CARD_TABLE_POSITIONS, inCardTableReach, type CardTablePosition } from './cardTables';
 import { nearShop, TILE_METRES, type Point } from './shop';
 
@@ -66,6 +67,8 @@ export interface InteractInput {
   /** The local player's position in metres. */
   pos: Point;
   stall: Point;
+  /** The bank booth in metres; BANK_BOOTH when omitted. */
+  bank?: Point;
   /** Other entities (never the local player). */
   entities: readonly InteractEntity[];
   /**
@@ -80,6 +83,7 @@ export interface InteractInput {
 
 export type InteractTarget =
   | { type: 'shop' }
+  | { type: 'bank' }
   | { type: 'cardTable'; id: number }
   | { type: 'pickUp'; id: number }
   | { type: 'attack'; id: number }
@@ -125,12 +129,13 @@ export function nearestCardTable(
 
 /**
  * What the Interact button does (gameplay spec, Interact button): the shop stall within shop
- * distance; else the nearest card table within reach (open its panel); else the nearest ground item within pick-up range (pick up); else the nearest NPC within attack range (attack); else the nearest player within
+ * distance; else the bank booth within 2 tiles (open the bank); else the nearest card table within reach (open its panel); else the nearest ground item within pick-up range (pick up); else the nearest NPC within attack range (attack); else the nearest player within
  * trade distance (a trade request outside the PvP zone, an attack inside it). Null: nothing.
  */
 export function pickInteractTarget(input: InteractInput): InteractTarget | null {
   const { pos } = input;
   if (nearShop(pos, input.stall)) return { type: 'shop' };
+  if (nearBank(pos, input.bank ?? BANK_BOOTH)) return { type: 'bank' };
   const table = nearestCardTable(pos, input.cardTables);
   if (table) return { type: 'cardTable', id: table.id };
   const item = nearestPickUp(pos, input.groundItems ?? []);

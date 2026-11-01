@@ -26,7 +26,7 @@ const SCENES = [
   { name: 'park-dusk', place: 'park', time: 'dusk' },
   { name: 'cafe-dusk', place: 'cafe', time: 'dusk' },
   // One per UI panel, at noon, wherever offline mode puts that panel (src/net/offline.ts PANEL_PLACES).
-  ...['inventory', 'shop', 'trade', 'card-table', 'chat-log', 'big-map', 'skills'].map((panel) => ({ name: `panel-${panel}`, panel, time: 'noon' })),
+  ...['inventory', 'shop', 'bank', 'trade', 'card-table', 'chat-log', 'big-map', 'skills'].map((panel) => ({ name: `panel-${panel}`, panel, time: 'noon' })),
 ];
 
 // LUSH_SHOTS_ONLY=<text> shoots only the scenes whose name contains it (for working on one shot).

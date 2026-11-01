@@ -18,6 +18,8 @@ export interface HudLayout {
   panel: Rect;
   /** The shop panel; it takes the inventory panel's place (only one is open at a time). */
   shop: Rect;
+  /** The bank panel; it also takes the inventory panel's place. */
+  bank: Rect;
   /** The Skills panel, a tab beside the inventory; it also takes the inventory panel's place. */
   skills: Rect;
   /** The trade window; it also takes the inventory panel's place. */
@@ -109,7 +111,7 @@ export function hudLayout(width: number, height: number): HudLayout {
   const portrait = { x: portraitX, y: portraitY, w: PORTRAIT, h: PORTRAIT };
   const minimap = { x: left + appW - MARGIN - MINIMAP, y: interact.y + interact.h + MARGIN, w: MINIMAP, h: MINIMAP };
   return {
-    controls, location, hud, toggle, retro, panel, shop: { ...panel }, skills: { ...panel }, trade: { ...panel }, cardTable: { ...panel }, tradePrompt, pvp,
+    controls, location, hud, toggle, retro, panel, shop: { ...panel }, bank: { ...panel }, skills: { ...panel }, trade: { ...panel }, cardTable: { ...panel }, tradePrompt, pvp,
     chat, interact, portrait, minimap, map: { ...panel },
   };
 }
