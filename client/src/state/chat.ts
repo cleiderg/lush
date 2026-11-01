@@ -18,6 +18,8 @@ export function overheadOpacity(age: number): number {
 export interface ChatLine {
   readonly speakerId: number;
   readonly text: string;
+  /** A game message to the local player (skill results, bank refusals, level-ups), not speech; speakerId is 0. */
+  readonly system?: boolean;
 }
 
 export interface OverheadChat {
@@ -44,6 +46,12 @@ export class ChatStore {
     this.lines.push({ speakerId, text });
     if (this.lines.length > CHAT_LOG_LINES) this.lines.splice(0, this.lines.length - CHAT_LOG_LINES);
     this.overheads.set(speakerId, { speakerId, text, at: now });
+  }
+
+  /** Adds a game message to the log only (no overhead bubble). */
+  system(text: string): void {
+    this.lines.push({ speakerId: 0, text, system: true });
+    if (this.lines.length > CHAT_LOG_LINES) this.lines.splice(0, this.lines.length - CHAT_LOG_LINES);
   }
 
   /** The speaker's current overhead message, or null when none or expired. */
