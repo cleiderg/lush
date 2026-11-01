@@ -36,13 +36,23 @@ func id(t testing.TB, d *gamedata.Data, key string) gamedata.ItemID {
 	return it.ID
 }
 
-// overlapAreas is a map whose safe circle (radius 10 m around 300, -340) sits
-// inside the PvP zone, so the safe-circle refusal is tested on its own.
+// overlapAreas is a map whose safe circle (radius 10 m around 300, -340) and
+// Student Center café (350..360, -320..-312) sit inside the PvP zone, so the
+// safe-area refusals are tested on their own.
 const overlapAreas = `{"version":1,"units":"decimetres","spawn":{"x":3000,"z":-3400},"safeRadius":100,"shop":{"x":0,"z":0},
 "areas":[
  {"id":"aldrich_park","kind":"pve","p":[-1000,-1000,1000,-1000,1000,1000,-1000,1000]},
  {"id":"south_fields","kind":"pve","p":[-3600,2400,-2000,2400,-2000,3200,-3600,3200]},
- {"id":"pvp_zone","kind":"pvp","p":[2000,-4000,4000,-4000,4000,-2800,2200,-2800,2000,-3000]}]}`
+ {"id":"pvp_zone","kind":"pvp","p":[2000,-4000,4000,-4000,4000,-2800,2200,-2800,2000,-3000]}],
+"interiors":[
+ {"id":"student_center_cafe","kind":"safe","p":[3500,-3200,3600,-3200,3600,-3120,3500,-3120]}]}`
+
+// Spots in overlapAreas: inside its café, and one tile south of it, outside
+// the café but still in the PvP zone.
+var (
+	cafeInPvP  = world.Vec2{X: 355.5, Y: -312.5}
+	nextToCafe = world.Vec2{X: 355.5, Y: -311.5}
+)
 
 func TestCanAttack(t *testing.T) {
 	d := loadData(t)
@@ -62,6 +72,7 @@ func TestCanAttack(t *testing.T) {
 		nowhere   = world.Vec2{X: 500, Y: 500}
 		safeInPvP = overlap.Spawn() // inside the PvP polygon, but in the safe circle
 		edgeInPvP = world.Vec2{X: 300, Y: -328}
+		cafe      = world.Vec2{X: 45, Y: -351} // the campus Student Center café
 	)
 	tests := []struct {
 		name             string
@@ -89,6 +100,11 @@ func TestCanAttack(t *testing.T) {
 		{"attacker in safe circle inside zone", overlap, 0, pvp.Fighter{10, safeInPvP}, pvp.Fighter{10, zoneA}, pvp.AttackerNotInZone},
 		{"target in safe circle inside zone", overlap, 0, pvp.Fighter{10, zoneA}, pvp.Fighter{10, safeInPvP}, pvp.TargetNotInZone},
 		{"both just outside the safe circle in zone", overlap, 0, pvp.Fighter{10, edgeInPvP}, pvp.Fighter{12, zoneA}, pvp.Allowed},
+		{"attacker in campus cafe", campus, 0, pvp.Fighter{10, cafe}, pvp.Fighter{10, zoneB}, pvp.AttackerNotInZone},
+		{"target in campus cafe", campus, 0, pvp.Fighter{10, zoneA}, pvp.Fighter{10, cafe}, pvp.TargetNotInZone},
+		{"attacker in cafe inside zone", overlap, 0, pvp.Fighter{10, cafeInPvP}, pvp.Fighter{10, nextToCafe}, pvp.AttackerNotInZone},
+		{"target in cafe inside zone", overlap, 0, pvp.Fighter{10, nextToCafe}, pvp.Fighter{10, cafeInPvP}, pvp.TargetNotInZone},
+		{"both just outside the cafe in zone", overlap, 0, pvp.Fighter{10, nextToCafe}, pvp.Fighter{10, zoneA}, pvp.Allowed},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
