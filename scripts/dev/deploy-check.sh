@@ -33,9 +33,10 @@ if [[ "${1:-}" == "--self-test" ]]; then
     expect_fail_systemd() { # name, sed expression, file
       rm -rf "$tmp/d"; cp -R "$root/deploy" "$tmp/d"
       sed -i.bak -e "$2" "$tmp/d/$3"; rm -f "$tmp/d/$3.bak"
-      if "$0" "$tmp/d" 2>&1 | grep -q 'systemd-analyze verify reported problems'; then
+      res="$("$0" "$tmp/d" 2>&1 || true)"
+      if grep -q 'systemd-analyze verify reported problems' <<<"$res"; then
         echo "self-test: $1 rejected by systemd-analyze (ok)"
-      else echo "self-test: $1 was NOT rejected by systemd-analyze"; fail=1; fi
+      else echo "self-test: $1 was NOT rejected by systemd-analyze"; echo "$res" >&2; fail=1; fi
     }
     expect_fail_systemd "unknown unit directive" 's#^Restart=.*#BogusDirective=1#' systemd/lush-staging.service
     expect_fail_systemd "missing ExecStart" '/^ExecStart=/d' systemd/lush-staging.service
