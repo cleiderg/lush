@@ -128,8 +128,12 @@ type guest struct {
 	lastSeq uint32
 	goneAt  time.Time // when the last connection ended, while waiting out the logout lock
 	// What the client last got in PlayerStats and InventoryState.
-	sentStats stats
-	sentInv   world.Inventory
+	sentStats  stats
+	sentInv    world.Inventory
+	sentSkills [world.NumSkills]int // skill XP in tenths the client last got in SkillStats
+	// The player's skill levels as of the last tick, for spotting level-ups;
+	// kept across connections while the player stays in the world.
+	levels [world.NumSkills]int
 	// What the client last got in EntityInfo, for entities in its view; an
 	// entity leaving view is forgotten, so it gets EntityInfo again on return.
 	known map[world.PlayerID]knownEnt
@@ -196,6 +200,7 @@ type Server struct {
 	pve      *combat.System      // set by SetPvE; nil without PvE
 	ground   *grounditems.System // set by SetGroundItems; where PvP drops spawn
 	tickHits []hit               // this tick's PvP and PvE swings, sent as CombatHit
+	levelUps []levelUp           // this tick's skill level-ups, sent as LevelUp
 	seen     []hit               // reused: the hits one player can see
 	live     map[world.PlayerID]*guest
 	gone     map[world.PlayerID]*guest // live players with no connection, waiting out the logout lock
@@ -632,6 +637,13 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		s.nextSave = now.Add(s.cfg.SaveInterval)
 	}
 
+	s.levelUps = s.levelUps[:0]
+	for id, g := range s.live {
+		if p := w.Player(id); p != nil {
+			s.levelUps = appendLevelUps(s.levelUps, g, p)
+		}
+	}
+
 	tick := w.TickCount()
 	for _, p := range w.Players() {
 		s.grid.Set(p.ID, p.Pos)
@@ -680,6 +692,7 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		}
 		s.sendEntityHealth(g, tick)
 		s.sendCombatHits(g, tick)
+		s.sendLevelUps(g)
 		g.conn.Send(encodeSnapshot(s.bld, tick, g.lastSeq, s.ents))
 	}
 	s.tickHits = s.tickHits[:0]
@@ -811,6 +824,37 @@ func (s *Server) npcInfo(n *world.NPC) entityInfo {
 	return entityInfo{kind: protocol.EntityKindNpc, npcType: uint16(n.Type), level: t.Level}
 }
 
+// levelUp is one skill level gained this tick by entity id.
+type levelUp struct {
+	id    world.PlayerID
+	skill world.Skill
+	level int
+}
+
+// appendLevelUps appends to dst a levelUp for each skill whose level p has
+// raised since the last tick, and records p's current levels in g.
+func appendLevelUps(dst []levelUp, g *guest, p *world.Player) []levelUp {
+	for sk := range world.NumSkills {
+		if l := p.SkillLevel(sk); l != g.levels[sk] {
+			if l > g.levels[sk] {
+				dst = append(dst, levelUp{id: p.ID, skill: sk, level: l})
+			}
+			g.levels[sk] = l
+		}
+	}
+	return dst
+}
+
+// sendLevelUps sends g a LevelUp for each of this tick's level-ups by an
+// entity in s.ents (the player and what they see).
+func (s *Server) sendLevelUps(g *guest) {
+	for _, u := range s.levelUps {
+		if s.inView(u.id) {
+			g.conn.Send(encodeLevelUp(s.bld, u))
+		}
+	}
+}
+
 // inView reports whether id is in s.ents.
 func (s *Server) inView(id world.PlayerID) bool {
 	for _, e := range s.ents {
@@ -860,6 +904,9 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 		return
 	}
 	s.live[g.id] = g
+	for sk := range world.NumSkills {
+		g.levels[sk] = p.SkillLevel(sk) // the loaded levels are not level-ups
+	}
 	c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate, s.cfg.MoveSpeed, s.cfg.RunSpeed, s.clock.Now()))
 	s.sendInitial(g, p)
 	s.log.Info("player joined", "player", g.id, "transport", "websocket")
@@ -875,10 +922,12 @@ func (s *Server) sendInitial(g *guest, p *world.Player) {
 	g.conn.Send(encodePlayerStats(s.bld, g.sentStats))
 	g.sentInv = cloneInventory(p.Inv)
 	g.conn.Send(encodeInventoryState(s.bld, &p.Inv))
+	g.sentSkills = p.SkillXP
+	g.conn.Send(encodeSkillStats(s.bld, &p.SkillXP))
 }
 
-// sendChanged sends PlayerStats and InventoryState if they differ from what
-// the client last got.
+// sendChanged sends PlayerStats, InventoryState and SkillStats if they
+// differ from what the client last got.
 func (s *Server) sendChanged(g *guest, p *world.Player) {
 	if st := statsOf(s.data.Rules, p); st != g.sentStats {
 		g.sentStats = st
@@ -888,6 +937,10 @@ func (s *Server) sendChanged(g *guest, p *world.Player) {
 		g.sentInv.Slots = append(g.sentInv.Slots[:0], p.Inv.Slots...)
 		g.sentInv.Equipment, g.sentInv.Gold = p.Inv.Equipment, p.Inv.Gold
 		g.conn.Send(encodeInventoryState(s.bld, &p.Inv))
+	}
+	if p.SkillXP != g.sentSkills {
+		g.sentSkills = p.SkillXP
+		g.conn.Send(encodeSkillStats(s.bld, &p.SkillXP))
 	}
 }
 

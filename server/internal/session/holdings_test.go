@@ -71,7 +71,8 @@ func decodeInventory(t *testing.T, r *rig, c *client) protocol.InventoryState {
 }
 
 // joinFully reads Welcome, ItemCatalog, NpcCatalog, CardTableCatalog,
-// PlayerStats and InventoryState, in that order, and returns the player id, token and the last two.
+// PlayerStats, InventoryState and SkillStats, in that order, and returns the
+// player id, token, catalog, stats and inventory.
 func joinFully(t *testing.T, r *rig, c *client) (world.PlayerID, string, protocol.ItemCatalog, protocol.PlayerStats, protocol.InventoryState) {
 	t.Helper()
 	id, tok := r.expectWelcome(c)
@@ -89,6 +90,9 @@ func joinFully(t *testing.T, r *rig, c *client) (world.PlayerID, string, protoco
 	}
 	st := decodeStats(t, r, c)
 	inv := decodeInventory(t, r, c)
+	if typ, _ := r.next(c); typ != protocol.MessageSkillStats {
+		t.Fatalf("after InventoryState got %v, want SkillStats", typ)
+	}
 	return world.PlayerID(id), tok, cat, st, inv
 }
 
