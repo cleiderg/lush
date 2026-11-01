@@ -49,7 +49,7 @@ static endTradeOffer(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createTradeOffer(builder:flatbuffers.Builder, slot:number, quantity:number):flatbuffers.Offset {
+static createTradeOffer(builder:flatbuffers.Builder, slot:number = 0, quantity:number = 0):flatbuffers.Offset {
   TradeOffer.startTradeOffer(builder);
   TradeOffer.addSlot(builder, slot);
   TradeOffer.addQuantity(builder, quantity);

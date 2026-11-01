@@ -9,6 +9,7 @@ import { CampusMap, loadCampus } from './campusMap';
 import { GroundItems } from './groundItems';
 import { Npcs } from './npcs';
 import { ChatText } from './chatText';
+import { FloatTexts } from './floatText';
 import { AreaMarkers, loadAreas } from './gameAreas';
 import { CardTables, loadCardTables } from './cardTables';
 import { Nature } from './nature';
@@ -16,6 +17,7 @@ import { Props, loadProps } from './propKit';
 import { loadParkNature } from './parkNature';
 import { SkillObjects, loadSkills } from './skillObjects';
 import { DEFAULT_SKY, SkyRig } from './sky';
+import { CafeInterior, cafeLightSources } from './cafeInterior';
 import { LampLights, lampSources } from './lights';
 import type { CampusData } from './mapData';
 import type { WorldView } from './worldView';
@@ -54,7 +56,9 @@ export class WorldScene {
   /** Sun, ambient, sky colour and fog, following WorldView.sky. */
   readonly sky = new SkyRig();
   /** Warm point lights and glowing heads for lamp posts and lanterns, lit from sunset to sunrise. */
-  readonly lamps = new LampLights(lampSources(loadProps()), this.props.glow);
+  readonly lamps = new LampLights([...lampSources(loadProps()), ...cafeLightSources()], this.props.glow);
+  /** The furnished Student Center café: floor, walls and props, two draw calls. */
+  readonly cafe = new CafeInterior(this.props.glow);
   private readonly player = new Character();
   private readonly remotes = new RemotePlayers();
   readonly healthBars = new HealthBars();
@@ -65,6 +69,7 @@ export class WorldScene {
   /** Attack swings and hit flinches, started by the view's hits. */
   readonly combat = new CombatAnims();
   readonly chat = new ChatText();
+  readonly floatTexts = new FloatTexts();
   /** Created on the first view that carries groundItems, so views without it leave the scene as before. */
   private groundItems: GroundItems | null = null;
   /** Created on the first view that carries npcs, like groundItems. */
@@ -78,7 +83,7 @@ export class WorldScene {
     this.sky.update(undefined, 0, 0);
     this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.areas.group, this.player.root, this.remotes.group, this.shadows.group, this.healthBars.group);
     // After the players: tests find the remote-player instanced meshes as the first ones in the scene.
-    this.scene.add(this.cardTables.group, this.props.group, this.skills.group, this.nature.group, this.lamps.group);
+    this.scene.add(this.cardTables.group, this.props.group, this.cafe.group, this.skills.group, this.nature.group, this.lamps.group);
     this.lamps.update(DEFAULT_SKY.elevation, this.rig.camera.position, this.now());
     // Cull again for the camera actually rendering, in case its aspect changed since the last view.
     this.scene.onBeforeRender = (_renderer, _scene, camera) => {
@@ -108,6 +113,8 @@ export class WorldScene {
     this.player.setEquipment(lookup?.entityInfo(local.id)?.equipment, lookup);
     this.remotes.update(view.remotes, lookup, time, this.player, this.combat);
     this.skills.update(view.felledTrees);
+    this.skills.setFishingSpots(view.fishingSpots);
+    this.skills.setProgress(view.activeResource, view.resourceProgress);
     if (view.groundItems) {
       if (!this.groundItems) {
         this.groundItems = new GroundItems();
@@ -128,6 +135,8 @@ export class WorldScene {
     }
     this.shadows.update(this.shadowList(view));
     this.rig.follow(local.x, local.z);
+    const cam = this.rig.camera.position;
+    this.map.cutaway?.update(local.x, local.z, cam.x, cam.z, this.now());
     this.nature.cull(this.rig.camera);
     this.skills.cull(this.rig.camera);
     this.sky.update(view.sky, local.x, local.z);
@@ -140,6 +149,8 @@ export class WorldScene {
     // Chat joins the scene with the first message, like hitsplats; it needs the DOM only from then on.
     if (view.chat?.length && !this.chat.group.parent) this.scene.add(this.chat.group);
     if (this.chat.group.parent) this.chat.update(view);
+    if (view.gains?.length && !this.floatTexts.group.parent) this.scene.add(this.floatTexts.group);
+    if (this.floatTexts.group.parent) this.floatTexts.update(view, this.now());
   }
 
   /** One shadow per drawn player and NPC, reusing the same objects each frame. */

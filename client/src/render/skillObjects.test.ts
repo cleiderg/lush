@@ -192,3 +192,52 @@ describe('felled trees (AC3)', () => {
     s.dispose();
   });
 });
+
+describe('fishing spot ripples (AC1)', () => {
+  const cands = skills.pond.spots;
+  const at = (c: { x: number; z: number }) => `${(c.x * DM).toFixed(2)},${(c.z * DM).toFixed(2)}`;
+  const view = (fishingSpots?: Set<string>) => ({ local: { id: 0, x: 0, z: 0, heading: 0 }, remotes: [], fishingSpots });
+
+  it('draws a ripple at each listed candidate and moves them when the set changes', () => {
+    const w = new WorldScene(() => 0);
+    const ids = [cands[0].id, cands[3].id, cands[5].id];
+    w.update(view(new Set(ids)));
+    expect(positions(w.skills.ripples)).toEqual(cands.filter((c) => ids.includes(c.id)).map(at).sort());
+    const next = [cands[1].id, cands[3].id];
+    w.update(view(new Set(next)));
+    expect(positions(w.skills.ripples)).toEqual(cands.filter((c) => next.includes(c.id)).map(at).sort());
+    expect(instancePos(w.skills.ripples, 0).y).toBeGreaterThan(Y_WATER);
+    w.update(view());
+    expect(w.skills.ripples.count).toBe(0);
+  });
+});
+
+describe('resource progress indicator (AC2)', () => {
+  const view = (activeResource?: string, resourceProgress?: number) =>
+    ({ local: { id: 0, x: 0, z: 0, heading: 0 }, remotes: [], activeResource, resourceProgress });
+  const fillWidth = (s: SkillObjects) => (s.progress.children[1] as THREE.Mesh).scale.x;
+
+  it('appears over a tree, a fishing spot or the grill, reflects progress and hides with no resource', () => {
+    const w = new WorldScene(() => 0);
+    const s = w.skills;
+    expect(s.progress.visible).toBe(false);
+    const tree = skills.trees.find((t) => t.kind === 'oak')!;
+    w.update(view(tree.id, 0.25));
+    expect(s.progress.visible).toBe(true);
+    expect(s.progress.position.x).toBeCloseTo(tree.x * DM);
+    expect(s.progress.position.z).toBeCloseTo(tree.z * DM);
+    expect(s.progress.position.y).toBeGreaterThan(2);
+    const quarter = fillWidth(s);
+    w.update(view(tree.id, 0.75));
+    expect(fillWidth(s)).toBeCloseTo(quarter * 3);
+    const spot = skills.pond.spots[2];
+    w.update(view(spot.id, 1));
+    expect([s.progress.position.x, s.progress.position.z]).toEqual([spot.x * DM, spot.z * DM]);
+    w.update(view('grill', 0.5));
+    expect([s.progress.position.x, s.progress.position.z]).toEqual([skills.grill.x * DM, skills.grill.z * DM]);
+    w.update(view(undefined, 0.5));
+    expect(s.progress.visible).toBe(false);
+    w.update(view('no-such-id', 0.5));
+    expect(s.progress.visible).toBe(false);
+  });
+});

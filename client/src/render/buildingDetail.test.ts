@@ -217,7 +217,7 @@ describe('draw calls (AC4)', () => {
     expect(doubled.stats.triangles).toBeGreaterThan(all.stats.triangles * 1.5);
     // Window glass is in the chunk mesh itself, not a mesh of its own.
     for (const chunk of all.group.children) {
-      const own = chunk.children.filter((c) => !c.name.startsWith('ground-'));
+      const own = chunk.children.filter((c) => !c.name.startsWith('ground-') && c.name !== 'student-center-cutaway'); // the cut-away building is hidden unless the player is in the café
       expect(own, chunk.name).toEqual([]);
     }
   });

@@ -52,7 +52,7 @@ static endGroundItems(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createGroundItems(builder:flatbuffers.Builder, itemsOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createGroundItems(builder:flatbuffers.Builder, itemsOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   GroundItems.startGroundItems(builder);
   GroundItems.addItems(builder, itemsOffset);
   return GroundItems.endGroundItems(builder);

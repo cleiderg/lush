@@ -21,7 +21,9 @@ import (
 )
 
 // AreaLookup says which gameplay area a position is in. *areas.Lookup
-// implements it; its safe circle takes precedence over every polygon.
+// implements it; its safe circle and safe interiors (the Student Center café)
+// take precedence over every polygon, so a player in one is never in the PvP
+// zone.
 type AreaLookup interface {
 	AreaAt(p world.Vec2) areas.Area
 }
@@ -38,8 +40,8 @@ type Verdict uint8
 
 const (
 	Allowed           Verdict = iota
-	AttackerNotInZone         // the attacker is outside the PvP zone (or in the safe circle)
-	TargetNotInZone           // the target is outside the PvP zone (or in the safe circle)
+	AttackerNotInZone         // the attacker is outside the PvP zone (or in a safe area)
+	TargetNotInZone           // the target is outside the PvP zone (or in a safe area)
 	OutsideLevelGap           // combat levels differ by more than Rules.PvPLevelGap
 )
 
@@ -53,7 +55,7 @@ func (v Verdict) String() string {
 }
 
 // CanAttack reports whether attacker may attack target: both must stand in
-// the PvP zone, outside the safe circle, and their combat levels must differ
+// the PvP zone, outside the safe circle and the café, and their combat levels must differ
 // by at most Rules.PvPLevelGap. The first failing condition is returned.
 func CanAttack(d *gamedata.Data, a AreaLookup, attacker, target Fighter) Verdict {
 	if !a.AreaAt(attacker.Pos).PvP() {

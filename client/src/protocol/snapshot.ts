@@ -70,7 +70,7 @@ static endSnapshot(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createSnapshot(builder:flatbuffers.Builder, tick:number, lastInputSeq:number, entitiesOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createSnapshot(builder:flatbuffers.Builder, tick:number = 0, lastInputSeq:number = 0, entitiesOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   Snapshot.startSnapshot(builder);
   Snapshot.addTick(builder, tick);
   Snapshot.addLastInputSeq(builder, lastInputSeq);

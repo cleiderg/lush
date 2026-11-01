@@ -185,8 +185,44 @@ func (rcv *ItemDef) MutateShopSellsFor(n uint32) bool {
 	return rcv._tab.MutateUint32Slot(28, n)
 }
 
+func (rcv *ItemDef) ToolSkill() ToolSkill {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(30))
+	if o != 0 {
+		return ToolSkill(rcv._tab.GetByte(o + rcv._tab.Pos))
+	}
+	return 0
+}
+
+func (rcv *ItemDef) MutateToolSkill(n ToolSkill) bool {
+	return rcv._tab.MutateByteSlot(30, byte(n))
+}
+
+func (rcv *ItemDef) ToolLevel() byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(32))
+	if o != 0 {
+		return rcv._tab.GetByte(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *ItemDef) MutateToolLevel(n byte) bool {
+	return rcv._tab.MutateByteSlot(32, n)
+}
+
+func (rcv *ItemDef) CookingLevel() byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(34))
+	if o != 0 {
+		return rcv._tab.GetByte(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *ItemDef) MutateCookingLevel(n byte) bool {
+	return rcv._tab.MutateByteSlot(34, n)
+}
+
 func ItemDefStart(builder *flatbuffers.Builder) {
-	builder.StartObject(13)
+	builder.StartObject(16)
 }
 func ItemDefAddId(builder *flatbuffers.Builder, id uint16) {
 	builder.PrependUint16Slot(0, id, 0)
@@ -226,6 +262,15 @@ func ItemDefAddShopSells(builder *flatbuffers.Builder, shopSells bool) {
 }
 func ItemDefAddShopSellsFor(builder *flatbuffers.Builder, shopSellsFor uint32) {
 	builder.PrependUint32Slot(12, shopSellsFor, 0)
+}
+func ItemDefAddToolSkill(builder *flatbuffers.Builder, toolSkill ToolSkill) {
+	builder.PrependByteSlot(13, byte(toolSkill), 0)
+}
+func ItemDefAddToolLevel(builder *flatbuffers.Builder, toolLevel byte) {
+	builder.PrependByteSlot(14, toolLevel, 0)
+}
+func ItemDefAddCookingLevel(builder *flatbuffers.Builder, cookingLevel byte) {
+	builder.PrependByteSlot(15, cookingLevel, 0)
 }
 func ItemDefEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

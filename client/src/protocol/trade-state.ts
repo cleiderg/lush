@@ -124,7 +124,7 @@ static endTradeState(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createTradeState(builder:flatbuffers.Builder, partnerId:number, screen:number, myItemsOffset:flatbuffers.Offset, myGold:number, partnerItemsOffset:flatbuffers.Offset, partnerGold:number, myAccepted:boolean, partnerAccepted:boolean):flatbuffers.Offset {
+static createTradeState(builder:flatbuffers.Builder, partnerId:number = 0, screen:number = 0, myItemsOffset:flatbuffers.Offset = 0, myGold:number = 0, partnerItemsOffset:flatbuffers.Offset = 0, partnerGold:number = 0, myAccepted:boolean = false, partnerAccepted:boolean = false):flatbuffers.Offset {
   TradeState.startTradeState(builder);
   TradeState.addPartnerId(builder, partnerId);
   TradeState.addScreen(builder, screen);

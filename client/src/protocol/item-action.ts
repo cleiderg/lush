@@ -62,7 +62,7 @@ static endItemAction(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createItemAction(builder:flatbuffers.Builder, action:ItemActionKind, slot:number, equipSlot:EquipSlot):flatbuffers.Offset {
+static createItemAction(builder:flatbuffers.Builder, action:ItemActionKind = ItemActionKind.Equip, slot:number = 0, equipSlot:EquipSlot = EquipSlot.None):flatbuffers.Offset {
   ItemAction.startItemAction(builder);
   ItemAction.addAction(builder, action);
   ItemAction.addSlot(builder, slot);

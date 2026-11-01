@@ -65,6 +65,7 @@ const (
 	MessageBankDepositInventory Message = 55
 	MessageBankDepositEquipment Message = 56
 	MessageBankResult           Message = 57
+	MessageSkillCatalog         Message = 58
 )
 
 var EnumNamesMessage = map[Message]string{
@@ -126,6 +127,7 @@ var EnumNamesMessage = map[Message]string{
 	MessageBankDepositInventory: "BankDepositInventory",
 	MessageBankDepositEquipment: "BankDepositEquipment",
 	MessageBankResult:           "BankResult",
+	MessageSkillCatalog:         "SkillCatalog",
 }
 
 var EnumValuesMessage = map[string]Message{
@@ -187,6 +189,7 @@ var EnumValuesMessage = map[string]Message{
 	"BankDepositInventory": MessageBankDepositInventory,
 	"BankDepositEquipment": MessageBankDepositEquipment,
 	"BankResult":           MessageBankResult,
+	"SkillCatalog":         MessageSkillCatalog,
 }
 
 func (v Message) String() string {

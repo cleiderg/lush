@@ -61,7 +61,7 @@ static endLevelUp(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createLevelUp(builder:flatbuffers.Builder, entityId:number, skill:Skill, level:number):flatbuffers.Offset {
+static createLevelUp(builder:flatbuffers.Builder, entityId:number = 0, skill:Skill = Skill.Woodcutting, level:number = 0):flatbuffers.Offset {
   LevelUp.startLevelUp(builder);
   LevelUp.addEntityId(builder, entityId);
   LevelUp.addSkill(builder, skill);

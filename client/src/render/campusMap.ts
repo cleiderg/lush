@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import campusRaw from '../../../shared/map/campus.json?raw';
-import { GREEN_GRASS, GREEN_PITCH, GREEN_WATER, GREEN_WOOD, parseCampus, type CampusData, type Green, type ParkNatureData } from './mapData';
-import { buildLandmark, isLandmark } from './landmarks';
+import { GREEN_GRASS, GREEN_PITCH, GREEN_WATER, GREEN_WOOD, parseCampus, type Building, type CampusData, type Green, type ParkNatureData } from './mapData';
+import { Cutaway } from './cutaway';
+import { STUDENT_CENTER, buildLandmark, isLandmark } from './landmarks';
 import { mulberry32 } from './rng';
 import { GROUND_KINDS, GROUND_PLAZA, SurfaceBuilder, makeGroundMaterial } from './groundSurfaces';
 import {
@@ -417,6 +418,8 @@ interface Built {
   extruded: number[];
   landmarks: number[];
   facades: Map<number, FacadeDetail>;
+  /** The Student Center, kept out of its chunk's builder so it can be cut away (cutaway.ts), and that chunk's key. */
+  studentCenter?: { builder: MeshBuilder; key: string; building: Building };
 }
 
 /** Built chunks per campus data, which is never changed after loading: the map is static. */
@@ -483,8 +486,18 @@ function buildChunks(data: CampusData): Built {
   const extruded: number[] = [];
   const landmarks: number[] = [];
   const facades = new Map<number, FacadeDetail>();
+  let studentCenter: Built['studentCenter'];
   for (const bl of data.buildings) {
     const [cx, cz] = centre(bl.p);
+    if (bl.id === STUDENT_CENTER) {
+      at(cx, cz); // makes sure the chunk exists
+      const builder = new MeshBuilder();
+      if (buildLandmark(builder, bl, data)) {
+        landmarks.push(bl.id);
+        studentCenter = { builder, key: keyAt(cx, cz), building: bl };
+        continue;
+      }
+    }
     if (isLandmark(bl.id) && buildLandmark(at(cx, cz), bl, data)) {
       landmarks.push(bl.id);
     } else {
@@ -493,7 +506,7 @@ function buildChunks(data: CampusData): Built {
     }
   }
 
-  const result = { builders, surfaces, extruded, landmarks, facades };
+  const result = { builders, surfaces, extruded, landmarks, facades, studentCenter };
   built.set(data, result);
   return result;
 }
@@ -566,6 +579,8 @@ function shared(builder: object, make: () => THREE.BufferGeometry): THREE.Buffer
 export class CampusMap {
   readonly group = new THREE.Group();
   readonly stats: MapStats;
+  /** The Student Center's cut-away view; update it each frame with the player and camera positions. */
+  cutaway: Cutaway | null = null;
   readonly material = new THREE.MeshLambertMaterial({ vertexColors: true });
   /** Light added to every `glow` vertex (window glass): WINDOW_GLOW at night, black by day. */
   readonly windowGlow = new THREE.Color(0);
@@ -578,7 +593,7 @@ export class CampusMap {
     const glow = { value: this.windowGlow };
     this.material.onBeforeCompile = (shader) => addWindowGlow(shader, glow);
     this.material.customProgramCacheKey = () => 'campus-window-glow';
-    const { builders, surfaces, extruded, landmarks, facades } = buildChunks(data);
+    const { builders, surfaces, extruded, landmarks, facades, studentCenter } = buildChunks(data);
     const extra = nature ? bakeNature(data, nature) : null;
     const keys = new Set([...builders.keys(), ...(extra?.builders.keys() ?? [])]);
 
@@ -589,10 +604,30 @@ export class CampusMap {
       triangles += b.triangles + (nb?.triangles ?? 0);
       // Every chunk mesh carries `glow` (all 0 without windows) so the patched shader never reads a stale value.
       // A chunk with only ground surfaces has no merged mesh of its own, just a holder for them.
-      const geometry = nb
+      const open = nb
         ? shared(nb, () => (b.triangles > 0 ? mergeGeometries([b.geometry(true), nb.geometry(true)])! : nb.geometry(true)))
         : b.triangles > 0 ? shared(b, () => b.geometry(true)) : null;
+      // The Student Center is drawn in its chunk until the local player is in the café (see Cutaway).
+      const sc = studentCenter && studentCenter.key === key ? studentCenter : null;
+      if (sc) triangles += sc.builder.triangles;
+      const geometry = sc
+        ? open
+          ? mergeGeometries([open, shared(sc.builder, () => sc.builder.geometry(true))])!
+          : shared(sc.builder, () => sc.builder.geometry(true))
+        : open;
       const chunk = geometry ? new THREE.Mesh(geometry, this.material) : new THREE.Group();
+      if (sc && geometry) {
+        this.cutaway = new Cutaway({
+          chunk: chunk as THREE.Mesh,
+          baked: geometry,
+          open: open ?? new THREE.BufferGeometry(),
+          building: sc.builder.geometry(true),
+          footprint: sc.building.p,
+          top: sc.building.h * DM - 1,
+          glow: { value: this.windowGlow },
+        });
+        chunk.add(this.cutaway.mesh);
+      }
       chunk.name = `chunk-${key}`;
       chunk.matrixAutoUpdate = false;
       chunk.castShadow = true;
@@ -620,6 +655,7 @@ export class CampusMap {
 
   dispose(): void {
     this.group.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+    this.cutaway?.dispose();
     this.material.dispose();
     for (const m of this.surfaceMaterials) {
       m.map?.dispose();

@@ -16,6 +16,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/loot"
 	"github.com/cleiderg/lush/server/internal/world"
+	"github.com/cleiderg/lush/server/internal/world/areas"
 )
 
 // ReasonNPCDrop is the economy audit reason for the gold a kill credits to
@@ -70,11 +71,12 @@ type EventSink interface {
 	PlayerDied(d Death)
 }
 
-// Zones is the map the combat system needs: the safe circle, where no attack
-// can start, and the spawn point where dead players respawn. *areas.Lookup
-// implements it.
+// Zones is the map the combat system needs: which area a position is in
+// (no attack can start in a NoCombat area: the safe circle or a safe
+// interior such as the Student Center café), and the spawn point where dead
+// players respawn. *areas.Lookup implements it.
 type Zones interface {
-	InSafeCircle(p world.Vec2) bool
+	AreaAt(p world.Vec2) areas.Area
 	Spawn() world.Vec2
 }
 
@@ -82,13 +84,13 @@ type Zones interface {
 // it ticks on the combat tick, after the NPC movement system. On each Tick:
 //
 //  1. Aggressive NPCs without a target pick the nearest living player within
-//     Rules.AggressionRangeTiles who is outside the safe circle.
+//     Rules.AggressionRangeTiles who is outside the safe areas.
 //  2. Every player with an NPC target swings at it when it is within
 //     Rules.AttackRangeTiles and their weapon's attack speed (counted in
-//     combat ticks) has passed. A player in the safe circle can't attack.
-//     An NPC that is hit fights back if it has no target.
+//     combat ticks) has passed. Nobody can attack from or into a safe area
+//     (the safe circle or the café). An NPC that is hit fights back if it has no target.
 //  3. Every NPC with a target gives up and walks home once past
-//     Rules.LeashTiles from home (or when its target is in the safe circle),
+//     Rules.LeashTiles from home (or when its target is in a safe area),
 //     swings when in range and due, and otherwise walks toward its target
 //     by setting its Goal for the NPC system's goal step.
 //
@@ -228,7 +230,7 @@ func (s *System) aggress(w *world.World) {
 		best, bestD := world.PlayerID(0), math.MaxInt
 		found := false
 		for _, p := range w.Players() {
-			if p.HP <= 0 || s.zones.InSafeCircle(p.Pos) {
+			if p.HP <= 0 || s.noCombat(p.Pos) {
 				continue
 			}
 			if d := s.tiles(n.Pos, p.Pos); d <= reach && d < bestD {
@@ -240,6 +242,9 @@ func (s *System) aggress(w *world.World) {
 		}
 	}
 }
+
+// noCombat reports whether p is in a safe area where no attack can start.
+func (s *System) noCombat(p world.Vec2) bool { return s.zones.AreaAt(p).NoCombat() }
 
 // playerTurn makes p swing at their NPC target if allowed and due.
 func (s *System) playerTurn(w *world.World, p *world.Player, now time.Time) {
@@ -257,7 +262,7 @@ func (s *System) playerTurn(w *world.World, p *world.Player, now time.Time) {
 		delete(s.targets, p.ID)
 		return
 	}
-	if s.ticks < s.next[p.ID] || !s.inRange(p.Pos, n.Pos) || s.zones.InSafeCircle(p.Pos) || s.zones.InSafeCircle(n.Pos) {
+	if s.ticks < s.next[p.ID] || !s.inRange(p.Pos, n.Pos) || s.noCombat(p.Pos) || s.noCombat(n.Pos) {
 		return
 	}
 	if p.AttackDelay > 0 {
@@ -308,7 +313,7 @@ func (s *System) npcTurn(w *world.World, n *world.NPC, now time.Time) {
 		s.giveUp(n, true)
 		return
 	}
-	if s.zones.InSafeCircle(p.Pos) {
+	if s.noCombat(p.Pos) {
 		s.giveUp(n, false)
 		n.Goal, n.HasGoal = n.Home, true
 		return

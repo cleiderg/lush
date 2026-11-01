@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 14
+  Current = 15
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -48,6 +48,14 @@ enum Emote : ubyte {
 // empty equipment slot; real items never use id 0.
 enum EmptyItem : ushort {
   Id = 0
+}
+
+// ItemDef.tool_skill values: the skill an item is a tool for. Values are
+// Skill + 1, so None (0) is the default for items that aren't tools.
+enum ToolSkill : ubyte {
+  None = 0,
+  Woodcutting = 1,
+  Fishing = 2
 }
 
 // ItemDef.kind values.
@@ -218,6 +226,9 @@ table ItemDef {
   shop_buys_for: uint32;   // gold the shop pays the player for one
   shop_sells: bool;        // false: the shop doesn't sell this item
   shop_sells_for: uint32;  // gold the player pays the shop; only if shop_sells
+  tool_skill: ToolSkill;   // the skill this item is a tool for; None if not a tool
+  tool_level: ubyte;       // skill level needed to use the tool; 0 if not a tool
+  cooking_level: ubyte;    // Cooking level to cook it; 0 unless it is a raw fish
 }
 
 // Server -> client: every item definition, so the client doesn't hard-code
@@ -238,6 +249,7 @@ table EntityInfo {
   head: ushort;
   body: ushort;
   shield: ushort;
+  total_level: ushort;     // combat level plus every skill level; 0 for NPCs
 }
 
 // Server -> client: health bars for entities in view whose health changed.
@@ -599,6 +611,27 @@ table LevelUp {
   level: ubyte;       // the new level
 }
 
+// One tree kind inside SkillCatalog.
+table TreeKindDef {
+  kind: string;        // tree kind, as in shared/map/skills.json ("tree", "oak", ...)
+  level: ubyte;        // Woodcutting level needed to chop it
+}
+
+// One fishing spot kind inside SkillCatalog.
+table FishingSpotKindDef {
+  kind: string;        // spot kind, as in shared/map/skills.json ("net", "rod")
+  level: ubyte;        // Fishing level needed to fish there
+  tool_item_id: ushort; // ItemDef.id of the tool needed
+}
+
+// Server -> client: the level and tool each tree kind and fishing spot kind
+// needs, so the client can pick Interact targets without hard-coding them.
+// Hatchets are found from ItemDef.tool_skill and tool_level.
+table SkillCatalog {
+  trees: [TreeKindDef];
+  fishing_spots: [FishingSpotKindDef];
+}
+
 // SkillResult.code values.
 enum SkillResultCode : ubyte {
   Started = 0,        // the action started
@@ -687,7 +720,8 @@ enum BankResultCode : ubyte {
   InventoryFull = 5,   // no room in the inventory for the withdrawal
   NotEnoughItems = 6,  // fewer items than the amount asked for
   Busy = 7,            // an earlier bank request is still being saved
-  NotOpen = 8          // the bank isn't open
+  NotOpen = 8,         // the bank isn't open
+  SaveFailed = 9       // the transfer couldn't be saved and nothing changed
 }
 
 // Server -> client: the outcome of a BankOpen, BankDeposit, BankWithdraw,
@@ -753,7 +787,8 @@ union Message {
   BankWithdraw,
   BankDepositInventory,
   BankDepositEquipment,
-  BankResult
+  BankResult,
+  SkillCatalog
 }
 
 table Envelope {

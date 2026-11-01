@@ -40,7 +40,7 @@ static endRestartCountdown(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createRestartCountdown(builder:flatbuffers.Builder, secondsRemaining:number):flatbuffers.Offset {
+static createRestartCountdown(builder:flatbuffers.Builder, secondsRemaining:number = 0):flatbuffers.Offset {
   RestartCountdown.startRestartCountdown(builder);
   RestartCountdown.addSecondsRemaining(builder, secondsRemaining);
   return RestartCountdown.endRestartCountdown(builder);

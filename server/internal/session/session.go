@@ -27,6 +27,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/interest"
 	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/store"
+	"github.com/cleiderg/lush/server/internal/systems/bank"
 	"github.com/cleiderg/lush/server/internal/systems/cardroom"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
 	"github.com/cleiderg/lush/server/internal/systems/combat"
@@ -120,6 +121,7 @@ type guest struct {
 	xp      int                  // combat XP, restored on resume
 	skills  [world.NumSkills]int // skill XP in tenths, restored on resume
 	inv     world.Inventory
+	bank    world.Bank    // the player's bank, as loaded or as of the last removal from the world
 	conns   int           // connections that completed the handshake and have not ended
 	idle    *list.Element // in Server.idle while conns == 0 and out of the world
 
@@ -128,8 +130,12 @@ type guest struct {
 	lastSeq uint32
 	goneAt  time.Time // when the last connection ended, while waiting out the logout lock
 	// What the client last got in PlayerStats and InventoryState.
-	sentStats stats
-	sentInv   world.Inventory
+	sentStats  stats
+	sentInv    world.Inventory
+	sentSkills [world.NumSkills]int // skill XP in tenths the client last got in SkillStats
+	// The player's skill levels as of the last tick, for spotting level-ups;
+	// kept across connections while the player stays in the world.
+	levels [world.NumSkills]int
 	// What the client last got in EntityInfo, for entities in its view; an
 	// entity leaving view is forgotten, so it gets EntityInfo again on return.
 	known map[world.PlayerID]knownEnt
@@ -170,6 +176,7 @@ type Server struct {
 	log   *slog.Logger
 	clock world.Clock
 	store store.Players
+	banks store.Bank // the bank store; nil if the player store keeps no banks
 	data  *gamedata.Data
 
 	catalog  []byte                 // encoded ItemCatalog, shared by every connection
@@ -192,10 +199,12 @@ type Server struct {
 	// Tick-goroutine only.
 	trades   *trade.System       // set by SetTrades; nil without trading
 	cards    *cardroom.System    // set by SetCardRoom; nil without the card room
+	bank     *bank.System        // set by SetBank; nil without the bank
 	pvp      *pvp.Combat         // set by SetPvP; nil without PvP
 	pve      *combat.System      // set by SetPvE; nil without PvE
 	ground   *grounditems.System // set by SetGroundItems; where PvP drops spawn
 	tickHits []hit               // this tick's PvP and PvE swings, sent as CombatHit
+	levelUps []levelUp           // this tick's skill level-ups, sent as LevelUp
 	seen     []hit               // reused: the hits one player can see
 	live     map[world.PlayerID]*guest
 	gone     map[world.PlayerID]*guest // live players with no connection, waiting out the logout lock
@@ -247,7 +256,8 @@ func New(cfg Config, w *world.World, clock world.Clock, players store.Players, l
 		}
 		data = d
 	}
-	return &Server{saver: newSaver(players, log), cfg: cfg, w: w, log: log, clock: clock, store: players,
+	banks, _ := players.(store.Bank)
+	return &Server{saver: newSaver(players, log), banks: banks, cfg: cfg, w: w, log: log, clock: clock, store: players,
 		data: data, catalog: encodeItemCatalog(data), npcCat: encodeNpcCatalog(data), cardCat: encodeCardTableCatalog(data), newToken: newToken,
 		pots: map[cardroom.CommitID]*potRef{}, guests: map[int64]*guest{}, idle: list.New(), conns: map[transport.Conn]struct{}{},
 		live: map[world.PlayerID]*guest{}, gone: map[world.PlayerID]*guest{}, grid: interest.NewGrid(), npcsIn: map[world.PlayerID]uint64{}, bld: flatbuffers.NewBuilder(1024)}
@@ -337,7 +347,9 @@ func (s *Server) ServeConn(c transport.Conn) {
 			protocol.MessageTradeRequest, protocol.MessageTradeOffer, protocol.MessageTradeRemove,
 			protocol.MessageTradeSetGold, protocol.MessageTradeAccept, protocol.MessageTradeCancel,
 			protocol.MessagePickUp, protocol.MessageCardTableSit, protocol.MessageCardTableLeave,
-			protocol.MessageCardTableReady, protocol.MessageShedPlay, protocol.MessageShedDraw:
+			protocol.MessageCardTableReady, protocol.MessageShedPlay, protocol.MessageShedDraw,
+			protocol.MessageBankOpen, protocol.MessageBankClose, protocol.MessageBankDeposit,
+			protocol.MessageBankWithdraw, protocol.MessageBankDepositInventory, protocol.MessageBankDepositEquipment:
 			if cmd := m.command(g.id); cmd != nil {
 				s.w.Enqueue(cmd)
 			}
@@ -370,7 +382,14 @@ func (s *Server) handshake(ctx context.Context, c transport.Conn) *guest {
 		return nil
 	}
 
+	bk, err := s.loadBank(hctx, sp.ID)
+	if err != nil {
+		s.log.Error("load bank", "err", err)
+		return nil
+	}
+
 	s.mu.Lock()
+	known := s.guests[sp.ID] != nil
 	g, err := s.guestLocked(sp, fresh)
 	if err != nil {
 		s.mu.Unlock()
@@ -381,6 +400,9 @@ func (s *Server) handshake(ctx context.Context, c transport.Conn) *guest {
 		s.mu.Unlock()
 		c.Send(encodeReload("server full"))
 		return nil
+	}
+	if !known {
+		g.bank = bk // a known guest keeps the bank it has
 	}
 	g.conns++
 	if g.idle != nil {
@@ -431,6 +453,26 @@ func (s *Server) resolve(ctx context.Context, tok string) (sp store.Player, toke
 		return sp, "", false, fmt.Errorf("create guest: %w", err)
 	}
 	return sp, tok, true, nil
+}
+
+// loadBank reads the stored bank of player id. It is empty if the store keeps
+// no banks.
+func (s *Server) loadBank(ctx context.Context, id int64) (world.Bank, error) {
+	if s.banks == nil {
+		return world.Bank{}, nil
+	}
+	items, err := s.banks.LoadBank(ctx, id)
+	if err != nil {
+		return world.Bank{}, fmt.Errorf("player %d: %w", id, err)
+	}
+	var b world.Bank
+	for _, it := range items {
+		if it.Item <= 0 || it.Item > math.MaxUint16 || it.Qty <= 0 || it.Qty > math.MaxInt {
+			return world.Bank{}, fmt.Errorf("player %d: bank item %d qty %d out of range", id, it.Item, it.Qty)
+		}
+		b.Slots = append(b.Slots, world.Stack{Item: gamedata.ItemID(it.Item), Qty: int(it.Qty)})
+	}
+	return b, nil
 }
 
 // guestLocked returns the session guest for a stored player, assigning a
@@ -550,6 +592,17 @@ func (s *Server) Handle(cmd world.Command, p *world.Player) {
 			s.pve.Handle(combat.AttackCommand{Player: p.ID, NPC: a.NPC}, p)
 		}
 		return
+	case DepositItemCommand:
+		if s.bank != nil {
+			slot := slices.IndexFunc(p.Inv.Slots, func(st world.Stack) bool { return !st.Empty() && st.Item == a.Item })
+			s.bank.Handle(bank.DepositCommand{Player: p.ID, Slot: slot, Quantity: a.Amount}, p)
+		}
+		return
+	case WithdrawItemCommand:
+		if s.bank != nil {
+			s.bank.Handle(bank.WithdrawCommand{Player: p.ID, Slot: p.Bank.Index(a.Item), Quantity: a.Amount}, p)
+		}
+		return
 	}
 	in, ok := cmd.(InputCommand)
 	if !ok {
@@ -611,6 +664,9 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		if p != nil && s.trades != nil && s.trades.Committing(id) {
 			continue // the trade's result must reach the player first
 		}
+		if p != nil && s.bank != nil && s.bank.Committing(id) {
+			continue // and a bank transfer's
+		}
 		if p != nil && s.cards != nil && s.cards.Committing(id) {
 			continue // so must a card room stake, payout or refund
 		}
@@ -630,6 +686,13 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 			s.saver.submit(s.collectSaves())
 		}
 		s.nextSave = now.Add(s.cfg.SaveInterval)
+	}
+
+	s.levelUps = s.levelUps[:0]
+	for id, g := range s.live {
+		if p := w.Player(id); p != nil {
+			s.levelUps = appendLevelUps(s.levelUps, g, p)
+		}
 	}
 
 	tick := w.TickCount()
@@ -680,6 +743,7 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		}
 		s.sendEntityHealth(g, tick)
 		s.sendCombatHits(g, tick)
+		s.sendLevelUps(g)
 		g.conn.Send(encodeSnapshot(s.bld, tick, g.lastSeq, s.ents))
 	}
 	s.tickHits = s.tickHits[:0]
@@ -811,6 +875,37 @@ func (s *Server) npcInfo(n *world.NPC) entityInfo {
 	return entityInfo{kind: protocol.EntityKindNpc, npcType: uint16(n.Type), level: t.Level}
 }
 
+// levelUp is one skill level gained this tick by entity id.
+type levelUp struct {
+	id    world.PlayerID
+	skill world.Skill
+	level int
+}
+
+// appendLevelUps appends to dst a levelUp for each skill whose level p has
+// raised since the last tick, and records p's current levels in g.
+func appendLevelUps(dst []levelUp, g *guest, p *world.Player) []levelUp {
+	for sk := range world.NumSkills {
+		if l := p.SkillLevel(sk); l != g.levels[sk] {
+			if l > g.levels[sk] {
+				dst = append(dst, levelUp{id: p.ID, skill: sk, level: l})
+			}
+			g.levels[sk] = l
+		}
+	}
+	return dst
+}
+
+// sendLevelUps sends g a LevelUp for each of this tick's level-ups by an
+// entity in s.ents (the player and what they see).
+func (s *Server) sendLevelUps(g *guest) {
+	for _, u := range s.levelUps {
+		if s.inView(u.id) {
+			g.conn.Send(encodeLevelUp(s.bld, u))
+		}
+	}
+}
+
 // inView reports whether id is in s.ents.
 func (s *Server) inView(id world.PlayerID) bool {
 	for _, e := range s.ents {
@@ -850,7 +945,7 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 		return
 	}
 	s.mu.Lock()
-	p := &world.Player{ID: g.id, Pos: g.pos, XP: g.xp, SkillXP: g.skills, Inv: cloneInventory(g.inv)}
+	p := &world.Player{ID: g.id, Pos: g.pos, XP: g.xp, SkillXP: g.skills, Inv: cloneInventory(g.inv), Bank: g.bank.Clone()}
 	s.mu.Unlock()
 	p.HP = p.MaxHP(s.data.Rules)
 	if err := s.w.AddPlayer(p); err != nil {
@@ -860,6 +955,9 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 		return
 	}
 	s.live[g.id] = g
+	for sk := range world.NumSkills {
+		g.levels[sk] = p.SkillLevel(sk) // the loaded levels are not level-ups
+	}
 	c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate, s.cfg.MoveSpeed, s.cfg.RunSpeed, s.clock.Now()))
 	s.sendInitial(g, p)
 	s.log.Info("player joined", "player", g.id, "transport", "websocket")
@@ -875,10 +973,12 @@ func (s *Server) sendInitial(g *guest, p *world.Player) {
 	g.conn.Send(encodePlayerStats(s.bld, g.sentStats))
 	g.sentInv = cloneInventory(p.Inv)
 	g.conn.Send(encodeInventoryState(s.bld, &p.Inv))
+	g.sentSkills = p.SkillXP
+	g.conn.Send(encodeSkillStats(s.bld, &p.SkillXP))
 }
 
-// sendChanged sends PlayerStats and InventoryState if they differ from what
-// the client last got.
+// sendChanged sends PlayerStats, InventoryState and SkillStats if they
+// differ from what the client last got.
 func (s *Server) sendChanged(g *guest, p *world.Player) {
 	if st := statsOf(s.data.Rules, p); st != g.sentStats {
 		g.sentStats = st
@@ -888,6 +988,10 @@ func (s *Server) sendChanged(g *guest, p *world.Player) {
 		g.sentInv.Slots = append(g.sentInv.Slots[:0], p.Inv.Slots...)
 		g.sentInv.Equipment, g.sentInv.Gold = p.Inv.Equipment, p.Inv.Gold
 		g.conn.Send(encodeInventoryState(s.bld, &p.Inv))
+	}
+	if p.SkillXP != g.sentSkills {
+		g.sentSkills = p.SkillXP
+		g.conn.Send(encodeSkillStats(s.bld, &p.SkillXP))
 	}
 }
 
@@ -912,7 +1016,7 @@ func (s *Server) leave(g *guest, c transport.Conn) {
 func (s *Server) remove(g *guest) {
 	s.mu.Lock()
 	if p := s.w.Player(g.id); p != nil {
-		g.pos, g.xp, g.skills, g.inv = p.Pos, p.XP, p.SkillXP, cloneInventory(p.Inv)
+		g.pos, g.xp, g.skills, g.inv, g.bank = p.Pos, p.XP, p.SkillXP, cloneInventory(p.Inv), p.Bank.Clone()
 	}
 	req := saveReq{storeID: g.storeID, x: g.pos.X, z: g.pos.Y, xp: int64(g.xp), skills: skillsToStore(g.skills), ver: g.ver}
 	s.mu.Unlock()
@@ -962,13 +1066,16 @@ func (s *Server) ShopResult(to world.PlayerID, r shop.Result) {
 }
 
 // appendEconomy drains p's economy outbox and appends one store write per
-// event, except completed trades and card room gold movements, which
-// CommitTrade and CommitCardRoom already saved: the holdings from the event's inventory copy and an audit entry per
+// event, except completed trades, bank transfers and card room gold movements, which
+// CommitTrade, CommitBank and CommitCardRoom already saved: the holdings from the event's inventory copy and an audit entry per
 // change, tagged with the event's reason. Tick goroutine only.
 func (s *Server) appendEconomy(dst []econReq, g *guest, p *world.Player) []econReq {
 	for _, ev := range p.DrainEconomy() {
 		if ev.Reason == trade.ReasonTrade {
 			continue // saved by the trade's own transaction (CommitTrade)
+		}
+		if ev.Reason == bank.ReasonDeposit || ev.Reason == bank.ReasonWithdraw {
+			continue // saved by the transfer's own transaction (CommitBank)
 		}
 		if isCardRoom(ev.Reason) {
 			continue // saved by the card room's own transaction (CommitCardRoom)
@@ -1172,4 +1279,109 @@ func tradeEntries(dst []store.Entry, changes []world.Change, actor, counterparty
 			Payload: auditPayload{Reason: trade.ReasonTrade, Change: c.Kind.String(), Item: int(c.Item), Qty: c.Qty, Gold: c.Gold}})
 	}
 	return dst
+}
+
+// ---- bank ----
+
+// SetBank connects the bank system, so that CommitBank can report results to
+// it, the bank commands reach it and a disconnected player is not removed
+// while their transfer is being saved. Call it before the world starts ticking.
+func (s *Server) SetBank(b *bank.System) { s.bank = b }
+
+// BankState implements bank.Sink. Called on the tick goroutine.
+func (s *Server) BankState(to world.PlayerID, v bank.View) {
+	if g := s.live[to]; g != nil && g.conn != nil {
+		g.conn.Send(encodeBankState(s.bld, v))
+	}
+}
+
+// BankResult implements bank.Sink. The bank system's Closed result, which
+// reports the bank closing, is not sent. Called on the tick goroutine, before
+// this Tick sends the changed PlayerStats and InventoryState.
+func (s *Server) BankResult(to world.PlayerID, r bank.Result) {
+	msg := encodeBankResult(r)
+	if g := s.live[to]; msg != nil && g != nil && g.conn != nil {
+		g.conn.Send(msg)
+	}
+}
+
+// CommitBank implements bank.Committer. It first queues the player's pending
+// economy events, then the transfer as one store TransferBank, which writes
+// the resulting inventory, equipment and bank and the transfer's audit
+// entries in one transaction. The saver writes it after every earlier write
+// of the player, and the result goes back to the bank system through
+// Resolve. Called on the tick goroutine; never blocks.
+func (s *Server) CommitBank(req bank.CommitRequest) {
+	resolve := func(ok bool) {
+		if s.bank != nil {
+			s.bank.Resolve(req.ID, ok)
+		}
+	}
+	g, p := s.live[req.Player], s.w.Player(req.Player)
+	if g == nil || p == nil || s.banks == nil {
+		s.log.Error("commit bank: player not live or no bank store", "player", req.Player)
+		resolve(false)
+		return
+	}
+	moves, err := bankMoves(&p.Inv, &req.Inv)
+	if err != nil {
+		s.log.Error("commit bank", "player", g.id, "store_id", g.storeID, "err", err)
+		resolve(false)
+		return
+	}
+	t := store.BankTransfer{PlayerID: g.storeID, Moves: moves, SlotLimit: s.data.Rules.BankSlots}
+	earlier := s.appendEconomy(nil, g, p)
+	s.saver.submitEconomy(append(earlier, econReq{
+		changes: []store.EconomyChange{{PlayerID: g.storeID}},
+		write: func(ctx context.Context) error {
+			_, _, err := s.banks.TransferBank(ctx, t)
+			return err
+		},
+		done: resolve,
+	})...)
+}
+
+// bankMoves lists the store moves that turn the inventory and equipment
+// before into after: for each slot, a deposit of what left it, then a
+// withdrawal of what entered it.
+func bankMoves(before, after *world.Inventory) ([]store.BankMove, error) {
+	if len(before.Slots) != len(after.Slots) || before.Gold != after.Gold {
+		return nil, errors.New("transfer changes the inventory size or gold")
+	}
+	var moves []store.BankMove
+	for i, b := range before.Slots {
+		a := after.Slots[i]
+		if !b.Empty() {
+			kept := 0
+			if a.Item == b.Item {
+				kept = min(a.Qty, b.Qty)
+			}
+			if kept < b.Qty {
+				moves = append(moves, store.BankMove{Deposit: true, Slot: i, Item: int32(b.Item), Qty: int64(b.Qty - kept)})
+			}
+		}
+		if !a.Empty() {
+			had := 0
+			if a.Item == b.Item {
+				had = min(a.Qty, b.Qty)
+			}
+			if a.Qty > had {
+				moves = append(moves, store.BankMove{Slot: i, Item: int32(a.Item), Qty: int64(a.Qty - had)})
+			}
+		}
+	}
+	for i, slot := range equipSlots {
+		was, now := before.Equipment.Get(slot), after.Equipment.Get(slot)
+		switch {
+		case was == now:
+		case now == 0:
+			moves = append(moves, store.BankMove{Deposit: true, Equipment: true, Slot: i, Item: int32(was), Qty: 1})
+		default:
+			moves = append(moves, store.BankMove{Equipment: true, Slot: i, Item: int32(now), Qty: 1})
+		}
+	}
+	if len(moves) == 0 {
+		return nil, errors.New("transfer moves nothing")
+	}
+	return moves, nil
 }
