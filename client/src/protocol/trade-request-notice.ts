@@ -40,7 +40,7 @@ static endTradeRequestNotice(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createTradeRequestNotice(builder:flatbuffers.Builder, fromId:number):flatbuffers.Offset {
+static createTradeRequestNotice(builder:flatbuffers.Builder, fromId:number = 0):flatbuffers.Offset {
   TradeRequestNotice.startTradeRequestNotice(builder);
   TradeRequestNotice.addFromId(builder, fromId);
   return TradeRequestNotice.endTradeRequestNotice(builder);

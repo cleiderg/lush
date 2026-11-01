@@ -161,7 +161,7 @@ static endCardTableState(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createCardTableState(builder:flatbuffers.Builder, tableId:number, seatsOffset:flatbuffers.Offset, inProgress:boolean, turnSeat:number, reversed:boolean, turnTicksLeft:number, hasWinner:boolean, winnerSeat:number, readyOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createCardTableState(builder:flatbuffers.Builder, tableId:number = 0, seatsOffset:flatbuffers.Offset = 0, inProgress:boolean = false, turnSeat:number = 0, reversed:boolean = false, turnTicksLeft:number = 0, hasWinner:boolean = false, winnerSeat:number = 0, readyOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   CardTableState.startCardTableState(builder);
   CardTableState.addTableId(builder, tableId);
   CardTableState.addSeats(builder, seatsOffset);

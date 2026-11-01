@@ -60,7 +60,7 @@ static endItemCatalog(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createItemCatalog(builder:flatbuffers.Builder, itemsOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createItemCatalog(builder:flatbuffers.Builder, itemsOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   ItemCatalog.startItemCatalog(builder);
   ItemCatalog.addItems(builder, itemsOffset);
   return ItemCatalog.endItemCatalog(builder);

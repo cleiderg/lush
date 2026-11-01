@@ -40,7 +40,7 @@ static endTradeAccept(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createTradeAccept(builder:flatbuffers.Builder, screen:number):flatbuffers.Offset {
+static createTradeAccept(builder:flatbuffers.Builder, screen:number = 0):flatbuffers.Offset {
   TradeAccept.startTradeAccept(builder);
   TradeAccept.addScreen(builder, screen);
   return TradeAccept.endTradeAccept(builder);

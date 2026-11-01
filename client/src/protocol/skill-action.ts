@@ -52,7 +52,7 @@ static endSkillAction(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createSkillAction(builder:flatbuffers.Builder, target:SkillTarget, targetId:number):flatbuffers.Offset {
+static createSkillAction(builder:flatbuffers.Builder, target:SkillTarget = SkillTarget.Tree, targetId:number = 0):flatbuffers.Offset {
   SkillAction.startSkillAction(builder);
   SkillAction.addTarget(builder, target);
   SkillAction.addTargetId(builder, targetId);
