@@ -52,7 +52,7 @@ static endCardTableCatalog(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createCardTableCatalog(builder:flatbuffers.Builder, tablesOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createCardTableCatalog(builder:flatbuffers.Builder, tablesOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   CardTableCatalog.startCardTableCatalog(builder);
   CardTableCatalog.addTables(builder, tablesOffset);
   return CardTableCatalog.endCardTableCatalog(builder);

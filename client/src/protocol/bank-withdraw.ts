@@ -49,7 +49,7 @@ static endBankWithdraw(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createBankWithdraw(builder:flatbuffers.Builder, itemId:number, amount:number):flatbuffers.Offset {
+static createBankWithdraw(builder:flatbuffers.Builder, itemId:number = 0, amount:number = 0):flatbuffers.Offset {
   BankWithdraw.startBankWithdraw(builder);
   BankWithdraw.addItemId(builder, itemId);
   BankWithdraw.addAmount(builder, amount);

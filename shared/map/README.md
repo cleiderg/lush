@@ -58,7 +58,7 @@ Little-endian. 22-byte header, then bits.
 | 18 | i32 | origin z (north edge) in decimetres |
 | 22 | bytes | `ceil(width*height/8)` bytes, row-major (`index = row*width + col`, row = z, col = x), LSB-first; bit 1 = blocked |
 
-Cell `(col,row)` covers x in `[originX + col*cell, +cell)`, z likewise. A cell is blocked when its centre is inside a building or water, or within the fountain's basin (`fountain.json`). Cells outside the file are blocked.
+Cell `(col,row)` covers x in `[originX + col*cell, +cell)`, z likewise. A cell is blocked when its centre is inside a building or water, except the floor and door cells of interiors (`interiors` in `areas.json`), or within the fountain's basin (`fountain.json`). Cells outside the file are blocked.
 
 Go reading sketch: `blocked := data[22+idx>>3]>>(idx&7)&1 == 1`.
 
@@ -66,7 +66,7 @@ Go reading sketch: `blocked := data[22+idx>>3]>>(idx&7)&1 == 1`.
 
 Gameplay places from `docs/specs/map.md` (Gameplay areas). Same units as `campus.json`: integer decimetres, x east, z south.
 
-`{version, units, spawn{x,z}, safeRadius, shop{x,z}, areas}`
+`{version, units, spawn{x,z}, safeRadius, shop{x,z}, areas, interiors}`
 
 - `version`: 1.
 - `spawn`: where new players and respawns appear. `safeRadius`: no combat within this distance of `spawn` (400 = 40 m).
@@ -75,6 +75,8 @@ Gameplay places from `docs/specs/map.md` (Gameplay areas). Same units as `campus
   - `aldrich_park` (`pve`): the campus.json green polygon of way 168468694. The safe circle is cut out of it by rule, not geometry.
   - `south_fields` (`pve`)
   - `pvp_zone` (`pvp`): the only place players can attack each other.
+- `interiors[]`: `{id, kind, p}`, enterable building interiors. `kind` is `"safe"`; `p` is the walkable floor, a closed polygon like the areas'. A player whose position is inside `p` is inside the interior.
+  - `student_center_cafe` (`safe`): the café on the Student Center's ground floor (`CAFE` in `areas.mjs`), a 10 × 8 m room at the building's south side (OSM way 157979894). In `collision.bin` its floor cells and the door cells cut through its south wall (`CAFE.door`) are walkable; the rest of the footprint stays blocked, so the cells round the floor are its walls and the door is the only way in.
 
 `build.mjs` snaps `spawn` and `shop` to the centre of their collision cell and fails if that cell is blocked.
 

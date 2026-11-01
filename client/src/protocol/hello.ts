@@ -51,7 +51,7 @@ static endHello(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createHello(builder:flatbuffers.Builder, protocolVersion:number, guestTokenOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createHello(builder:flatbuffers.Builder, protocolVersion:number = 0, guestTokenOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   Hello.startHello(builder);
   Hello.addProtocolVersion(builder, protocolVersion);
   Hello.addGuestToken(builder, guestTokenOffset);

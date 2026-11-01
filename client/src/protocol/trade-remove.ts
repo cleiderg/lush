@@ -40,7 +40,7 @@ static endTradeRemove(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createTradeRemove(builder:flatbuffers.Builder, index:number):flatbuffers.Offset {
+static createTradeRemove(builder:flatbuffers.Builder, index:number = 0):flatbuffers.Offset {
   TradeRemove.startTradeRemove(builder);
   TradeRemove.addIndex(builder, index);
   return TradeRemove.endTradeRemove(builder);

@@ -43,7 +43,7 @@ static endTradeResult(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createTradeResult(builder:flatbuffers.Builder, code:TradeResultCode):flatbuffers.Offset {
+static createTradeResult(builder:flatbuffers.Builder, code:TradeResultCode = TradeResultCode.Completed):flatbuffers.Offset {
   TradeResult.startTradeResult(builder);
   TradeResult.addCode(builder, code);
   return TradeResult.endTradeResult(builder);

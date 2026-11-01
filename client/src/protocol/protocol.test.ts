@@ -13,6 +13,7 @@ import {
   FishingSpotState, LevelUp, ResourceState, Skill, SkillAction, SkillResult, SkillResultCode, SkillStats, SkillTarget,
   BankAmount, BankClose, BankDeposit, BankDepositEquipment, BankDepositInventory, BankOpen, BankResult, BankResultCode,
   BankSlot, BankState, BankWithdraw,
+  FishingSpotKindDef, SkillCatalog, ToolSkill, TreeKindDef,
 } from './index.js';
 
 function finish(b: flatbuffers.Builder, type: Message, msg: flatbuffers.Offset): Uint8Array {
@@ -42,7 +43,7 @@ function buildSnapshot(n: number): Uint8Array {
 
 describe('protocol', () => {
   it('exposes the version constant', () => {
-    expect(ProtocolVersion.Current).toBe(14);
+    expect(ProtocolVersion.Current).toBe(15);
   });
 
   it('keeps a 101-entity snapshot under 1200 bytes', () => {
@@ -200,14 +201,20 @@ describe('protocol', () => {
   });
 
   it('round-trips ItemCatalog', () => {
-    type Def = [number, string, ItemKind, EquipSlot, number, number, number, number, number, number, number, boolean, number];
+    type Def = [
+      number, string, ItemKind, EquipSlot, number, number, number, number, number, number, number, boolean, number,
+      ToolSkill, number, number,
+    ];
     const want: Def[] = [
-      [1, 'Wooden stick', ItemKind.Weapon, EquipSlot.Weapon, 1, 3, 2, 0, 4, 0, 2, true, 5],
-      [8, 'Robot plating', ItemKind.Armor, EquipSlot.Body, 12, -2, 0, 14, 0, 0, 150, false, 0],
-      [9, 'Boba', ItemKind.Food, EquipSlot.None, 1, 0, 0, 0, 0, 4, 1, true, 5],
-      [11, 'Acorn', ItemKind.Loot, EquipSlot.None, 0, 0, 0, 0, 0, 0, 1, false, 0],
-      [7, 'Bike helmet', ItemKind.Armor, EquipSlot.Head, 10, 0, 0, 6, 0, 0, 30, true, 80],
-      [5, 'Cardboard shield', ItemKind.Armor, EquipSlot.Shield, 1, 0, 0, 3, 0, 0, 3, true, 10],
+      [1, 'Wooden stick', ItemKind.Weapon, EquipSlot.Weapon, 1, 3, 2, 0, 4, 0, 2, true, 5, ToolSkill.None, 0, 0],
+      [8, 'Robot plating', ItemKind.Armor, EquipSlot.Body, 12, -2, 0, 14, 0, 0, 150, false, 0, ToolSkill.None, 0, 0],
+      [9, 'Boba', ItemKind.Food, EquipSlot.None, 1, 0, 0, 0, 0, 4, 1, true, 5, ToolSkill.None, 0, 0],
+      [11, 'Acorn', ItemKind.Loot, EquipSlot.None, 0, 0, 0, 0, 0, 0, 1, false, 0, ToolSkill.None, 0, 0],
+      [7, 'Bike helmet', ItemKind.Armor, EquipSlot.Head, 10, 0, 0, 6, 0, 0, 30, true, 80, ToolSkill.None, 0, 0],
+      [5, 'Cardboard shield', ItemKind.Armor, EquipSlot.Shield, 1, 0, 0, 3, 0, 0, 3, true, 10, ToolSkill.None, 0, 0],
+      [20, 'Steel hatchet', ItemKind.Weapon, EquipSlot.Weapon, 5, 8, 9, 0, 5, 0, 70, true, 200, ToolSkill.Woodcutting, 15, 0],
+      [22, 'Small net', ItemKind.Loot, EquipSlot.None, 0, 0, 0, 0, 0, 0, 5, true, 20, ToolSkill.Fishing, 1, 0],
+      [30, 'Raw trout', ItemKind.Loot, EquipSlot.None, 0, 0, 0, 0, 0, 0, 8, false, 0, ToolSkill.None, 0, 15],
     ];
     const b = new flatbuffers.Builder(512);
     const offs = want.map(([id, name, ...rest]) => ItemDef.createItemDef(b, id, b.createString(name), ...rest));
@@ -219,22 +226,24 @@ describe('protocol', () => {
       expect([
         d.id(), d.name(), d.kind(), d.equipSlot(), d.levelToEquip(), d.accuracy(), d.strength(), d.defence(),
         d.attackSpeed(), d.heal(), d.shopBuysFor(), d.shopSells(), d.shopSellsFor(),
+        d.toolSkill(), d.toolLevel(), d.cookingLevel(),
       ]).toEqual(want[i]);
     }
   });
 
   it('round-trips EntityInfo', () => {
-    const want: [number, EntityKind, number, number, number, number, number, number][] = [
-      [42, EntityKind.Player, 0, 30, 1, 7, 8, 5],
-      [300, EntityKind.Npc, 6, 20, EmptyItem.Id, EmptyItem.Id, EmptyItem.Id, EmptyItem.Id],
-      [65535, EntityKind.Npc, 65535, 255, 65535, 65535, 65535, 65535],
+    const want: [number, EntityKind, number, number, number, number, number, number, number][] = [
+      [42, EntityKind.Player, 0, 30, 1, 7, 8, 5, 87],
+      [43, EntityKind.Player, 0, 3, 0, 0, 0, 0, 4],
+      [300, EntityKind.Npc, 6, 20, EmptyItem.Id, EmptyItem.Id, EmptyItem.Id, EmptyItem.Id, 0],
+      [65535, EntityKind.Npc, 65535, 255, 65535, 65535, 65535, 65535, 65535],
     ];
     for (const w of want) {
       const b = new flatbuffers.Builder(64);
       const buf = finish(b, Message.EntityInfo, EntityInfo.createEntityInfo(b, ...w));
       const m = open(buf, Message.EntityInfo, new EntityInfo());
       expect([
-        m.id(), m.kind(), m.npcType(), m.combatLevel(), m.weapon(), m.head(), m.body(), m.shield(),
+        m.id(), m.kind(), m.npcType(), m.combatLevel(), m.weapon(), m.head(), m.body(), m.shield(), m.totalLevel(),
       ]).toEqual(w);
     }
   });
@@ -764,7 +773,7 @@ describe('protocol', () => {
       Message.BankOpen, Message.BankClose, Message.BankState, Message.BankDeposit, Message.BankWithdraw,
       Message.BankDepositInventory, Message.BankDepositEquipment, Message.BankResult,
     ]).toEqual([50, 51, 52, 53, 54, 55, 56, 57]);
-    expect(Object.values(Message).filter((v) => typeof v === 'number')).toHaveLength(58);
+    expect(Object.values(Message).filter((v) => typeof v === 'number')).toHaveLength(59);
   });
 
   it('round-trips the bank messages with no fields', () => {
@@ -829,7 +838,7 @@ describe('protocol', () => {
     const codes = [
       BankResultCode.Ok, BankResultCode.TooFar, BankResultCode.InCombat, BankResultCode.InPvpZone,
       BankResultCode.BankFull, BankResultCode.InventoryFull, BankResultCode.NotEnoughItems,
-      BankResultCode.Busy, BankResultCode.NotOpen,
+      BankResultCode.Busy, BankResultCode.NotOpen, BankResultCode.SaveFailed,
     ];
     // New codes go at the end, so older codes keep their values.
     codes.forEach((code, i) => expect(code).toBe(i));
@@ -839,5 +848,53 @@ describe('protocol', () => {
       const buf = finish(b, Message.BankResult, BankResult.createBankResult(b, code));
       expect(open(buf, Message.BankResult, new BankResult()).code()).toBe(code);
     }
+  });
+
+  it('keeps ToolSkill values, with None as the default', () => {
+    expect([ToolSkill.None, ToolSkill.Woodcutting, ToolSkill.Fishing]).toEqual([0, 1, 2]);
+    expect(BankResultCode.SaveFailed).toBe(9);
+    const b = new flatbuffers.Builder(64);
+    ItemDef.startItemDef(b);
+    ItemDef.addId(b, 3);
+    b.finish(ItemDef.endItemDef(b));
+    const d = ItemDef.getRootAsItemDef(new flatbuffers.ByteBuffer(b.asUint8Array()));
+    expect([d.toolSkill(), d.toolLevel(), d.cookingLevel()]).toEqual([ToolSkill.None, 0, 0]);
+  });
+
+  it('lets create helpers leave out fields added later, which read as their defaults', () => {
+    const b = new flatbuffers.Builder(64);
+    const name = b.createString('Logs');
+    const off = ItemDef.createItemDef(b, 40, name, ItemKind.Loot, EquipSlot.None, 0, 0, 0, 0, 0, 0, 2, false, 0);
+    const buf = finish(b, Message.ItemCatalog, ItemCatalog.createItemCatalog(b, ItemCatalog.createItemsVector(b, [off])));
+    const d = open(buf, Message.ItemCatalog, new ItemCatalog()).items(0)!;
+    expect([d.id(), d.name(), d.shopBuysFor(), d.toolSkill(), d.toolLevel(), d.cookingLevel()])
+      .toEqual([40, 'Logs', 2, ToolSkill.None, 0, 0]);
+    const b2 = new flatbuffers.Builder(64);
+    const info = open(finish(b2, Message.EntityInfo, EntityInfo.createEntityInfo(b2, 7, EntityKind.Npc, 3, 12, 0, 0, 0, 0)),
+      Message.EntityInfo, new EntityInfo());
+    expect([info.id(), info.npcType(), info.combatLevel(), info.totalLevel()]).toEqual([7, 3, 12, 0]);
+  });
+
+  it('round-trips SkillCatalog', () => {
+    expect(Message.SkillCatalog).toBe(58);
+    const trees: [string, number][] = [['tree', 1], ['oak', 15], ['eucalyptus', 25]];
+    const spots: [string, number, number][] = [['net', 1, 22], ['rod', 5, 65535]];
+    const b = new flatbuffers.Builder(256);
+    const treeOffs = trees.map(([kind, level]) => TreeKindDef.createTreeKindDef(b, b.createString(kind), level));
+    const spotOffs = spots.map(([kind, level, tool]) =>
+      FishingSpotKindDef.createFishingSpotKindDef(b, b.createString(kind), level, tool));
+    const buf = finish(b, Message.SkillCatalog, SkillCatalog.createSkillCatalog(
+      b, SkillCatalog.createTreesVector(b, treeOffs), SkillCatalog.createFishingSpotsVector(b, spotOffs)));
+    const m = open(buf, Message.SkillCatalog, new SkillCatalog());
+    const gotTrees = Array.from({ length: m.treesLength() }, (_, i) => {
+      const t = m.trees(i)!;
+      return [t.kind(), t.level()];
+    });
+    const gotSpots = Array.from({ length: m.fishingSpotsLength() }, (_, i) => {
+      const f = m.fishingSpots(i)!;
+      return [f.kind(), f.level(), f.toolItemId()];
+    });
+    expect(gotTrees).toEqual(trees);
+    expect(gotSpots).toEqual(spots);
   });
 });

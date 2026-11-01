@@ -49,7 +49,7 @@ static endBankDeposit(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createBankDeposit(builder:flatbuffers.Builder, itemId:number, amount:number):flatbuffers.Offset {
+static createBankDeposit(builder:flatbuffers.Builder, itemId:number = 0, amount:number = 0):flatbuffers.Offset {
   BankDeposit.startBankDeposit(builder);
   BankDeposit.addItemId(builder, itemId);
   BankDeposit.addAmount(builder, amount);

@@ -51,7 +51,7 @@ static endChatMessage(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createChatMessage(builder:flatbuffers.Builder, speakerId:number, textOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createChatMessage(builder:flatbuffers.Builder, speakerId:number = 0, textOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   ChatMessage.startChatMessage(builder);
   ChatMessage.addSpeakerId(builder, speakerId);
   ChatMessage.addText(builder, textOffset);

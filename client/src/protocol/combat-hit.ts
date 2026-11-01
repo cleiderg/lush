@@ -61,7 +61,7 @@ static endCombatHit(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createCombatHit(builder:flatbuffers.Builder, tick:number, hitsOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createCombatHit(builder:flatbuffers.Builder, tick:number = 0, hitsOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   CombatHit.startCombatHit(builder);
   CombatHit.addTick(builder, tick);
   CombatHit.addHits(builder, hitsOffset);

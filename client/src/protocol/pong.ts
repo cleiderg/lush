@@ -40,7 +40,7 @@ static endPong(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createPong(builder:flatbuffers.Builder, token:number):flatbuffers.Offset {
+static createPong(builder:flatbuffers.Builder, token:number = 0):flatbuffers.Offset {
   Pong.startPong(builder);
   Pong.addToken(builder, token);
   return Pong.endPong(builder);

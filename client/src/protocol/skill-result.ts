@@ -71,7 +71,7 @@ static endSkillResult(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createSkillResult(builder:flatbuffers.Builder, skill:Skill, code:SkillResultCode, itemId:number, level:number):flatbuffers.Offset {
+static createSkillResult(builder:flatbuffers.Builder, skill:Skill = Skill.Woodcutting, code:SkillResultCode = SkillResultCode.Started, itemId:number = 0, level:number = 0):flatbuffers.Offset {
   SkillResult.startSkillResult(builder);
   SkillResult.addSkill(builder, skill);
   SkillResult.addCode(builder, code);

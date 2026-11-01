@@ -49,7 +49,7 @@ static endShopSell(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createShopSell(builder:flatbuffers.Builder, slot:number, quantity:number):flatbuffers.Offset {
+static createShopSell(builder:flatbuffers.Builder, slot:number = 0, quantity:number = 0):flatbuffers.Offset {
   ShopSell.startShopSell(builder);
   ShopSell.addSlot(builder, slot);
   ShopSell.addQuantity(builder, quantity);

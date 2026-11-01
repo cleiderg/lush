@@ -49,7 +49,7 @@ static endShopBuy(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createShopBuy(builder:flatbuffers.Builder, itemId:number, quantity:number):flatbuffers.Offset {
+static createShopBuy(builder:flatbuffers.Builder, itemId:number = 0, quantity:number = 0):flatbuffers.Offset {
   ShopBuy.startShopBuy(builder);
   ShopBuy.addItemId(builder, itemId);
   ShopBuy.addQuantity(builder, quantity);

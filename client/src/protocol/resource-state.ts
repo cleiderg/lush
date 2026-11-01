@@ -88,7 +88,7 @@ static endResourceState(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createResourceState(builder:flatbuffers.Builder, felledTreesOffset:flatbuffers.Offset, fishingSpotsOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createResourceState(builder:flatbuffers.Builder, felledTreesOffset:flatbuffers.Offset = 0, fishingSpotsOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   ResourceState.startResourceState(builder);
   ResourceState.addFelledTrees(builder, felledTreesOffset);
   ResourceState.addFishingSpots(builder, fishingSpotsOffset);

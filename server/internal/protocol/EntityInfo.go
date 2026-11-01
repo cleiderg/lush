@@ -129,8 +129,20 @@ func (rcv *EntityInfo) MutateShield(n uint16) bool {
 	return rcv._tab.MutateUint16Slot(18, n)
 }
 
+func (rcv *EntityInfo) TotalLevel() uint16 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(20))
+	if o != 0 {
+		return rcv._tab.GetUint16(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *EntityInfo) MutateTotalLevel(n uint16) bool {
+	return rcv._tab.MutateUint16Slot(20, n)
+}
+
 func EntityInfoStart(builder *flatbuffers.Builder) {
-	builder.StartObject(8)
+	builder.StartObject(9)
 }
 func EntityInfoAddId(builder *flatbuffers.Builder, id uint16) {
 	builder.PrependUint16Slot(0, id, 0)
@@ -155,6 +167,9 @@ func EntityInfoAddBody(builder *flatbuffers.Builder, body uint16) {
 }
 func EntityInfoAddShield(builder *flatbuffers.Builder, shield uint16) {
 	builder.PrependUint16Slot(7, shield, 0)
+}
+func EntityInfoAddTotalLevel(builder *flatbuffers.Builder, totalLevel uint16) {
+	builder.PrependUint16Slot(8, totalLevel, 0)
 }
 func EntityInfoEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

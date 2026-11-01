@@ -72,6 +72,8 @@ export function isBlocked(g: CollisionGrid, x: number, z: number): boolean {
 
 export interface MapPoint { x: number; z: number }
 export interface GameArea { id: string; kind: 'pve' | 'pvp'; osm?: number; p: number[] }
+/** An enterable building interior (the Student Center café): `p` is its walkable floor polygon. */
+export interface InteriorArea { id: string; kind: 'safe'; p: number[] }
 
 /** areas.json: gameplay places from docs/specs/map.md. Integer decimetres like campus.json. */
 export interface AreasData {
@@ -81,6 +83,7 @@ export interface AreasData {
   safeRadius: number;
   shop: MapPoint;
   areas: GameArea[];
+  interiors: InteriorArea[];
 }
 
 export function parseAreas(json: string): AreasData {
