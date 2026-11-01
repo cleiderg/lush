@@ -29,12 +29,24 @@ done
 #  - drop the eslint-disable header newer flatc adds to TypeScript
 #  - drop the ".js" suffix newer flatc adds to relative TypeScript imports
 #  - write struct bools as "+x" (older flatc) instead of "Number(Boolean(x))"
+#  - write struct 64-bit ints as "x" (older flatc) instead of "BigInt(x ?? 0)"
 # Then start every TypeScript file with our own header, so generated code
 # passes the client's lint and type check without changing client config.
 ts_header='/* eslint-disable */
 // @ts-nocheck'
 perl -0pi -e 's/func Finish(?:SizePrefixed)?\w+Buffer\([^)]*\) \{\n[^}]*\}\n\n//g' "$tmp"/go/protocol/*.go
-perl -0pi -e 's{/\* eslint-disable[^\n]*\*/\n\n}{}; s/(from \x27\.[^\x27]*?)\.js\x27/$1\x27/g; s/Number\(Boolean\((\w+)\)\)/+$1/g' "$tmp"/ts/protocol/*.ts
+perl -0pi -e 's{/\* eslint-disable[^\n]*\*/\n\n}{}; s/(from \x27\.[^\x27]*?)\.js\x27/$1\x27/g; s/Number\(Boolean\((\w+)\)\)/+$1/g; s/BigInt\((\w+) \?\? 0\)/$1/g' "$tmp"/ts/protocol/*.ts
+# Give every argument of a table's create helper its field's default, as in
+# its add helper, so a field added at the end of a table doesn't break
+# callers written before it (they keep building the field as absent).
+perl -0pi -e '
+  my %def;
+  while (/builder\.addField\w+\(\d+, \+?(\w+), \+?(.+?)\);\n/g) { $def{$1} = $2 }
+  s{^(static create\w+\(builder:flatbuffers\.Builder, )([^)]*)\)}{
+    my ($head, $args) = ($1, $2);
+    $head . join(", ", map { /^(\w+):/ && exists $def{$1} ? "$_ = $def{$1}" : $_ } split /, /, $args) . ")"
+  }gme;
+' "$tmp"/ts/protocol/*.ts
 for f in "$tmp"/ts/protocol/*.ts; do
   { echo "$ts_header"; cat "$f"; } > "$f.tmp" && mv "$f.tmp" "$f"
 done

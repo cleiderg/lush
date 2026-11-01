@@ -188,6 +188,9 @@ func TestCombatRefused(t *testing.T) {
 		{"both outside the zone", campus, 10, 10, campus.Spawn(), world.Vec2{X: campus.Spawn().X + 1, Y: campus.Spawn().Y}, false},
 		{"attacker in safe circle inside zone", overlap, 10, 10, safeInPvP, nextToSafe, false},
 		{"target in safe circle inside zone", overlap, 10, 10, nextToSafe, safeInPvP, false},
+		{"attacker in cafe inside zone", overlap, 10, 10, cafeInPvP, nextToCafe, false},
+		{"target in cafe inside zone", overlap, 10, 10, nextToCafe, cafeInPvP, false},
+		{"both next to cafe inside zone", overlap, 10, 10, nextToCafe, world.Vec2{X: nextToCafe.X + 1, Y: nextToCafe.Y}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

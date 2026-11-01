@@ -40,7 +40,7 @@ static endCardTableSit(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createCardTableSit(builder:flatbuffers.Builder, tableId:number):flatbuffers.Offset {
+static createCardTableSit(builder:flatbuffers.Builder, tableId:number = 0):flatbuffers.Offset {
   CardTableSit.startCardTableSit(builder);
   CardTableSit.addTableId(builder, tableId);
   return CardTableSit.endCardTableSit(builder);

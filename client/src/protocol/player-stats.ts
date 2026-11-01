@@ -76,7 +76,7 @@ static endPlayerStats(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createPlayerStats(builder:flatbuffers.Builder, hp:number, maxHp:number, combatLevel:number, xp:number, gold:number):flatbuffers.Offset {
+static createPlayerStats(builder:flatbuffers.Builder, hp:number = 0, maxHp:number = 0, combatLevel:number = 0, xp:number = 0, gold:number = 0):flatbuffers.Offset {
   PlayerStats.startPlayerStats(builder);
   PlayerStats.addHp(builder, hp);
   PlayerStats.addMaxHp(builder, maxHp);

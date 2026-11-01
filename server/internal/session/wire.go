@@ -492,6 +492,31 @@ func encodePlayerStats(b *flatbuffers.Builder, st stats) []byte {
 	return finish(b, protocol.MessagePlayerStats, protocol.PlayerStatsEnd(b))
 }
 
+// encodeSkillStats builds a SkillStats from skill XP in tenths, with each
+// skill's level.
+func encodeSkillStats(b *flatbuffers.Builder, xp *[world.NumSkills]int) []byte {
+	b.Reset()
+	protocol.SkillStatsStart(b)
+	protocol.SkillStatsAddWoodcuttingLevel(b, clampU8(world.SkillLevelForXP(xp[world.Woodcutting])))
+	protocol.SkillStatsAddWoodcuttingXp(b, clampU32(xp[world.Woodcutting]))
+	protocol.SkillStatsAddFishingLevel(b, clampU8(world.SkillLevelForXP(xp[world.Fishing])))
+	protocol.SkillStatsAddFishingXp(b, clampU32(xp[world.Fishing]))
+	protocol.SkillStatsAddCookingLevel(b, clampU8(world.SkillLevelForXP(xp[world.Cooking])))
+	protocol.SkillStatsAddCookingXp(b, clampU32(xp[world.Cooking]))
+	return finish(b, protocol.MessageSkillStats, protocol.SkillStatsEnd(b))
+}
+
+// encodeLevelUp builds a LevelUp for u. world.Skill values match
+// protocol.Skill (TestSkillConstantsMatchProtocol).
+func encodeLevelUp(b *flatbuffers.Builder, u levelUp) []byte {
+	b.Reset()
+	protocol.LevelUpStart(b)
+	protocol.LevelUpAddEntityId(b, uint16(u.id))
+	protocol.LevelUpAddSkill(b, protocol.Skill(u.skill))
+	protocol.LevelUpAddLevel(b, clampU8(u.level))
+	return finish(b, protocol.MessageLevelUp, protocol.LevelUpEnd(b))
+}
+
 func encodeInventoryState(b *flatbuffers.Builder, inv *world.Inventory) []byte {
 	b.Reset()
 	protocol.InventoryStateStartSlotsVector(b, len(inv.Slots))

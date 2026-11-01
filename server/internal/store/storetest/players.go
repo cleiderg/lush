@@ -208,6 +208,49 @@ func RunPlayers(t *testing.T, factory func(t *testing.T) store.Players) {
 		}
 	})
 
+	t.Run("save round-trips skill xp", func(t *testing.T) {
+		s := factory(t)
+		p, _ := s.CreateGuest(ctx, "h1", store.Holdings{}, nil)
+		if p.Skills != (store.SkillXP{}) {
+			t.Fatalf("new guest skill xp = %+v, want zero", p.Skills)
+		}
+		want := store.SkillXP{Woodcutting: 255, Fishing: 1_000_000, Cooking: 7}
+		p.Skills = want
+		saved, err := s.Save(ctx, p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if saved.Skills != want {
+			t.Fatalf("saved skill xp = %+v, want %+v", saved.Skills, want)
+		}
+		l, _ := s.LoadByTokenHash(ctx, "h1")
+		if l != saved {
+			t.Fatalf("loaded %+v, want %+v", l, saved)
+		}
+		stale := p
+		stale.Skills = store.SkillXP{Woodcutting: 1}
+		if _, err := s.Save(ctx, stale); !errors.Is(err, store.ErrStaleVersion) {
+			t.Fatalf("stale save err = %v, want ErrStaleVersion", err)
+		}
+		if l, _ := s.LoadByTokenHash(ctx, "h1"); l != saved {
+			t.Fatalf("loaded after stale save %+v, want %+v", l, saved)
+		}
+	})
+
+	t.Run("save rejects negative skill xp", func(t *testing.T) {
+		for _, k := range []store.SkillXP{{Woodcutting: -1}, {Fishing: -1}, {Cooking: -1}} {
+			s := factory(t)
+			p, _ := s.CreateGuest(ctx, "h1", store.Holdings{}, nil)
+			p.Skills = k
+			if _, err := s.Save(ctx, p); !errors.Is(err, store.ErrInvalid) {
+				t.Fatalf("save %+v err = %v, want ErrInvalid", k, err)
+			}
+			if l, _ := s.LoadByTokenHash(ctx, "h1"); l.Skills != (store.SkillXP{}) || l.Version != p.Version {
+				t.Fatalf("loaded after rejected save %+v, want unchanged", l)
+			}
+		}
+	})
+
 	t.Run("save never changes holdings", func(t *testing.T) {
 		s := factory(t)
 		p, _ := s.CreateGuest(ctx, "h1", store.Holdings{}, nil)

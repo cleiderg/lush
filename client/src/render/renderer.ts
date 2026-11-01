@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { WorldScene } from './scene';
 import { showAttribution } from './attribution';
+import { PostChain, supportsPost } from './post';
 import { RetroPass } from './retro';
 import type { WorldView } from './worldView';
 
@@ -15,6 +16,15 @@ export interface GameRenderer {
   /** Whether the retro post-process (PRD 5.2) is on. Starts off. */
   readonly retro: boolean;
   setRetro(enabled: boolean): void;
+  /**
+   * The post-process chain (scene, bloom, warm grade, vignette, then output or retro), or null
+   * when the device can't draw half-float targets and the scene goes straight to the canvas.
+   */
+  readonly post: PostChain | null;
+  /** Whether bloom is on. Starts on where the post chain runs. */
+  readonly bloom: boolean;
+  /** Removes or restores the bloom pass (for quality presets). */
+  setBloom(enabled: boolean): void;
   render(view: WorldView): void;
   resize(): void;
   dispose(): void;
@@ -25,7 +35,7 @@ export function createRenderer(canvas: HTMLCanvasElement): GameRenderer {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
   const pixelRatio = Math.min(window.devicePixelRatio, 2);
   renderer.setPixelRatio(pixelRatio);
-  // ACES filmic tone mapping into sRGB; the warm grade comes from the sky rig's light colours.
+  // ACES filmic tone mapping into sRGB, applied at the end of the post chain (OutputPass or retro).
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = TONE_EXPOSURE;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -37,6 +47,15 @@ export function createRenderer(canvas: HTMLCanvasElement): GameRenderer {
   const bufferWidth = () => Math.round(canvas.clientWidth * pixelRatio);
   const bufferHeight = () => Math.round(canvas.clientHeight * pixelRatio);
   const world = new WorldScene();
+  const post = supportsPost(renderer)
+    ? new PostChain(renderer, world.scene, world.rig.camera, Math.max(1, bufferWidth()), Math.max(1, bufferHeight()))
+    : null;
+  /** The post chain runs at the retro target's low resolution while retro is on. */
+  const sizePost = () => {
+    if (!post) return;
+    if (retro) post.setSize(retro.target.width, retro.target.height);
+    else post.setSize(Math.max(1, bufferWidth()), Math.max(1, bufferHeight()));
+  };
   const detach = world.rig.attach(canvas);
   /** HTML overlay for chat text, made with the first message. */
   let labels: CSS2DRenderer | null = null;
@@ -53,6 +72,7 @@ export function createRenderer(canvas: HTMLCanvasElement): GameRenderer {
     const h = canvas.clientHeight;
     renderer.setSize(w, h, false);
     retro?.setSize(bufferWidth(), bufferHeight());
+    sizePost();
     placeLabels();
     world.rig.camera.aspect = w / Math.max(1, h);
     world.rig.camera.updateProjectionMatrix();
@@ -71,12 +91,22 @@ export function createRenderer(canvas: HTMLCanvasElement): GameRenderer {
         retro.dispose();
         retro = null;
       }
+      post?.setRetro(retro);
+      sizePost();
+    },
+    post,
+    get bloom() {
+      return post?.bloom ?? false;
+    },
+    setBloom(enabled) {
+      post?.setBloom(enabled);
     },
     render(view) {
       world.update(view);
-      if (retro) retro.render(renderer, world.scene, world.rig.camera);
+      if (post) post.render();
+      else if (retro) retro.render(renderer, world.scene, world.rig.camera);
       else renderer.render(world.scene, world.rig.camera);
-      if (!labels && world.chat.group.parent) {
+      if (!labels && (world.chat.group.parent || world.floatTexts.group.parent)) {
         labels = new CSS2DRenderer();
         labels.domElement.style.cssText += 'position:fixed;pointer-events:none;overflow:hidden;z-index:4;';
         document.body.appendChild(labels.domElement);
@@ -91,6 +121,7 @@ export function createRenderer(canvas: HTMLCanvasElement): GameRenderer {
       labels?.domElement.remove();
       retro?.dispose();
       retro = null;
+      post?.dispose();
       renderer.dispose();
     },
   };

@@ -88,7 +88,7 @@ static endInventoryState(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createInventoryState(builder:flatbuffers.Builder, slotsOffset:flatbuffers.Offset, weapon:number, head:number, body:number, shield:number):flatbuffers.Offset {
+static createInventoryState(builder:flatbuffers.Builder, slotsOffset:flatbuffers.Offset = 0, weapon:number = 0, head:number = 0, body:number = 0, shield:number = 0):flatbuffers.Offset {
   InventoryState.startInventoryState(builder);
   InventoryState.addSlots(builder, slotsOffset);
   InventoryState.addWeapon(builder, weapon);

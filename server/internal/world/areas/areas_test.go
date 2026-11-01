@@ -67,6 +67,11 @@ func TestAreaAt(t *testing.T) {
 		{"park west edge inside", world.Vec2{X: -159.8, Y: -71.3}, areas.AldrichPark},
 		{"park west edge outside", world.Vec2{X: -160.0, Y: -71.3}, areas.None},
 		{"outside all areas", world.Vec2{X: 0, Y: 1000}, areas.None},
+		{"cafe centre", world.Vec2{X: 45, Y: -351}, areas.StudentCenterCafe},
+		{"cafe west edge inside", world.Vec2{X: 40.1, Y: -351}, areas.StudentCenterCafe},
+		{"cafe west edge outside", world.Vec2{X: 39.9, Y: -351}, areas.None},
+		{"cafe south edge inside", world.Vec2{X: 45, Y: -347.1}, areas.StudentCenterCafe},
+		{"cafe south edge outside (door side)", world.Vec2{X: 45, Y: -346.9}, areas.None},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -80,16 +85,18 @@ func TestAreaAt(t *testing.T) {
 func TestHelpers(t *testing.T) {
 	l := load(t)
 	tests := []struct {
-		name         string
-		pos          world.Vec2
-		safe, pvp    bool
-		pve, areaPvP bool
+		name               string
+		pos                world.Vec2
+		safe, pvp          bool
+		pve, areaPvP       bool
+		noCombat, interior bool
 	}{
-		{"spawn", l.Spawn(), true, false, false, false},
-		{"park", world.Vec2{X: -21.5, Y: -180}, false, false, true, false},
-		{"south fields", world.Vec2{X: -280, Y: 280}, false, false, true, false},
-		{"pvp", world.Vec2{X: 300, Y: -340}, false, true, false, true},
-		{"nowhere", world.Vec2{X: 0, Y: 1000}, false, false, false, false},
+		{"spawn", l.Spawn(), true, false, false, false, true, false},
+		{"park", world.Vec2{X: -21.5, Y: -180}, false, false, true, false, false, false},
+		{"south fields", world.Vec2{X: -280, Y: 280}, false, false, true, false, false, false},
+		{"pvp", world.Vec2{X: 300, Y: -340}, false, true, false, true, false, false},
+		{"nowhere", world.Vec2{X: 0, Y: 1000}, false, false, false, false, false, false},
+		{"cafe", world.Vec2{X: 45, Y: -351}, false, false, false, false, true, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -102,6 +109,12 @@ func TestHelpers(t *testing.T) {
 			a := l.AreaAt(tt.pos)
 			if a.PvE() != tt.pve || a.PvP() != tt.areaPvP {
 				t.Errorf("%v: PvE=%v PvP=%v, want %v %v", a, a.PvE(), a.PvP(), tt.pve, tt.areaPvP)
+			}
+			if got := l.NoCombat(tt.pos); got != tt.noCombat || a.NoCombat() != tt.noCombat {
+				t.Errorf("NoCombat = %v (area %v: %v), want %v", got, a, a.NoCombat(), tt.noCombat)
+			}
+			if got := l.InInterior(tt.pos); got != tt.interior {
+				t.Errorf("InInterior = %v, want %v", got, tt.interior)
 			}
 		})
 	}
@@ -148,6 +161,10 @@ func TestParseErrors(t *testing.T) {
 		{"unknown area", `{"version":1,"units":"decimetres","spawn":{"x":0,"z":0},"safeRadius":1,"shop":{"x":0,"z":0},"areas":[{"id":"moon","kind":"pve","p":[0,0,1,0,1,1]}]}`},
 		{"wrong kind", `{"version":1,"units":"decimetres","spawn":{"x":0,"z":0},"safeRadius":1,"shop":{"x":0,"z":0},"areas":[{"id":"pvp_zone","kind":"pve","p":[0,0,1,0,1,1]}]}`},
 		{"short polygon", `{"version":1,"units":"decimetres","spawn":{"x":0,"z":0},"safeRadius":1,"shop":{"x":0,"z":0},"areas":[{"id":"pvp_zone","kind":"pvp","p":[0,0,1,0]}]}`},
+		{"unknown interior", minimalAreas + `,"interiors":[{"id":"library","kind":"safe","p":[0,0,1,0,1,1]}]}`},
+		{"interior not safe", minimalAreas + `,"interiors":[{"id":"student_center_cafe","kind":"pvp","p":[0,0,1,0,1,1]}]}`},
+		{"duplicate interior", minimalAreas + `,"interiors":[{"id":"student_center_cafe","kind":"safe","p":[0,0,1,0,1,1]},{"id":"student_center_cafe","kind":"safe","p":[0,0,1,0,1,1]}]}`},
+		{"short interior polygon", minimalAreas + `,"interiors":[{"id":"student_center_cafe","kind":"safe","p":[0,0,1,0]}]}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -158,14 +175,62 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
+// minimalAreas is a valid areas.json without its closing brace, so tests can
+// append an interiors list.
+const minimalAreas = `{"version":1,"units":"decimetres","spawn":{"x":0,"z":0},"safeRadius":10,"shop":{"x":0,"z":0},"areas":[
+ {"id":"aldrich_park","kind":"pve","p":[-1000,-1000,1000,-1000,1000,1000,-1000,1000]},
+ {"id":"south_fields","kind":"pve","p":[-3600,2400,-2000,2400,-2000,3200,-3600,3200]},
+ {"id":"pvp_zone","kind":"pvp","p":[2000,-4000,4000,-4000,4000,-2800,2200,-2800,2000,-3000]}]`
+
+// TestParseInteriors checks that Parse reads the interiors list, that an
+// interior takes precedence over the polygon it sits in, and that interiors
+// are optional in Parse.
+func TestParseInteriors(t *testing.T) {
+	without, err := areas.Parse([]byte(minimalAreas + `}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The café here sits inside the PvP zone, around (300, -340).
+	with, err := areas.Parse([]byte(minimalAreas + `,"interiors":[{"id":"student_center_cafe","kind":"safe","p":[2950,-3450,3050,-3450,3050,-3350,2950,-3350]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name string
+		l    *areas.Lookup
+		pos  world.Vec2
+		want areas.Area
+	}{
+		{"no interiors", without, world.Vec2{X: 300, Y: -340}, areas.PvPZone},
+		{"inside cafe in pvp zone", with, world.Vec2{X: 300, Y: -340}, areas.StudentCenterCafe},
+		{"outside cafe in pvp zone", with, world.Vec2{X: 310, Y: -340}, areas.PvPZone},
+		{"park", with, world.Vec2{X: 10, Y: 10}, areas.AldrichPark},
+		{"safe circle", with, world.Vec2{X: 0, Y: 0}, areas.SafeCircle},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.l.AreaAt(tt.pos); got != tt.want {
+				t.Errorf("AreaAt(%v) = %v, want %v", tt.pos, got, tt.want)
+			}
+			if got, want := tt.l.NoCombat(tt.pos), tt.want.NoCombat(); got != want {
+				t.Errorf("NoCombat(%v) = %v, want %v", tt.pos, got, want)
+			}
+		})
+	}
+	if got := areas.StudentCenterCafe.String(); got != "student_center_cafe" {
+		t.Errorf("String() = %q", got)
+	}
+}
+
 func TestAreaAtNoAllocs(t *testing.T) {
 	l := load(t)
-	pts := []world.Vec2{l.Spawn(), {X: -21.5, Y: -180}, {X: -280, Y: 280}, {X: 300, Y: -340}, {X: 0, Y: 1000}}
+	pts := []world.Vec2{l.Spawn(), {X: -21.5, Y: -180}, {X: -280, Y: 280}, {X: 300, Y: -340}, {X: 0, Y: 1000}, {X: 45, Y: -351}}
 	allocs := testing.AllocsPerRun(100, func() {
 		for _, p := range pts {
 			_ = l.AreaAt(p)
 			_ = l.InPvP(p)
 			_ = l.InSafeCircle(p)
+			_ = l.NoCombat(p)
 		}
 	})
 	if allocs != 0 {
@@ -175,7 +240,7 @@ func TestAreaAtNoAllocs(t *testing.T) {
 
 func BenchmarkAreaAt(b *testing.B) {
 	l := load(b)
-	pts := []world.Vec2{l.Spawn(), {X: -21.5, Y: -180}, {X: -280, Y: 280}, {X: 300, Y: -340}, {X: 0, Y: 1000}}
+	pts := []world.Vec2{l.Spawn(), {X: -21.5, Y: -180}, {X: -280, Y: 280}, {X: 300, Y: -340}, {X: 0, Y: 1000}, {X: 45, Y: -351}}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

@@ -1,7 +1,7 @@
 ---
 name: client-render
 description: Implements everything Three.js in the client - scene, camera, low-poly characters, instanced crowds, the campus map from OpenStreetMap, and visual effects. Issues labeled area:client-render.
-model: opus
+model: sonnet
 maxTurns: 100
 ---
 

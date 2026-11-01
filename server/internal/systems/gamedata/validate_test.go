@@ -14,7 +14,7 @@ import (
 func fixture(t *testing.T, file, old, new string) fstest.MapFS {
 	t.Helper()
 	fsys := fstest.MapFS{}
-	for _, name := range []string{gamedata.ItemsFile, gamedata.NPCsFile, gamedata.ShopFile, gamedata.RulesFile, gamedata.CardTablesFile} {
+	for _, name := range []string{gamedata.ItemsFile, gamedata.NPCsFile, gamedata.ShopFile, gamedata.RulesFile, gamedata.CardTablesFile, gamedata.SkillsFile} {
 		b, err := os.ReadFile(filepath.Join("data", name))
 		if err != nil {
 			t.Fatal(err)
@@ -47,6 +47,12 @@ func TestLoadRejectsBadData(t *testing.T) {
 		{"starting kit equips missing item", gamedata.RulesFile,
 			`"equipped": ["wooden_stick"`, `"equipped": ["laser_sword"`,
 			`rules.json: starting kit equipped: unknown item "laser_sword"`},
+		{"no bank slots", gamedata.RulesFile,
+			`"bank_slots": 200`, `"bank_slots": 0`,
+			`rules.json: bank_slots 0 must be at least 1`},
+		{"negative bank distance", gamedata.RulesFile,
+			`"bank_distance_tiles": 2`, `"bank_distance_tiles": -1`,
+			`rules.json: bank_distance_tiles -1 must not be negative`},
 		{"starting kit inventory has missing item", gamedata.RulesFile,
 			`{"item": "boba"`, `{"item": "tea"`,
 			`rules.json: starting kit inventory: unknown item "tea"`},
@@ -102,6 +108,33 @@ func TestLoadRejectsBadData(t *testing.T) {
 		{"card table unknown field", gamedata.CardTablesFile,
 			`"stake": 10}`, `"stake": 10, "rake": 1}`,
 			`unknown field "rake"`},
+		{"tool with unknown skill", gamedata.ItemsFile,
+			`"tool_skill": "fishing", "tool_level": 1}`, `"tool_skill": "mining", "tool_level": 1}`,
+			`items.json: item 17 ("small_net"): unknown tool_skill "mining"`},
+		{"tool level above 30", gamedata.ItemsFile,
+			`"tool_skill": "fishing", "tool_level": 5}`, `"tool_skill": "fishing", "tool_level": 31}`,
+			`items.json: item 18 ("fishing_rod"): tool_level 31 must be 1 to 30`},
+		{"tool level zero", gamedata.ItemsFile,
+			`"tool_skill": "fishing", "tool_level": 5}`, `"tool_skill": "fishing", "tool_level": 0}`,
+			`items.json: item 18 ("fishing_rod"): tool_level 0 must be 1 to 30`},
+		{"tree drops unknown item", gamedata.SkillsFile,
+			`"log": "oak_logs"`, `"log": "teak_logs"`,
+			`skills.json: tree "oak" log: unknown item "teak_logs"`},
+		{"fishing spot catches unknown item", gamedata.SkillsFile,
+			`"item": "raw_trout"`, `"item": "raw_tuna"`,
+			`skills.json: fishing spot "rod_spot" catch: unknown item "raw_tuna"`},
+		{"fishing spot with unknown tool", gamedata.SkillsFile,
+			`"tool": "small_net"`, `"tool": "harpoon"`,
+			`skills.json: fishing spot "net_spot" tool: unknown item "harpoon"`},
+		{"fishing spot with a non-fishing tool", gamedata.SkillsFile,
+			`"tool": "small_net"`, `"tool": "steel_hatchet"`,
+			`item "steel_hatchet" is not a fishing tool`},
+		{"cooking of unknown item", gamedata.SkillsFile,
+			`"cooked": "trout"`, `"cooked": "tuna"`,
+			`skills.json: cooking "raw_trout" cooked: unknown item "tuna"`},
+		{"tree level above 30", gamedata.SkillsFile,
+			`"level": 25`, `"level": 31`,
+			`skills.json: tree "eucalyptus": level must be 1 to 30`},
 		{"card table with negative stake", gamedata.CardTablesFile,
 			`"stake": 25}`, `"stake": -25}`,
 			`cardtables.json: table 2: stake -25 must not be negative`},

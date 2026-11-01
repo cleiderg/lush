@@ -48,6 +48,21 @@ func TestItemsMatchSpec(t *testing.T) {
 		{"Shiny trinket", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 25, none, 0, true},
 		{"Coyote pelt", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 12, none, 0, true},
 		{"Scrap metal", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 8, none, 0, true},
+		// docs/specs/skills.md; nothing from the skills stacks (Q2, #441).
+		{"Bronze hatchet", gamedata.KindWeapon, gamedata.SlotWeapon, 4, 4, 0, 5, 1, 10, 30, 0, false},
+		{"Steel hatchet", gamedata.KindWeapon, gamedata.SlotWeapon, 8, 9, 0, 5, 5, 70, 200, 0, false},
+		{"Small net", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 5, 20, 0, false},
+		{"Fishing rod", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 12, 40, 0, false},
+		{"Logs", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 2, none, 0, false},
+		{"Oak logs", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 6, none, 0, false},
+		{"Eucalyptus logs", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 15, none, 0, false},
+		{"Raw shrimp", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 1, none, 0, false},
+		{"Raw sardine", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 2, none, 0, false},
+		{"Raw trout", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 8, none, 0, false},
+		{"Shrimp", gamedata.KindFood, gamedata.SlotNone, 0, 0, 0, 0, 1, 2, 6, 3, false},
+		{"Sardine", gamedata.KindFood, gamedata.SlotNone, 0, 0, 0, 0, 1, 3, none, 4, false},
+		{"Trout", gamedata.KindFood, gamedata.SlotNone, 0, 0, 0, 0, 1, 10, none, 7, false},
+		{"Burnt fish", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 0, none, 0, false},
 	}
 	if len(d.Items) != len(tests) {
 		t.Fatalf("got %d items, spec has %d", len(d.Items), len(tests))
@@ -228,6 +243,8 @@ func TestRulesMatchSpec(t *testing.T) {
 		{"PvP level gap", r.PvPLevelGap, 5},
 		{"shop distance tiles", r.ShopDistanceTiles, 2},
 		{"trade distance tiles", r.TradeDistanceTiles, 3},
+		{"bank slots", r.BankSlots, 200},
+		{"bank distance tiles", r.BankDistanceTiles, 2},
 		{"PvP items kept", r.PvPItemsKept, 3},
 		{"drop reservation", r.DropReservation(), 60 * time.Second},
 		{"drop despawn", r.DropDespawn(), 3 * time.Minute},

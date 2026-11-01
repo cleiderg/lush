@@ -61,7 +61,7 @@ static endShedHand(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createShedHand(builder:flatbuffers.Builder, tableId:number, cardsOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createShedHand(builder:flatbuffers.Builder, tableId:number = 0, cardsOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   ShedHand.startShedHand(builder);
   ShedHand.addTableId(builder, tableId);
   ShedHand.addCards(builder, cardsOffset);

@@ -4,6 +4,7 @@ import {
   DOWN, UP, band, door, faces, framedWindow, offset, panel, quad, ring, slab, walls,
   type DoorLook, type Face, type P, type Ring, type WindowLook,
 } from './facade';
+import { CAFE_DOOR, DOOR_OPENING_HEIGHT } from './cafeInterior';
 import type { Building, CampusData } from './mapData';
 
 /**
@@ -71,8 +72,8 @@ function along(len: number, spacing: number, margin: number): number[] {
 interface Doorway { face: number; s: number; w: number }
 
 /** Whether something `w` wide centred `s` along face `i` would overlap the doorway. */
-function blocks(d: Doorway | undefined, i: number, s: number, w: number): boolean {
-  return !!d && d.face === i && Math.abs(s - d.s) < (w + d.w) / 2 + 0.3;
+function blocks(d: Doorway | Doorway[] | undefined, i: number, s: number, w: number): boolean {
+  return [d ?? []].flat().some((x) => x.face === i && Math.abs(s - x.s) < (w + x.w) / 2 + 0.3);
 }
 
 /** A door at the middle of the longest face of `pts` (the ring's outline by default). */
@@ -84,7 +85,7 @@ function mainDoor(b: MeshBuilder, r: Ring, w: number, h: number, look: DoorLook,
 }
 
 /** Framed windows standing just proud of the wall, one row from y0 to y1, clear of the doorway. */
-function windows(b: MeshBuilder, r: Ring, y0: number, y1: number, spacing: number, width: number, look: WindowLook, avoid?: Doorway): void {
+function windows(b: MeshBuilder, r: Ring, y0: number, y1: number, spacing: number, width: number, look: WindowLook, avoid?: Doorway | Doorway[]): void {
   faces(r).forEach((e, i) => {
     for (const s of along(e.len, spacing, width / 2 + 0.6)) {
       if (!blocks(avoid, i, s, width)) framedWindow(b, e, s, width, y0, y1, look);
@@ -278,13 +279,44 @@ function aldrichHall(b: MeshBuilder, r: Ring, h: number): void {
   for (const s of roofSpots(r, u, 3, 2.5)) box(b, s.x, s.z, u, s.h, s.h * 0.7, h, h + 1.6, PLANT);
 }
 
+/**
+ * Walls along the outline from 0 to y1, with a gap (no wall geometry) under DOOR_OPENING_HEIGHT where a face
+ * crosses the café's door cells (pushed 1 m out, so the wall in front of the cells is cut too). Returns the gaps.
+ */
+function wallsWithCafeDoor(b: MeshBuilder, r: Ring, y1: number, color: number): Doorway[] {
+  const [x0, z0, x1, z1] = [CAFE_DOOR[0], CAFE_DOOR[1], CAFE_DOOR[2], CAFE_DOOR[3] + 1];
+  const gaps: Doorway[] = [];
+  faces(r).forEach((f, i) => {
+    // Clip the face's line to the rectangle (Liang-Barsky), as metres along the face.
+    let lo = 0, hi = f.len;
+    for (const [p, q] of [[-f.t.x, f.a.x - x0], [f.t.x, x1 - f.a.x], [-f.t.z, f.a.z - z0], [f.t.z, z1 - f.a.z]]) {
+      if (Math.abs(p) < 1e-9) {
+        if (q < 0) hi = -1;
+      } else if (p < 0) lo = Math.max(lo, q / p);
+      else hi = Math.min(hi, q / p);
+    }
+    const at = (s: number, y: number) => [f.a.x + f.t.x * s, y, f.a.z + f.t.z * s];
+    const n = [f.n.x, 0, f.n.z];
+    const strip = (s0: number, s1: number, y0: number, y1: number) => quad(b, at(s0, y0), at(s1, y0), at(s1, y1), at(s0, y1), n, color);
+    if (hi - lo < 0.5) {
+      strip(0, f.len, 0, y1);
+      return;
+    }
+    if (lo > 0) strip(0, lo, 0, y1);
+    if (hi < f.len) strip(hi, f.len, 0, y1);
+    strip(lo, hi, DOOR_OPENING_HEIGHT, y1);
+    gaps.push({ face: i, s: (lo + hi) / 2, w: hi - lo });
+  });
+  return gaps;
+}
+
 /** Student Center: sandstone walls with a band of glazing on every floor and glass skylights. */
 function studentCenter(b: MeshBuilder, r: Ring, h: number): void {
   const top = h - 1;
-  walls(b, r, r.pts, 0, top, SANDSTONE);
+  const cafeDoor = wallsWithCafeDoor(b, r, top, SANDSTONE);
   const floors = 3, fh = top / floors;
   const entry = mainDoor(b, r, 2, 2.6, { frame: SANDSTONE_TRIM, leaf: GLASS, step: STEP });
-  for (let i = 0; i < floors; i++) windows(b, r, i * fh + 0.7, i * fh + fh - 0.9, 3, 2.4, SANDSTONE_WINDOWS, i === 0 ? entry : undefined);
+  for (let i = 0; i < floors; i++) windows(b, r, i * fh + 0.7, i * fh + fh - 0.9, 3, 2.4, SANDSTONE_WINDOWS, i === 0 ? [entry, ...cafeDoor] : undefined);
   cornice(b, r, 0.3, top, h, SANDSTONE_TRIM, ROOF);
   canopy(b, r, 8, 3.4, SANDSTONE_TRIM);
   const u = longestDirection(r);

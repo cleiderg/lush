@@ -40,7 +40,7 @@ static endAttackTarget(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createAttackTarget(builder:flatbuffers.Builder, targetId:number):flatbuffers.Offset {
+static createAttackTarget(builder:flatbuffers.Builder, targetId:number = 0):flatbuffers.Offset {
   AttackTarget.startAttackTarget(builder);
   AttackTarget.addTargetId(builder, targetId);
   return AttackTarget.endAttackTarget(builder);
