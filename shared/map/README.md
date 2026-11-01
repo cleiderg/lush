@@ -4,7 +4,8 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 
 | File | What |
 |---|---|
-| `source/osm-central.json` | Committed OSM snapshot (`node shared/map/fetch.mjs` refreshes it; needs network) |
+| `source/osm-central.json` | Committed OSM snapshot of central campus (`node shared/map/fetch.mjs central` refreshes it; needs network) |
+| `source/osm-housing.json` | Committed OSM snapshot of the Mesa Court and Middle Earth housing areas (`node shared/map/fetch.mjs housing` refreshes it) |
 | `build.mjs` | `node shared/map/build.mjs [outDir] [--no-nature]` writes `campus.json`, `collision.bin`, `areas.json`, `cardtables.json`, `props.json`, `skills.json` and `parknature.json` (skipped with `--no-nature`). Offline and deterministic |
 | `campus.json` | Compact map for rendering |
 | `collision.bin` | Collision grid for client and server |
@@ -17,11 +18,23 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 | `skills.json` | M9 woodcutting trees, pond and fishing spots, bank booth and grill, for client and server |
 | `parknature.mjs` | Aldrich Park nature types, seed, densities and clearances; edit here, then rebuild |
 | `parknature.json` | Aldrich Park trees, rocks, bushes, flower beds, picnic blankets and birds, visual only |
-| `config.mjs` | Bounding box, origin, chunk size, cell size |
+| `config.mjs` | Bounding box, fixed origin, housing outline and connecting path ids, chunk size, cell size |
+
+## Housing areas (M10)
+
+The map also covers **Mesa Court** and **Middle Earth** (`housing.md`) and the walk to them from Aldrich Park. They come from `source/osm-housing.json`; `build.mjs` adds only what lies wholly inside an area outline, plus the connecting paths, and never changes anything from `osm-central.json`. `bounds` and the collision grid grow to include the outlines; the origin does not move. The ids are in `config.mjs` (`HOUSING`):
+
+| What | OSM way id |
+|---|---|
+| Mesa Court outline (`landuse=residential`) | 171555779 |
+| Middle Earth outline (`landuse=residential`) | 171559658 |
+| Connecting path to Mesa Court (footway from Aldrich Park) | 365551570 |
+
+Middle Earth needs no connecting path: central footway 184993930 already runs into it. Buildings, plazas and green areas outside the central bounding box are kept only when wholly inside an outline; paths only when wholly inside one or listed as connecting. The outlines are not drawn and are not in `areas.json`.
 
 ## Coordinates
 
-Metres from the origin (centre of the bounding box): **x = east, z = south**, y up. Files store integer **decimetres** (1 unit = 0.1 m).
+Metres from the origin (33.64525, -117.8425: the centre of the central-campus bounding box, fixed so it never moves when the map grows): **x = east, z = south**, y up. Files store integer **decimetres** (1 unit = 0.1 m).
 
 ## Chunks
 
