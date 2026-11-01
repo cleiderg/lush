@@ -44,8 +44,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 15 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 15", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 16 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 16", ProtocolVersionCurrent)
 	}
 }
 
@@ -1565,8 +1565,8 @@ func TestBankMessageIDs(t *testing.T) {
 			t.Fatalf("%v = %d, want %d", m, m, 50+i)
 		}
 	}
-	if len(EnumNamesMessage) != 59 {
-		t.Fatalf("Message has %d values, want 59 (NONE plus 58 messages)", len(EnumNamesMessage))
+	if len(EnumNamesMessage) != 64 {
+		t.Fatalf("Message has %d values, want 64 (NONE plus 63 messages)", len(EnumNamesMessage))
 	}
 }
 
