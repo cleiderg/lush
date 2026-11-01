@@ -67,10 +67,11 @@ describe('path surfaces and plazas in the map build (AC1)', () => {
 });
 
 describe('collision and areas unchanged (AC2)', () => {
-  // SHA-256 of the files as committed before path surfaces were added (#379).
+  // SHA-256 of the files as committed before path surfaces were added (#379); collision.bin and areas.json
+  // since the Student Center café was opened (#403).
   const BEFORE: Record<string, string> = {
-    'collision.bin': 'e9c7039c59482b687c4135a03cf9f3def25b1bf3aad51297dac85edad82dfedc',
-    'areas.json': 'f1c864b4121ad2e40e7ff03c1a2d46204dea17c6abbaacecaed5e260528a2428',
+    'collision.bin': 'd200274d182381d7f1d7b66e72478a8fd7812c18b90cb062ea39c235f351b07b',
+    'areas.json': 'e01fb98497195c33d38138fd3a0b7baeb34a79b2bc75ee394deddd40a9ac02e0',
     'cardtables.json': '4b50c37498188920ab254d2bd62389dac46482cc442acd471718c42d88ce2ee9',
   };
   it('builds collision.bin, areas.json and cardtables.json byte-identical to before', () => {
