@@ -404,3 +404,37 @@ func seq(from, to int) []int {
 	}
 	return s
 }
+
+// TestSkillItemsAtDataPrices checks the shop buys the skill items at their
+// data prices and pays out the data buy price (docs/specs/skills.md).
+func TestSkillItemsAtDataPrices(t *testing.T) {
+	d, l := gameData(t), lookup(t)
+	tests := []struct {
+		key        string
+		price, buy int
+	}{
+		{"bronze_hatchet", 30, 10},
+		{"steel_hatchet", 200, 70},
+		{"small_net", 20, 5},
+		{"fishing_rod", 40, 12},
+		{"shrimp", 6, 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			id := itemID(t, d, tt.key)
+			if got, ok := d.ShopSellPrice(id); !ok || got != tt.price {
+				t.Fatalf("data price = %d (sold %v), want %d", got, ok, tt.price)
+			}
+			p := newPlayer(t, d, l)
+			p.Inv.Gold = tt.price
+			checkResult(t, handle(t, d, l, p, shop.BuyCommand{Player: 7, Item: id, Quantity: 1}), shop.Ok)
+			if p.Inv.Gold != 0 || p.Inv.Slots[3].Item != id {
+				t.Fatalf("after buy: gold %d, slot 3 %+v", p.Inv.Gold, p.Inv.Slots[3])
+			}
+			checkResult(t, handle(t, d, l, p, shop.SellCommand{Player: 7, Slot: 3, Quantity: 1}), shop.Ok)
+			if p.Inv.Gold != tt.buy || !p.Inv.Slots[3].Empty() {
+				t.Fatalf("after sell: gold %d, slot 3 %+v, want gold %d", p.Inv.Gold, p.Inv.Slots[3], tt.buy)
+			}
+		})
+	}
+}

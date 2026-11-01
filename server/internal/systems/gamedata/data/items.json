@@ -12,5 +12,19 @@
   {"id": 11, "key": "acorn",            "name": "Acorn",            "kind": "loot",   "shop_buys_for": 1},
   {"id": 12, "key": "shiny_trinket",    "name": "Shiny trinket",    "kind": "loot",   "shop_buys_for": 25},
   {"id": 13, "key": "coyote_pelt",      "name": "Coyote pelt",      "kind": "loot",   "shop_buys_for": 12},
-  {"id": 14, "key": "scrap_metal",      "name": "Scrap metal",      "kind": "loot",   "shop_buys_for": 8}
+  {"id": 14, "key": "scrap_metal",      "name": "Scrap metal",      "kind": "loot",   "shop_buys_for": 8},
+  {"id": 15, "key": "bronze_hatchet",   "name": "Bronze hatchet",   "kind": "weapon", "slot": "weapon", "accuracy": 4,  "strength": 4,  "defence": 0,  "attack_speed": 5, "level_to_equip": 1,  "shop_buys_for": 10, "tool_skill": "woodcutting", "tool_level": 1,  "tool_bonus": 0.0},
+  {"id": 16, "key": "steel_hatchet",    "name": "Steel hatchet",    "kind": "weapon", "slot": "weapon", "accuracy": 8,  "strength": 9,  "defence": 0,  "attack_speed": 5, "level_to_equip": 5,  "shop_buys_for": 70, "tool_skill": "woodcutting", "tool_level": 15, "tool_bonus": 0.10},
+  {"id": 17, "key": "small_net",        "name": "Small net",        "kind": "loot",   "no_stack": true, "shop_buys_for": 5,  "tool_skill": "fishing", "tool_level": 1},
+  {"id": 18, "key": "fishing_rod",      "name": "Fishing rod",      "kind": "loot",   "no_stack": true, "shop_buys_for": 12, "tool_skill": "fishing", "tool_level": 5},
+  {"id": 19, "key": "logs",             "name": "Logs",             "kind": "loot",   "no_stack": true, "shop_buys_for": 2},
+  {"id": 20, "key": "oak_logs",         "name": "Oak logs",         "kind": "loot",   "no_stack": true, "shop_buys_for": 6},
+  {"id": 21, "key": "eucalyptus_logs",  "name": "Eucalyptus logs",  "kind": "loot",   "no_stack": true, "shop_buys_for": 15},
+  {"id": 22, "key": "raw_shrimp",       "name": "Raw shrimp",       "kind": "loot",   "no_stack": true, "shop_buys_for": 1},
+  {"id": 23, "key": "raw_sardine",      "name": "Raw sardine",      "kind": "loot",   "no_stack": true, "shop_buys_for": 2},
+  {"id": 24, "key": "raw_trout",        "name": "Raw trout",        "kind": "loot",   "no_stack": true, "shop_buys_for": 8},
+  {"id": 25, "key": "shrimp",           "name": "Shrimp",           "kind": "food",   "heals": 3, "level_to_equip": 1, "shop_buys_for": 2},
+  {"id": 26, "key": "sardine",          "name": "Sardine",          "kind": "food",   "heals": 4, "level_to_equip": 1, "shop_buys_for": 3},
+  {"id": 27, "key": "trout",            "name": "Trout",            "kind": "food",   "heals": 7, "level_to_equip": 1, "shop_buys_for": 10},
+  {"id": 28, "key": "burnt_fish",       "name": "Burnt fish",       "kind": "loot",   "no_stack": true, "shop_buys_for": 0}
 ]
