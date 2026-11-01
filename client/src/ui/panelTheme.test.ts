@@ -20,7 +20,7 @@ const ME = 42;
 function item(id: number, name: string, extra: Partial<ItemInfo> = {}): ItemInfo {
   return {
     id, name, kind: ItemKind.Food, equipSlot: EquipSlot.None, levelToEquip: 1, accuracy: 0, strength: 0, defence: 0,
-    attackSpeed: 0, heal: 1, shopBuysFor: 2, shopSells: true, shopSellsFor: 5, ...extra,
+    attackSpeed: 0, heal: 1, shopBuysFor: 2, shopSells: true, shopSellsFor: 5, toolSkill: 0, toolLevel: 0, cookingLevel: 0, ...extra,
   };
 }
 

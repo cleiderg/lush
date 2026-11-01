@@ -15,7 +15,7 @@ const repo = resolve(__dirname, '../../..');
 function item(id: number, name: string, kind: ItemKind, shopBuysFor: number, shopSellsFor = 0): ItemInfo {
   return {
     id, name, kind, equipSlot: EquipSlot.None, levelToEquip: 1, accuracy: 0, strength: 0, defence: 0, attackSpeed: 0,
-    heal: 0, shopBuysFor, shopSells: shopSellsFor > 0, shopSellsFor,
+    heal: 0, shopBuysFor, shopSells: shopSellsFor > 0, shopSellsFor, toolSkill: 0, toolLevel: 0, cookingLevel: 0,
   };
 }
 

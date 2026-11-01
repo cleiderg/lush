@@ -5,7 +5,7 @@ import {
   EquipSlot, GroundItem, GroundItems, Hello, HealthRatio, Hit, Input, InventorySlot, InventoryState, ItemAction,
   ItemActionKind, ItemCatalog, ItemDef, ItemKind, Message, NpcCatalog, NpcDef, PickUp, Ping, PlayerStats, Pong,
   ProtocolVersion, Reload, RestartCountdown, ShedCard, ShedColour, ShedDraw, ShedHand, ShedPlay, ShedState, ShedSymbol, ShopBuy,
-  FishingSpotState, LevelUp, ResourceState, Skill, SkillAction, SkillResult, SkillResultCode, SkillStats, SkillTarget, ShopResult, ShopResultCode, ShopSell, Snapshot, TradeAccept,
+  FishingSpotState, LevelUp, SkillCatalog, FishingSpotKindDef, TreeKindDef, ToolSkill, ResourceState, Skill, SkillAction, SkillResult, SkillResultCode, SkillStats, SkillTarget, ShopResult, ShopResultCode, ShopSell, Snapshot, TradeAccept,
   TradeCancel, TradeItem, TradeOffer, TradeRemove, TradeRequest, TradeRequestNotice, TradeResult, TradeResultCode,
   TradeSetGold, TradeState, Vec2, Welcome,
 } from '../protocol';
@@ -61,6 +61,27 @@ export interface ItemInfo {
   shopBuysFor: number;
   shopSells: boolean;
   shopSellsFor: number;
+  /** The skill this item is a tool for; ToolSkill.None if not a tool. */
+  toolSkill: ToolSkill;
+  /** Skill level needed to use the tool; 0 if not a tool. */
+  toolLevel: number;
+  /** Cooking level to cook it; 0 unless it is a raw fish. */
+  cookingLevel: number;
+}
+
+/** One tree kind of the SkillCatalog. */
+export interface TreeKindInfo {
+  kind: string;
+  /** Woodcutting level needed. */
+  level: number;
+}
+
+/** One fishing spot kind of the SkillCatalog. */
+export interface FishingSpotKindInfo {
+  kind: string;
+  /** Fishing level needed. */
+  level: number;
+  toolItemId: number;
 }
 
 export interface EntityInfoState {
@@ -68,6 +89,8 @@ export interface EntityInfoState {
   kind: EntityKind;
   npcType: number;
   combatLevel: number;
+  /** Combat level plus every skill level; 0 for NPCs. */
+  totalLevel: number;
   equipment: Equipment;
 }
 
@@ -213,6 +236,7 @@ export type ServerMessage =
   | ({ type: 'playerStats' } & PlayerStatsState)
   | ({ type: 'inventory' } & InventoryView)
   | { type: 'itemCatalog'; items: ItemInfo[] }
+  | { type: 'skillCatalog'; trees: TreeKindInfo[]; fishingSpots: FishingSpotKindInfo[] }
   | ({ type: 'entityInfo' } & EntityInfoState)
   | { type: 'entityHealth'; entries: HealthEntry[] }
   | { type: 'groundItems'; items: GroundItemState[] }
@@ -499,6 +523,9 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
           shopBuysFor: d.shopBuysFor(),
           shopSells: d.shopSells(),
           shopSellsFor: d.shopSellsFor(),
+          toolSkill: d.toolSkill(),
+          toolLevel: d.toolLevel(),
+          cookingLevel: d.cookingLevel(),
         });
       }
       return { type: 'itemCatalog', items };
@@ -511,6 +538,7 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
         kind: m.kind(),
         npcType: m.npcType(),
         combatLevel: m.combatLevel(),
+        totalLevel: m.totalLevel(),
         equipment: { weapon: m.weapon(), head: m.head(), body: m.body(), shield: m.shield() },
       };
     }
@@ -649,6 +677,22 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
           { skill: Skill.Cooking, level: m.cookingLevel(), xp: m.cookingXp() / 10 },
         ],
       };
+    }
+    case Message.SkillCatalog: {
+      const m = env.msg(new SkillCatalog()) as SkillCatalog;
+      const trees: TreeKindInfo[] = [];
+      const t = new TreeKindDef();
+      for (let i = 0; i < m.treesLength(); i++) {
+        m.trees(i, t);
+        trees.push({ kind: t.kind() ?? '', level: t.level() });
+      }
+      const fishingSpots: FishingSpotKindInfo[] = [];
+      const f = new FishingSpotKindDef();
+      for (let i = 0; i < m.fishingSpotsLength(); i++) {
+        m.fishingSpots(i, f);
+        fishingSpots.push({ kind: f.kind() ?? '', level: f.level(), toolItemId: f.toolItemId() });
+      }
+      return { type: 'skillCatalog', trees, fishingSpots };
     }
     case Message.ResourceState: {
       const m = env.msg(new ResourceState()) as ResourceState;

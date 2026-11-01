@@ -28,7 +28,7 @@ function game(pos: { x: number; z: number }, others: Other[] = [], ground: { id:
   g.handle({ type: 'snapshot', tick: 1, lastInputSeq: 0, entities }, 0);
   g.handle({ type: 'groundItems', items: ground.map((i) => ({ ...i, quantity: 1 })) }, 0);
   for (const o of others) {
-    g.handle({ type: 'entityInfo', id: o.id, kind: o.kind, npcType: o.npcType ?? 0, combatLevel: o.combatLevel ?? 3, equipment: NO_EQUIPMENT }, 0);
+    g.handle({ type: 'entityInfo', id: o.id, kind: o.kind, npcType: o.npcType ?? 0, combatLevel: o.combatLevel ?? 3, totalLevel: 0, equipment: NO_EQUIPMENT }, 0);
   }
   return g;
 }

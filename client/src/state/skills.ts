@@ -1,7 +1,7 @@
 import { Skill } from '../protocol';
-import type { FishingSpotPosition, LevelUpEvent, SkillResultEvent, SkillValue } from '../net/codec';
+import type { FishingSpotKindInfo, FishingSpotPosition, LevelUpEvent, SkillResultEvent, SkillValue, TreeKindInfo } from '../net/codec';
 
-export type { FishingSpotPosition, LevelUpEvent, SkillResultEvent, SkillValue };
+export type { FishingSpotKindInfo, TreeKindInfo, FishingSpotPosition, LevelUpEvent, SkillResultEvent, SkillValue };
 
 /** Highest skill level (docs/specs/skills.md: Levels and XP). */
 export const SKILL_MAX_LEVEL = 30;
@@ -64,6 +64,8 @@ export class SkillState {
   private values = new Map<Skill, SkillValue>(SKILLS.map((s) => [s, { skill: s, level: 1, xp: 0 }]));
   private felled = new Set<number>();
   private spots = new Map<number, number>();
+  private treeKinds = new Map<string, TreeKindInfo>();
+  private spotKinds = new Map<string, FishingSpotKindInfo>();
   readonly levelUps = new EventQueue<LevelUpEvent>();
   readonly results = new EventQueue<SkillResultEvent>();
   private listeners = new Set<() => void>();
@@ -96,6 +98,22 @@ export class SkillState {
   /** Combat level plus the three skill levels (4 to 120). */
   totalLevel(combatLevel: number): number {
     return SKILLS.reduce((sum, s) => sum + this.level(s), combatLevel);
+  }
+
+  /** Apply a SkillCatalog message; it replaces the old catalog. */
+  setCatalog(trees: TreeKindInfo[], fishingSpots: FishingSpotKindInfo[]): void {
+    this.treeKinds = new Map(trees.map((t) => [t.kind, { ...t }]));
+    this.spotKinds = new Map(fishingSpots.map((f) => [f.kind, { ...f }]));
+  }
+
+  /** The tree kind by its shared/map/skills.json name ("tree", "oak", "eucalyptus"). */
+  treeKind(kind: string): TreeKindInfo | undefined {
+    return this.treeKinds.get(kind);
+  }
+
+  /** The fishing spot kind by its shared/map/skills.json name ("net", "rod"). */
+  fishingSpotKind(kind: string): FishingSpotKindInfo | undefined {
+    return this.spotKinds.get(kind);
   }
 
   /** Apply a ResourceState message; it replaces the whole state. */
