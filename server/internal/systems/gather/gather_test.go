@@ -44,12 +44,16 @@ type rec struct {
 	stops   []gather.StopReason
 	gains   int
 	levels  int
+	items   []gamedata.ItemID
+	changes int
 }
 
 func (s *rec) StartResult(_ world.PlayerID, r gather.Result) { s.results = append(s.results, r) }
 func (s *rec) Stopped(_ world.PlayerID, w gather.StopReason) { s.stops = append(s.stops, w) }
-func (s *rec) Gained(_ world.PlayerID, _ world.Skill, _ int, leveled bool, _ int) {
+func (s *rec) ResourcesChanged()                             { s.changes++ }
+func (s *rec) Gained(_ world.PlayerID, _ world.Skill, item gamedata.ItemID, _ int, leveled bool, _ int) {
 	s.gains++
+	s.items = append(s.items, item)
 	if leveled {
 		s.levels++
 	}
@@ -753,5 +757,172 @@ func BenchmarkTick1000Gatherers(b *testing.B) {
 			p.Inv = world.NewInventory(d)
 			_, _ = p.Inv.Add(d, axe.ID, 1)
 		}
+	}
+}
+
+func TestGainedCarriesItem(t *testing.T) {
+	e := newEnv(t)
+	e.give("bronze_hatchet")
+	e.nearTree()
+	e.start(treeID)
+	e.combatTicks(4)
+	if len(e.sink.items) != 1 || e.sink.items[0] != e.item("logs") {
+		t.Fatalf("items = %v, want logs", e.sink.items)
+	}
+
+	tests := []struct {
+		name  string
+		level int
+		rolls []float64
+		want  string
+	}{
+		{"sardine", 20, []float64{0.99, 0}, "raw_sardine"},
+		{"trout", 20, []float64{0}, "raw_trout"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t)
+			e.give("fishing_rod")
+			e.level(world.Fishing, tt.level)
+			e.at(-87, -16)
+			i := 0
+			e.rand.f = func() float64 { v := tt.rolls[min(i, len(tt.rolls)-1)]; i++; return v }
+			e.start("rod-1")
+			e.combatTicks(4)
+			if len(e.sink.items) != 1 || e.sink.items[0] != e.item(tt.want) {
+				t.Fatalf("items = %v, want %s", e.sink.items, tt.want)
+			}
+		})
+	}
+}
+
+func TestResourceState(t *testing.T) {
+	e := newEnv(t)
+	want := []gather.SpotState{{0, 0}, {1, 2}, {2, 1}, {3, 3}}
+	got := e.sys.Resources()
+	if len(got.Felled) != 0 || !equalSpots(got.Spots, want) {
+		t.Fatalf("state = %+v, want spots %v", got, want)
+	}
+	again := e.sys.Resources()
+	if !equalSpots(again.Spots, got.Spots) {
+		t.Fatalf("numbering changed: %v then %v", got.Spots, again.Spots)
+	}
+	// Every slot number maps to the place at its candidate.
+	l, _ := gather.DefaultLayout()
+	for _, s := range got.Spots {
+		id, ok := e.sys.SpotPlace(s.Slot)
+		if !ok || id != l.Spots[s.Candidate].ID {
+			t.Fatalf("slot %d = %q, %v; candidate %d is %q", s.Slot, id, ok, s.Candidate, l.Spots[s.Candidate].ID)
+		}
+	}
+	// A felled tree is listed by its index in trees[].
+	e.give("bronze_hatchet")
+	e.nearTree()
+	e.start(treeID)
+	e.rand.i = func(int) int { return 0 }
+	e.combatTicks(4)
+	if f := e.sys.Resources().Felled; len(f) != 1 || f[0] != 0 {
+		t.Fatalf("felled = %v, want [0]", f)
+	}
+	// After a move, the numbering holds and candidates change.
+	e.rand.i = nil
+	e.clock.Advance(300 * time.Second)
+	e.w.Tick()
+	moved := e.sys.Resources().Spots
+	for i := range moved {
+		if moved[i].Slot != i || moved[i].Candidate == want[i].Candidate {
+			t.Fatalf("after move: %v", moved)
+		}
+	}
+}
+
+func equalSpots(a, b []gather.SpotState) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestPlaceLookups(t *testing.T) {
+	e := newEnv(t)
+	l, _ := gather.DefaultLayout()
+	tests := []struct {
+		name string
+		f    func(int) (string, bool)
+		n    int
+		want string
+		ok   bool
+	}{
+		{"first tree", e.sys.TreePlace, 0, "tree-1", true},
+		{"last tree", e.sys.TreePlace, len(l.Trees) - 1, l.Trees[len(l.Trees)-1].ID, true},
+		{"tree past end", e.sys.TreePlace, len(l.Trees), "", false},
+		{"tree negative", e.sys.TreePlace, -1, "", false},
+		{"first net slot", e.sys.SpotPlace, 0, "net-1", true},
+		{"first rod slot", e.sys.SpotPlace, 2, "rod-1", true},
+		{"last slot", e.sys.SpotPlace, 3, "rod-2", true},
+		{"slot past end", e.sys.SpotPlace, 4, "", false},
+		{"slot negative", e.sys.SpotPlace, -1, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := tt.f(tt.n)
+			if got != tt.want || ok != tt.ok {
+				t.Fatalf("got %q, %v; want %q, %v", got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
+func TestResourcesChangedOncePerEvent(t *testing.T) {
+	e := newEnv(t)
+	e.give("bronze_hatchet")
+	e.nearTree()
+	e.start(treeID)
+	e.alignToCombatTick()
+	e.sink.changes = 0
+	// Quiet ticks tell nothing.
+	e.ticks(10)
+	if e.sink.changes != 0 {
+		t.Fatalf("%d changes on quiet ticks", e.sink.changes)
+	}
+	// The tick the tree falls.
+	e.rand.i = func(int) int { return 0 }
+	for e.sys.TreeStanding(treeID) {
+		before := e.sink.changes
+		e.w.Tick()
+		if !e.sys.TreeStanding(treeID) && e.sink.changes != before+1 {
+			t.Fatalf("fall told %d times", e.sink.changes-before)
+		}
+	}
+	e.rand.i = nil
+	e.sink.changes = 0
+	e.clock.Advance(14 * time.Second)
+	e.ticks(3)
+	if e.sink.changes != 0 {
+		t.Fatalf("%d changes before regrowth", e.sink.changes)
+	}
+	e.clock.Advance(time.Second)
+	e.w.Tick()
+	if e.sink.changes != 1 {
+		t.Fatalf("regrowth told %d times, want 1", e.sink.changes)
+	}
+	e.ticks(5)
+	if e.sink.changes != 1 {
+		t.Fatalf("%d changes after regrowth, want 1", e.sink.changes)
+	}
+	// The tick the spots move: all four at once is one call.
+	e.clock.Advance(300 * time.Second)
+	e.w.Tick()
+	if e.sink.changes != 2 {
+		t.Fatalf("spot move told %d times in total, want 2", e.sink.changes)
+	}
+	e.ticks(5)
+	if e.sink.changes != 2 {
+		t.Fatalf("%d changes after the move, want 2", e.sink.changes)
 	}
 }
