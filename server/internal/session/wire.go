@@ -8,6 +8,7 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 
 	"github.com/cleiderg/lush/server/internal/protocol"
+	"github.com/cleiderg/lush/server/internal/systems/bank"
 	"github.com/cleiderg/lush/server/internal/systems/cardroom"
 	"github.com/cleiderg/lush/server/internal/systems/cardtable"
 	"github.com/cleiderg/lush/server/internal/systems/cardtable/shed"
@@ -273,6 +274,76 @@ func encodeGroundItems(b *flatbuffers.Builder, gs []groundEnt) []byte {
 	return finish(b, protocol.MessageGroundItems, protocol.GroundItemsEnd(b))
 }
 
+// bankResultCodes maps the bank system's results to the wire's codes. Closed
+// is absent: closing the bank gets no reply.
+var bankResultCodes = map[bank.Result]protocol.BankResultCode{
+	bank.Ok:            protocol.BankResultCodeOk,
+	bank.TooFar:        protocol.BankResultCodeTooFar,
+	bank.InCombat:      protocol.BankResultCodeInCombat,
+	bank.InPvpZone:     protocol.BankResultCodeInPvpZone,
+	bank.NotOpen:       protocol.BankResultCodeNotOpen,
+	bank.Busy:          protocol.BankResultCodeBusy,
+	bank.BankFull:      protocol.BankResultCodeBankFull,
+	bank.InventoryFull: protocol.BankResultCodeInventoryFull,
+	bank.NotHeld:       protocol.BankResultCodeNotEnoughItems,
+	bank.SaveFailed:    protocol.BankResultCodeSaveFailed,
+}
+
+// encodeBankResult builds a BankResult for r, or nil if r gets no reply.
+func encodeBankResult(r bank.Result) []byte {
+	code, ok := bankResultCodes[r]
+	if !ok {
+		return nil
+	}
+	b := flatbuffers.NewBuilder(32)
+	protocol.BankResultStart(b)
+	protocol.BankResultAddCode(b, code)
+	return finish(b, protocol.MessageBankResult, protocol.BankResultEnd(b))
+}
+
+// encodeBankState builds a BankState of v's slots. b is reused across calls.
+func encodeBankState(b *flatbuffers.Builder, v bank.View) []byte {
+	b.Reset()
+	protocol.BankStateStartSlotsVector(b, len(v.Slots))
+	for i := len(v.Slots) - 1; i >= 0; i-- {
+		protocol.CreateBankSlot(b, uint16(v.Slots[i].Item), uint64(max(v.Slots[i].Qty, 0)))
+	}
+	vec := b.EndVector(len(v.Slots))
+	protocol.BankStateStart(b)
+	protocol.BankStateAddSlots(b, vec)
+	return finish(b, protocol.MessageBankState, protocol.BankStateEnd(b))
+}
+
+// bankAmount turns a wire amount into a bank system quantity.
+func bankAmount(a uint32) int {
+	if a == uint32(protocol.BankAmountAll) {
+		return bank.All
+	}
+	return int(a)
+}
+
+// DepositItemCommand deposits Amount (a bank system quantity) of an item; the
+// session turns it into a bank.DepositCommand on the first inventory slot
+// holding Item. WithdrawItemCommand does the same for the bank slot holding
+// Item. They are separate from the bank system's commands because the slot
+// is only known on the tick.
+type DepositItemCommand struct {
+	Player world.PlayerID
+	Item   gamedata.ItemID
+	Amount int
+}
+
+func (c DepositItemCommand) Target() world.PlayerID { return c.Player }
+
+// WithdrawItemCommand is described at DepositItemCommand.
+type WithdrawItemCommand struct {
+	Player world.PlayerID
+	Item   gamedata.ItemID
+	Amount int
+}
+
+func (c WithdrawItemCommand) Target() world.PlayerID { return c.Player }
+
 // message is a decoded inbound envelope; only the field for typ is set.
 type message struct {
 	typ       protocol.Message
@@ -356,6 +427,18 @@ func (m message) command(id world.PlayerID) world.Command {
 		}
 	case protocol.MessageTradeCancel:
 		return trade.CancelCommand{Player: id}
+	case protocol.MessageBankOpen:
+		return bank.OpenCommand{Player: id}
+	case protocol.MessageBankClose:
+		return bank.CloseCommand{Player: id}
+	case protocol.MessageBankDeposit:
+		return DepositItemCommand{Player: id, Item: gamedata.ItemID(m.itemID), Amount: bankAmount(m.quantity)}
+	case protocol.MessageBankWithdraw:
+		return WithdrawItemCommand{Player: id, Item: gamedata.ItemID(m.itemID), Amount: bankAmount(m.quantity)}
+	case protocol.MessageBankDepositInventory:
+		return bank.DepositInventoryCommand{Player: id}
+	case protocol.MessageBankDepositEquipment:
+		return bank.DepositEquipmentCommand{Player: id}
 	case protocol.MessagePickUp:
 		if m.ground != 0 {
 			return grounditems.PickUpCommand{Player: id, ID: grounditems.ID(m.ground)}
@@ -448,8 +531,17 @@ func decode(buf []byte) (m message, err error) {
 		var ta protocol.TradeAccept
 		ta.Init(tbl.Bytes, tbl.Pos)
 		m.screen = ta.Screen()
-	case protocol.MessageTradeCancel:
+	case protocol.MessageTradeCancel, protocol.MessageBankOpen, protocol.MessageBankClose,
+		protocol.MessageBankDepositInventory, protocol.MessageBankDepositEquipment:
 		// No fields.
+	case protocol.MessageBankDeposit:
+		var bd protocol.BankDeposit
+		bd.Init(tbl.Bytes, tbl.Pos)
+		m.itemID, m.quantity = bd.ItemId(), bd.Amount()
+	case protocol.MessageBankWithdraw:
+		var bw protocol.BankWithdraw
+		bw.Init(tbl.Bytes, tbl.Pos)
+		m.itemID, m.quantity = bw.ItemId(), bw.Amount()
 	case protocol.MessageAttackTarget:
 		var at protocol.AttackTarget
 		at.Init(tbl.Bytes, tbl.Pos)

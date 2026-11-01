@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cleiderg/lush/server/internal/ops"
+	"github.com/cleiderg/lush/server/internal/systems/bank"
 	"github.com/cleiderg/lush/server/internal/systems/movement"
 	"github.com/cleiderg/lush/server/internal/world"
 )
@@ -23,6 +24,41 @@ func TestEmbeddedGridMatchesShared(t *testing.T) {
 	if !bytes.Equal(collisionData, shared) {
 		t.Fatal("server/cmd/server/collision.bin differs from shared/map/collision.bin; " +
 			"refresh it from the repo root with: cp shared/map/collision.bin server/cmd/server/collision.bin")
+	}
+}
+
+// TestEmbeddedSkillsMatchShared fails when the embedded copy drifts from
+// shared/map/skills.json.
+func TestEmbeddedSkillsMatchShared(t *testing.T) {
+	shared, err := os.ReadFile("../../../shared/map/skills.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(skillsData, shared) {
+		t.Fatal("server/cmd/server/skills.json differs from shared/map/skills.json; " +
+			"refresh it from the repo root with: cp shared/map/skills.json server/cmd/server/skills.json")
+	}
+}
+
+// TestBankBoothFromSkillsData checks the booth is the file's bank position,
+// converted from decimetres to metres, and is registered as the bank system.
+func TestBankBoothFromSkillsData(t *testing.T) {
+	booth, err := bankBooth()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (world.Vec2{X: -11.5, Y: -95.5}); booth != want {
+		t.Fatalf("booth %v, want %v", booth, want)
+	}
+	_, systems, _, _ := realSystems(t)
+	found := false
+	for _, s := range systems {
+		if _, ok := s.sys.(*bank.System); ok {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("bank system not registered")
 	}
 }
 
