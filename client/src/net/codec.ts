@@ -4,7 +4,8 @@ import {
   BankSlot, BankState, BankWithdraw, CardTableCatalog, CardTableInfo, CardTableLeave, CardTableReady, CardTableResult, CardTableResultCode, CardTableSit, CardTableState, ChatMessage, ChatSend, CombatHit, Emote, EmoteSend, Entity, EntityHealth, EntityInfo, EntityKind, Envelope,
   EquipSlot, GroundItem, GroundItems, Hello, HealthRatio, Hit, Input, InventorySlot, InventoryState, ItemAction,
   ItemActionKind, ItemCatalog, ItemDef, ItemKind, Message, NpcCatalog, NpcDef, PickUp, Ping, PlayerStats, Pong,
-  ProtocolVersion, Reload, RestartCountdown, ShedCard, ShedColour, ShedDraw, ShedHand, ShedPlay, ShedState, ShedSymbol, ShopBuy, ShopResult, ShopResultCode, ShopSell, Snapshot, TradeAccept,
+  ProtocolVersion, Reload, RestartCountdown, ShedCard, ShedColour, ShedDraw, ShedHand, ShedPlay, ShedState, ShedSymbol, ShopBuy,
+  FishingSpotState, LevelUp, ResourceState, Skill, SkillAction, SkillResult, SkillResultCode, SkillStats, SkillTarget, ShopResult, ShopResultCode, ShopSell, Snapshot, TradeAccept,
   TradeCancel, TradeItem, TradeOffer, TradeRemove, TradeRequest, TradeRequestNotice, TradeResult, TradeResultCode,
   TradeSetGold, TradeState, Vec2, Welcome,
 } from '../protocol';
@@ -174,6 +175,34 @@ export interface BankSlotState {
   quantity: number;
 }
 
+/** One skill's level and XP; xp is in points (the protocol sends tenths). */
+export interface SkillValue {
+  skill: Skill;
+  level: number;
+  xp: number;
+}
+
+/** Where one fishing spot is: an index into its candidate positions in the map data. */
+export interface FishingSpotPosition {
+  id: number;
+  candidate: number;
+}
+
+/** A LevelUp message: entityId reached `level` in `skill`. */
+export interface LevelUpEvent {
+  entityId: number;
+  skill: Skill;
+  level: number;
+}
+
+/** A SkillResult message; itemId and level are 0 where they don't apply. */
+export interface SkillResultEvent {
+  skill: Skill;
+  code: SkillResultCode;
+  itemId: number;
+  level: number;
+}
+
 export type ServerMessage =
   | { type: 'welcome'; playerId: number; guestToken: string; spawn: { x: number; z: number }; tickRate: number; walkSpeed?: number; runSpeed?: number; serverTimeMs?: number }
   | { type: 'snapshot'; tick: number; lastInputSeq: number; entities: EntityState[] }
@@ -199,7 +228,12 @@ export type ServerMessage =
   | ({ type: 'shedState' } & ShedPublicState)
   | ({ type: 'shedHand' } & ShedHandState)
   | { type: 'bankState'; slots: BankSlotState[] }
-  | { type: 'bankResult'; code: BankResultCode };
+  | { type: 'bankResult'; code: BankResultCode }
+  /** Woodcutting, Fishing and Cooking, in Skill enum order. */
+  | { type: 'skillStats'; skills: SkillValue[] }
+  | { type: 'resourceState'; felledTrees: number[]; fishingSpots: FishingSpotPosition[] }
+  | ({ type: 'levelUp' } & LevelUpEvent)
+  | ({ type: 'skillResult' } & SkillResultEvent);
 
 function wrap(b: flatbuffers.Builder, type: Message, msg: flatbuffers.Offset): Uint8Array {
   b.finish(Envelope.createEnvelope(b, type, msg));
@@ -360,6 +394,12 @@ export function encodeBankDepositInventory(): Uint8Array {
 export function encodeBankDepositEquipment(): Uint8Array {
   const b = new flatbuffers.Builder(16);
   return wrap(b, Message.BankDepositEquipment, BankDepositEquipment.createBankDepositEquipment(b));
+}
+
+/** Chop a tree or fish at a spot (ids from the shared map data); targetId is ignored for the grill. */
+export function encodeSkillAction(target: SkillTarget, targetId = 0): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.SkillAction, SkillAction.createSkillAction(b, target, targetId));
 }
 
 function tradeItems(len: number, at: (i: number, obj: TradeItem) => TradeItem | null): TradeItemState[] {
@@ -599,6 +639,37 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
     }
     case Message.BankResult:
       return { type: 'bankResult', code: (env.msg(new BankResult()) as BankResult).code() };
+    case Message.SkillStats: {
+      const m = env.msg(new SkillStats()) as SkillStats;
+      return {
+        type: 'skillStats',
+        skills: [
+          { skill: Skill.Woodcutting, level: m.woodcuttingLevel(), xp: m.woodcuttingXp() / 10 },
+          { skill: Skill.Fishing, level: m.fishingLevel(), xp: m.fishingXp() / 10 },
+          { skill: Skill.Cooking, level: m.cookingLevel(), xp: m.cookingXp() / 10 },
+        ],
+      };
+    }
+    case Message.ResourceState: {
+      const m = env.msg(new ResourceState()) as ResourceState;
+      const felledTrees: number[] = [];
+      for (let i = 0; i < m.felledTreesLength(); i++) felledTrees.push(m.felledTrees(i) ?? 0);
+      const fishingSpots: FishingSpotPosition[] = [];
+      const f = new FishingSpotState();
+      for (let i = 0; i < m.fishingSpotsLength(); i++) {
+        m.fishingSpots(i, f);
+        fishingSpots.push({ id: f.id(), candidate: f.candidate() });
+      }
+      return { type: 'resourceState', felledTrees, fishingSpots };
+    }
+    case Message.LevelUp: {
+      const m = env.msg(new LevelUp()) as LevelUp;
+      return { type: 'levelUp', entityId: m.entityId(), skill: m.skill(), level: m.level() };
+    }
+    case Message.SkillResult: {
+      const m = env.msg(new SkillResult()) as SkillResult;
+      return { type: 'skillResult', skill: m.skill(), code: m.code(), itemId: m.itemId(), level: m.level() };
+    }
     default:
       return null;
   }
