@@ -62,6 +62,13 @@ export interface ChatBubbleView {
   readonly opacity?: number;
 }
 
+/** A gain the local player just made, shown as a floating number. `id` is unique per gain; a seen id never shows twice. */
+export interface GainView {
+  readonly id: number;
+  readonly kind: 'xp' | 'gold';
+  readonly amount: number;
+}
+
 /** Where the sun is. src/state works it out; render only reads it. */
 export interface SkyView {
   /** Radians above the horizon; negative when the sun is down. */
@@ -83,6 +90,8 @@ export interface WorldView {
   readonly npcs?: readonly NpcView[];
   /** Current overhead chat, at most one per speaker; missing or empty means no text is drawn. */
   readonly chat?: readonly ChatBubbleView[];
+  /** Gains to float above the local player; missing means none. */
+  readonly gains?: readonly GainView[];
   /** The sun; missing means a daytime default. */
   readonly sky?: SkyView;
   /** Ids (skills.json) of woodcutting trees that are felled and drawn as stumps; missing means none. */
