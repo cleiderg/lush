@@ -1,7 +1,8 @@
-import { type EquipSlot, type ItemActionKind, ShedColour } from '../protocol';
+import { type EquipSlot, type ItemActionKind, ShedColour, type SkillTarget } from '../protocol';
 import {
-  decode, encodeAttackTarget, encodeCardTableLeave, encodeCardTableReady, encodeCardTableSit, encodeChat, encodeHello, encodeItemAction, encodePickUp, encodeShedDraw, encodeShedPlay,
-  encodeShopBuy, encodeShopSell, encodeTradeAccept, encodeTradeCancel, encodeTradeOffer, encodeTradeRemove, encodeTradeRequest, encodeTradeSetGold,
+  decode, encodeAttackTarget, encodeBankClose, encodeBankDeposit, encodeBankDepositEquipment, encodeBankDepositInventory,
+  encodeBankOpen, encodeBankWithdraw, encodeCardTableLeave, encodeCardTableReady, encodeCardTableSit, encodeChat, encodeHello, encodeItemAction, encodePickUp, encodeShedDraw, encodeShedPlay,
+  encodeShopBuy, encodeShopSell, encodeSkillAction, encodeTradeAccept, encodeTradeCancel, encodeTradeOffer, encodeTradeRemove, encodeTradeRequest, encodeTradeSetGold,
   type ServerMessage, type ShedCardValue,
 } from './codec';
 import type { Transport, TransportFactory } from './transport';
@@ -127,6 +128,33 @@ export class Session {
     this.send(encodeTradeCancel());
   }
 
+  sendBankOpen(): void {
+    this.send(encodeBankOpen());
+  }
+
+  /** Tell the server the bank panel closed; also call GameState.bank.close(). */
+  sendBankClose(): void {
+    this.send(encodeBankClose());
+  }
+
+  /** amount is a count or BankAmount.All. */
+  sendBankDeposit(itemId: number, amount: number): void {
+    this.send(encodeBankDeposit(itemId, amount));
+  }
+
+  /** amount is a count or BankAmount.All. */
+  sendBankWithdraw(itemId: number, amount: number): void {
+    this.send(encodeBankWithdraw(itemId, amount));
+  }
+
+  sendBankDepositInventory(): void {
+    this.send(encodeBankDepositInventory());
+  }
+
+  sendBankDepositEquipment(): void {
+    this.send(encodeBankDepositEquipment());
+  }
+
   /** Sit in the first free seat of table `tableId`. */
   sendCardTableSit(tableId: number): void {
     this.send(encodeCardTableSit(tableId));
@@ -153,6 +181,11 @@ export class Session {
   }
 
   /** Sends a chat line; blank text is not sent. The server's echo puts it in the chat log. */
+  /** Start chopping, fishing or cooking; targetId is ignored for the grill. */
+  sendSkillAction(target: SkillTarget, targetId = 0): void {
+    this.send(encodeSkillAction(target, targetId));
+  }
+
   sendChat(text: string): void {
     if (text.trim() === '') return;
     this.send(encodeChat(text));

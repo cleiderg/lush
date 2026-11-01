@@ -115,9 +115,10 @@ type guest struct {
 	// Guarded by Server.mu.
 	id      world.PlayerID
 	storeID int64
-	ver     int64      // store version at load; immutable
-	pos     world.Vec2 // last position, restored on resume
-	xp      int        // combat XP, restored on resume
+	ver     int64                // store version at load; immutable
+	pos     world.Vec2           // last position, restored on resume
+	xp      int                  // combat XP, restored on resume
+	skills  [world.NumSkills]int // skill XP in tenths, restored on resume
 	inv     world.Inventory
 	conns   int           // connections that completed the handshake and have not ended
 	idle    *list.Element // in Server.idle while conns == 0 and out of the world
@@ -127,8 +128,12 @@ type guest struct {
 	lastSeq uint32
 	goneAt  time.Time // when the last connection ended, while waiting out the logout lock
 	// What the client last got in PlayerStats and InventoryState.
-	sentStats stats
-	sentInv   world.Inventory
+	sentStats  stats
+	sentInv    world.Inventory
+	sentSkills [world.NumSkills]int // skill XP in tenths the client last got in SkillStats
+	// The player's skill levels as of the last tick, for spotting level-ups;
+	// kept across connections while the player stays in the world.
+	levels [world.NumSkills]int
 	// What the client last got in EntityInfo, for entities in its view; an
 	// entity leaving view is forgotten, so it gets EntityInfo again on return.
 	known map[world.PlayerID]knownEnt
@@ -195,6 +200,7 @@ type Server struct {
 	pve      *combat.System      // set by SetPvE; nil without PvE
 	ground   *grounditems.System // set by SetGroundItems; where PvP drops spawn
 	tickHits []hit               // this tick's PvP and PvE swings, sent as CombatHit
+	levelUps []levelUp           // this tick's skill level-ups, sent as LevelUp
 	seen     []hit               // reused: the hits one player can see
 	live     map[world.PlayerID]*guest
 	gone     map[world.PlayerID]*guest // live players with no connection, waiting out the logout lock
@@ -466,9 +472,27 @@ func (s *Server) guestLocked(sp store.Player, fresh bool) (*guest, error) {
 			pos = s.cfg.Spawn
 		}
 	}
-	g := &guest{id: id, storeID: sp.ID, ver: sp.Version, pos: pos, xp: int(sp.XP), inv: inv}
+	g := &guest{id: id, storeID: sp.ID, ver: sp.Version, pos: pos, xp: int(sp.XP), skills: skillsFromStore(sp.Skills), inv: inv}
 	s.guests[sp.ID] = g
 	return g, nil
+}
+
+// skillsToStore converts the world's skill XP to the store's.
+func skillsToStore(xp [world.NumSkills]int) store.SkillXP {
+	return store.SkillXP{
+		Woodcutting: int64(xp[world.Woodcutting]),
+		Fishing:     int64(xp[world.Fishing]),
+		Cooking:     int64(xp[world.Cooking]),
+	}
+}
+
+// skillsFromStore converts stored skill XP to the world's.
+func skillsFromStore(k store.SkillXP) [world.NumSkills]int {
+	var xp [world.NumSkills]int
+	xp[world.Woodcutting] = int(k.Woodcutting)
+	xp[world.Fishing] = int(k.Fishing)
+	xp[world.Cooking] = int(k.Cooking)
+	return xp
 }
 
 func newToken() (string, error) {
@@ -613,6 +637,13 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		s.nextSave = now.Add(s.cfg.SaveInterval)
 	}
 
+	s.levelUps = s.levelUps[:0]
+	for id, g := range s.live {
+		if p := w.Player(id); p != nil {
+			s.levelUps = appendLevelUps(s.levelUps, g, p)
+		}
+	}
+
 	tick := w.TickCount()
 	for _, p := range w.Players() {
 		s.grid.Set(p.ID, p.Pos)
@@ -661,6 +692,7 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		}
 		s.sendEntityHealth(g, tick)
 		s.sendCombatHits(g, tick)
+		s.sendLevelUps(g)
 		g.conn.Send(encodeSnapshot(s.bld, tick, g.lastSeq, s.ents))
 	}
 	s.tickHits = s.tickHits[:0]
@@ -792,6 +824,37 @@ func (s *Server) npcInfo(n *world.NPC) entityInfo {
 	return entityInfo{kind: protocol.EntityKindNpc, npcType: uint16(n.Type), level: t.Level}
 }
 
+// levelUp is one skill level gained this tick by entity id.
+type levelUp struct {
+	id    world.PlayerID
+	skill world.Skill
+	level int
+}
+
+// appendLevelUps appends to dst a levelUp for each skill whose level p has
+// raised since the last tick, and records p's current levels in g.
+func appendLevelUps(dst []levelUp, g *guest, p *world.Player) []levelUp {
+	for sk := range world.NumSkills {
+		if l := p.SkillLevel(sk); l != g.levels[sk] {
+			if l > g.levels[sk] {
+				dst = append(dst, levelUp{id: p.ID, skill: sk, level: l})
+			}
+			g.levels[sk] = l
+		}
+	}
+	return dst
+}
+
+// sendLevelUps sends g a LevelUp for each of this tick's level-ups by an
+// entity in s.ents (the player and what they see).
+func (s *Server) sendLevelUps(g *guest) {
+	for _, u := range s.levelUps {
+		if s.inView(u.id) {
+			g.conn.Send(encodeLevelUp(s.bld, u))
+		}
+	}
+}
+
 // inView reports whether id is in s.ents.
 func (s *Server) inView(id world.PlayerID) bool {
 	for _, e := range s.ents {
@@ -831,7 +894,7 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 		return
 	}
 	s.mu.Lock()
-	p := &world.Player{ID: g.id, Pos: g.pos, XP: g.xp, Inv: cloneInventory(g.inv)}
+	p := &world.Player{ID: g.id, Pos: g.pos, XP: g.xp, SkillXP: g.skills, Inv: cloneInventory(g.inv)}
 	s.mu.Unlock()
 	p.HP = p.MaxHP(s.data.Rules)
 	if err := s.w.AddPlayer(p); err != nil {
@@ -841,6 +904,9 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 		return
 	}
 	s.live[g.id] = g
+	for sk := range world.NumSkills {
+		g.levels[sk] = p.SkillLevel(sk) // the loaded levels are not level-ups
+	}
 	c.Send(encodeWelcome(g.id, token, p.Pos, s.cfg.TickRate, s.cfg.MoveSpeed, s.cfg.RunSpeed, s.clock.Now()))
 	s.sendInitial(g, p)
 	s.log.Info("player joined", "player", g.id, "transport", "websocket")
@@ -856,10 +922,12 @@ func (s *Server) sendInitial(g *guest, p *world.Player) {
 	g.conn.Send(encodePlayerStats(s.bld, g.sentStats))
 	g.sentInv = cloneInventory(p.Inv)
 	g.conn.Send(encodeInventoryState(s.bld, &p.Inv))
+	g.sentSkills = p.SkillXP
+	g.conn.Send(encodeSkillStats(s.bld, &p.SkillXP))
 }
 
-// sendChanged sends PlayerStats and InventoryState if they differ from what
-// the client last got.
+// sendChanged sends PlayerStats, InventoryState and SkillStats if they
+// differ from what the client last got.
 func (s *Server) sendChanged(g *guest, p *world.Player) {
 	if st := statsOf(s.data.Rules, p); st != g.sentStats {
 		g.sentStats = st
@@ -869,6 +937,10 @@ func (s *Server) sendChanged(g *guest, p *world.Player) {
 		g.sentInv.Slots = append(g.sentInv.Slots[:0], p.Inv.Slots...)
 		g.sentInv.Equipment, g.sentInv.Gold = p.Inv.Equipment, p.Inv.Gold
 		g.conn.Send(encodeInventoryState(s.bld, &p.Inv))
+	}
+	if p.SkillXP != g.sentSkills {
+		g.sentSkills = p.SkillXP
+		g.conn.Send(encodeSkillStats(s.bld, &p.SkillXP))
 	}
 }
 
@@ -893,9 +965,9 @@ func (s *Server) leave(g *guest, c transport.Conn) {
 func (s *Server) remove(g *guest) {
 	s.mu.Lock()
 	if p := s.w.Player(g.id); p != nil {
-		g.pos, g.xp, g.inv = p.Pos, p.XP, cloneInventory(p.Inv)
+		g.pos, g.xp, g.skills, g.inv = p.Pos, p.XP, p.SkillXP, cloneInventory(p.Inv)
 	}
-	req := saveReq{storeID: g.storeID, x: g.pos.X, z: g.pos.Y, xp: int64(g.xp), ver: g.ver}
+	req := saveReq{storeID: g.storeID, x: g.pos.X, z: g.pos.Y, xp: int64(g.xp), skills: skillsToStore(g.skills), ver: g.ver}
 	s.mu.Unlock()
 	if p := s.w.Player(g.id); p != nil {
 		if s.cards != nil {
@@ -968,13 +1040,13 @@ func (s *Server) appendEconomy(dst []econReq, g *guest, p *world.Player) []econR
 	return dst
 }
 
-// collectSaves copies (store id, position, XP, version) of every live player into
+// collectSaves copies (store id, position, XP, skill XP, version) of every live player into
 // a reused buffer. Tick goroutine only; the saver copies what it keeps.
 func (s *Server) collectSaves() []saveReq {
 	s.saves = s.saves[:0]
 	for id, g := range s.live {
 		if p := s.w.Player(id); p != nil {
-			s.saves = append(s.saves, saveReq{storeID: g.storeID, x: p.Pos.X, z: p.Pos.Y, xp: int64(p.XP), ver: g.ver})
+			s.saves = append(s.saves, saveReq{storeID: g.storeID, x: p.Pos.X, z: p.Pos.Y, xp: int64(p.XP), skills: skillsToStore(p.SkillXP), ver: g.ver})
 		}
 	}
 	return s.saves

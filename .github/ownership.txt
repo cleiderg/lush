@@ -18,7 +18,7 @@ server-platform: server/internal/transport/* server/internal/session/* server/in
 
 client: client/src/core/* client/src/net/* client/src/state/* client/src/input/* client/src/ui/* client/src/audio/* client/src/main.ts client/index.html client/package.json client/package-lock.json client/vite.config.ts client/tsconfig.json client/eslint.config.js client/public/* client/scripts/* client/.gitignore
 
-client-render: client/src/render/* shared/map/* client/public/models/* client/package.json client/package-lock.json
+client-render: client/src/render/* shared/map/* client/public/models/* client/package.json client/package-lock.json server/cmd/server/collision.bin server/internal/world/areas/areas.json server/internal/systems/cardroom/cardtables.json
 
 infra: Makefile .gitignore .editorconfig deploy/* tools/bots/* scripts/dev/*
 

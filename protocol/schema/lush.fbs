@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 12
+  Current = 15
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -33,7 +33,10 @@ enum ActionFlags : ubyte (bit_flags) {
 enum Animation : ubyte {
   Idle = 0,
   Walk = 1,
-  Wave = 2
+  Wave = 2,
+  Chop = 3,  // looping while woodcutting
+  Fish = 4,  // looping while fishing
+  Cook = 5   // looping while cooking
 }
 
 // Emotes a client can request with EmoteSend.
@@ -45,6 +48,14 @@ enum Emote : ubyte {
 // empty equipment slot; real items never use id 0.
 enum EmptyItem : ushort {
   Id = 0
+}
+
+// ItemDef.tool_skill values: the skill an item is a tool for. Values are
+// Skill + 1, so None (0) is the default for items that aren't tools.
+enum ToolSkill : ubyte {
+  None = 0,
+  Woodcutting = 1,
+  Fishing = 2
 }
 
 // ItemDef.kind values.
@@ -215,6 +226,9 @@ table ItemDef {
   shop_buys_for: uint32;   // gold the shop pays the player for one
   shop_sells: bool;        // false: the shop doesn't sell this item
   shop_sells_for: uint32;  // gold the player pays the shop; only if shop_sells
+  tool_skill: ToolSkill;   // the skill this item is a tool for; None if not a tool
+  tool_level: ubyte;       // skill level needed to use the tool; 0 if not a tool
+  cooking_level: ubyte;    // Cooking level to cook it; 0 unless it is a raw fish
 }
 
 // Server -> client: every item definition, so the client doesn't hard-code
@@ -235,6 +249,7 @@ table EntityInfo {
   head: ushort;
   body: ushort;
   shield: ushort;
+  total_level: ushort;     // combat level plus every skill level; 0 for NPCs
 }
 
 // Server -> client: health bars for entities in view whose health changed.
@@ -538,6 +553,183 @@ table ShedHand {
   cards: [ShedCard];
 }
 
+// Skills (D-051, docs/specs/skills.md). Levels are 1..30. XP is sent in
+// tenths of a point, because some XP rewards have a half point (Oak 37.5).
+
+// Skill values.
+enum Skill : ubyte {
+  Woodcutting = 0,
+  Fishing = 1,
+  Cooking = 2
+}
+
+// Server -> client: the player's own skill levels and XP. Sent on join and
+// whenever any of them changes.
+table SkillStats {
+  woodcutting_level: ubyte;
+  woodcutting_xp: uint32;   // tenths of an XP point
+  fishing_level: ubyte;
+  fishing_xp: uint32;       // tenths of an XP point
+  cooking_level: ubyte;
+  cooking_xp: uint32;       // tenths of an XP point
+}
+
+// SkillAction.target values.
+enum SkillTarget : ubyte {
+  Tree = 0,         // target_id is a tree id from the shared map data
+  FishingSpot = 1,  // target_id is a fishing spot id from the shared map data
+  Grill = 2         // target_id is ignored; there is one grill
+}
+
+// Client -> server: start chopping a tree, fishing at a spot or cooking at
+// the grill. The server checks range, level and tool, replies with
+// SkillResult, and keeps trying on its own until it stops.
+table SkillAction {
+  target: SkillTarget;
+  target_id: ushort;
+}
+
+// One fishing spot inside ResourceState. Packed to 4 bytes.
+struct FishingSpotState {
+  id: uint16;        // fishing spot id from the shared map data
+  candidate: uint8;  // index into that spot's candidate positions in the map data
+}
+
+// Server -> client: which trees are felled (shown as stumps) and where each
+// fishing spot currently is. Each message replaces the whole state; it is
+// sent on join and whenever it changes. Trees not listed are standing.
+table ResourceState {
+  felled_trees: [uint16];          // tree ids from the shared map data
+  fishing_spots: [FishingSpotState];
+}
+
+// Server -> client: an entity in view reached a new skill level, for the
+// chat log message and the effect nearby players see.
+table LevelUp {
+  entity_id: ushort;  // entity id, as in Entity.id
+  skill: Skill;
+  level: ubyte;       // the new level
+}
+
+// One tree kind inside SkillCatalog.
+table TreeKindDef {
+  kind: string;        // tree kind, as in shared/map/skills.json ("tree", "oak", ...)
+  level: ubyte;        // Woodcutting level needed to chop it
+}
+
+// One fishing spot kind inside SkillCatalog.
+table FishingSpotKindDef {
+  kind: string;        // spot kind, as in shared/map/skills.json ("net", "rod")
+  level: ubyte;        // Fishing level needed to fish there
+  tool_item_id: ushort; // ItemDef.id of the tool needed
+}
+
+// Server -> client: the level and tool each tree kind and fishing spot kind
+// needs, so the client can pick Interact targets without hard-coding them.
+// Hatchets are found from ItemDef.tool_skill and tool_level.
+table SkillCatalog {
+  trees: [TreeKindDef];
+  fishing_spots: [FishingSpotKindDef];
+}
+
+// SkillResult.code values.
+enum SkillResultCode : ubyte {
+  Started = 0,        // the action started
+  Success = 1,        // one item gathered or cooked (item_id)
+  Burnt = 2,          // the fish burnt (item_id is the burnt fish)
+  NeedTool = 3,       // no tool for this resource (item_id is the tool needed)
+  NeedLevel = 4,      // level too low (level is the level needed)
+  InventoryFull = 5,  // no room for the item
+  ResourceGone = 6,   // the tree is felled or the fishing spot moved
+  NothingToCook = 7,  // no raw fish in the inventory
+  OutOfRange = 8,     // too far from the target
+  Stopped = 9         // the action stopped (the player moved or combat started)
+}
+
+// Server -> client: the outcome of a SkillAction or of one attempt, for the
+// chat log. Fields that don't apply are 0 (item_id EmptyItem.Id).
+table SkillResult {
+  skill: Skill;
+  code: SkillResultCode;
+  item_id: ushort;   // ItemDef.id, where one applies
+  level: ubyte;      // the level needed, for NeedLevel
+}
+
+// Bank (D-051, docs/specs/skills.md: Bank). 200 slots; every item stacks,
+// so one slot holds any number of one item. Gold is not banked.
+
+// BankDeposit.amount and BankWithdraw.amount: All means every one the player
+// has (deposit) or every one in the bank (withdraw).
+enum BankAmount : uint {
+  All = 4294967295
+}
+
+// One bank slot inside BankState. Packed to 16 bytes. The quantity is 64
+// bits so a fully stacked slot can never overflow.
+struct BankSlot {
+  item_id: uint16;   // ItemDef.id
+  quantity: uint64;
+}
+
+// Client -> server: open the bank at the booth (within 2 tiles). The server
+// replies with BankResult, and on success sends BankState.
+table BankOpen {
+}
+
+// Client -> server: close the bank panel. No reply.
+table BankClose {
+}
+
+// Server -> client: the whole bank, sent when it opens and whenever it
+// changes while open. Lists the filled slots in order, at most 200.
+table BankState {
+  slots: [BankSlot];
+}
+
+// Client -> server: move amount of item_id from the inventory into the bank
+// (BankAmount.All for every one). The server replies with BankResult.
+table BankDeposit {
+  item_id: ushort;   // ItemDef.id
+  amount: uint32;    // or BankAmount.All
+}
+
+// Client -> server: move amount of item_id from the bank into the inventory
+// (BankAmount.All for every one). The server replies with BankResult.
+table BankWithdraw {
+  item_id: ushort;   // ItemDef.id
+  amount: uint32;    // or BankAmount.All
+}
+
+// Client -> server: deposit the whole inventory. The server replies with
+// BankResult.
+table BankDepositInventory {
+}
+
+// Client -> server: deposit everything equipped. The server replies with
+// BankResult.
+table BankDepositEquipment {
+}
+
+// BankResult.code values.
+enum BankResultCode : ubyte {
+  Ok = 0,
+  TooFar = 1,          // more than 2 tiles from the bank booth
+  InCombat = 2,        // the bank can't be opened or used during combat
+  InPvpZone = 3,       // the bank can't be opened or used in the PvP zone
+  BankFull = 4,        // all 200 slots are used by other items
+  InventoryFull = 5,   // no room in the inventory for the withdrawal
+  NotEnoughItems = 6,  // fewer items than the amount asked for
+  Busy = 7,            // an earlier bank request is still being saved
+  NotOpen = 8,         // the bank isn't open
+  SaveFailed = 9       // the transfer couldn't be saved and nothing changed
+}
+
+// Server -> client: the outcome of a BankOpen, BankDeposit, BankWithdraw,
+// BankDepositInventory or BankDepositEquipment.
+table BankResult {
+  code: BankResultCode;
+}
+
 union Message {
   Hello,
   Welcome,
@@ -582,7 +774,21 @@ union Message {
   ShedPlay,
   ShedDraw,
   ShedState,
-  ShedHand
+  ShedHand,
+  SkillStats,
+  SkillAction,
+  ResourceState,
+  LevelUp,
+  SkillResult,
+  BankOpen,
+  BankClose,
+  BankState,
+  BankDeposit,
+  BankWithdraw,
+  BankDepositInventory,
+  BankDepositEquipment,
+  BankResult,
+  SkillCatalog
 }
 
 table Envelope {

@@ -44,8 +44,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 12 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 12", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 15 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 15", ProtocolVersionCurrent)
 	}
 }
 
@@ -329,16 +329,21 @@ type itemDef struct {
 	buysFor                     uint32
 	sells                       bool
 	sellsFor                    uint32
+	toolSkill                   ToolSkill
+	toolLevel, cookingLevel     uint8
 }
 
 func TestRoundTripItemCatalog(t *testing.T) {
 	want := []itemDef{
-		{1, "Wooden stick", ItemKindWeapon, EquipSlotWeapon, 1, 3, 2, 0, 4, 0, 2, true, 5},
-		{8, "Robot plating", ItemKindArmor, EquipSlotBody, 12, -2, 0, 14, 0, 0, 150, false, 0},
-		{9, "Boba", ItemKindFood, EquipSlotNone, 1, 0, 0, 0, 0, 4, 1, true, 5},
-		{11, "Acorn", ItemKindLoot, EquipSlotNone, 0, 0, 0, 0, 0, 0, 1, false, 0},
-		{7, "Bike helmet", ItemKindArmor, EquipSlotHead, 10, 0, 0, 6, 0, 0, 30, true, 80},
-		{5, "Cardboard shield", ItemKindArmor, EquipSlotShield, 1, 0, 0, 3, 0, 0, 3, true, 10},
+		{1, "Wooden stick", ItemKindWeapon, EquipSlotWeapon, 1, 3, 2, 0, 4, 0, 2, true, 5, ToolSkillNone, 0, 0},
+		{8, "Robot plating", ItemKindArmor, EquipSlotBody, 12, -2, 0, 14, 0, 0, 150, false, 0, ToolSkillNone, 0, 0},
+		{9, "Boba", ItemKindFood, EquipSlotNone, 1, 0, 0, 0, 0, 4, 1, true, 5, ToolSkillNone, 0, 0},
+		{11, "Acorn", ItemKindLoot, EquipSlotNone, 0, 0, 0, 0, 0, 0, 1, false, 0, ToolSkillNone, 0, 0},
+		{7, "Bike helmet", ItemKindArmor, EquipSlotHead, 10, 0, 0, 6, 0, 0, 30, true, 80, ToolSkillNone, 0, 0},
+		{5, "Cardboard shield", ItemKindArmor, EquipSlotShield, 1, 0, 0, 3, 0, 0, 3, true, 10, ToolSkillNone, 0, 0},
+		{20, "Steel hatchet", ItemKindWeapon, EquipSlotWeapon, 5, 8, 9, 0, 5, 0, 70, true, 200, ToolSkillWoodcutting, 15, 0},
+		{22, "Small net", ItemKindLoot, EquipSlotNone, 0, 0, 0, 0, 0, 0, 5, true, 20, ToolSkillFishing, 1, 0},
+		{30, "Raw trout", ItemKindLoot, EquipSlotNone, 0, 0, 0, 0, 0, 0, 8, false, 0, ToolSkillNone, 0, 15},
 	}
 	b := flatbuffers.NewBuilder(512)
 	offs := make([]flatbuffers.UOffsetT, len(want))
@@ -358,6 +363,9 @@ func TestRoundTripItemCatalog(t *testing.T) {
 		ItemDefAddShopBuysFor(b, w.buysFor)
 		ItemDefAddShopSells(b, w.sells)
 		ItemDefAddShopSellsFor(b, w.sellsFor)
+		ItemDefAddToolSkill(b, w.toolSkill)
+		ItemDefAddToolLevel(b, w.toolLevel)
+		ItemDefAddCookingLevel(b, w.cookingLevel)
 		offs[i] = ItemDefEnd(b)
 	}
 	ItemCatalogStartItemsVector(b, len(offs))
@@ -382,7 +390,7 @@ func TestRoundTripItemCatalog(t *testing.T) {
 		}
 		got := itemDef{d.Id(), string(d.Name()), d.Kind(), d.EquipSlot(), d.LevelToEquip(),
 			d.Accuracy(), d.Strength(), d.Defence(), d.AttackSpeed(), d.Heal(),
-			d.ShopBuysFor(), d.ShopSells(), d.ShopSellsFor()}
+			d.ShopBuysFor(), d.ShopSells(), d.ShopSellsFor(), d.ToolSkill(), d.ToolLevel(), d.CookingLevel()}
 		if got != w {
 			t.Fatalf("item %d = %+v, want %+v", i, got, w)
 		}
@@ -395,13 +403,15 @@ type entityInfo struct {
 	npcType                    uint16
 	level                      uint8
 	weapon, head, body, shield uint16
+	totalLevel                 uint16
 }
 
 func TestRoundTripEntityInfo(t *testing.T) {
 	for _, w := range []entityInfo{
-		{42, EntityKindPlayer, 0, 30, 1, 7, 8, 5},
-		{300, EntityKindNpc, 6, 20, uint16(EmptyItemId), uint16(EmptyItemId), uint16(EmptyItemId), uint16(EmptyItemId)},
-		{65535, EntityKindNpc, 65535, 255, 65535, 65535, 65535, 65535},
+		{42, EntityKindPlayer, 0, 30, 1, 7, 8, 5, 87},
+		{43, EntityKindPlayer, 0, 3, 0, 0, 0, 0, 4},
+		{300, EntityKindNpc, 6, 20, uint16(EmptyItemId), uint16(EmptyItemId), uint16(EmptyItemId), uint16(EmptyItemId), 0},
+		{65535, EntityKindNpc, 65535, 255, 65535, 65535, 65535, 65535, 65535},
 	} {
 		b := flatbuffers.NewBuilder(64)
 		EntityInfoStart(b)
@@ -413,12 +423,13 @@ func TestRoundTripEntityInfo(t *testing.T) {
 		EntityInfoAddHead(b, w.head)
 		EntityInfoAddBody(b, w.body)
 		EntityInfoAddShield(b, w.shield)
+		EntityInfoAddTotalLevel(b, w.totalLevel)
 		buf := finish(b, MessageEntityInfo, EntityInfoEnd(b))
 
 		var m EntityInfo
 		tbl := open(t, buf, MessageEntityInfo)
 		m.Init(tbl.Bytes, tbl.Pos)
-		got := entityInfo{m.Id(), m.Kind(), m.NpcType(), m.CombatLevel(), m.Weapon(), m.Head(), m.Body(), m.Shield()}
+		got := entityInfo{m.Id(), m.Kind(), m.NpcType(), m.CombatLevel(), m.Weapon(), m.Head(), m.Body(), m.Shield(), m.TotalLevel()}
 		if got != w {
 			t.Fatalf("entity info = %+v, want %+v", got, w)
 		}
@@ -1099,8 +1110,8 @@ func TestCardTableMessageIDs(t *testing.T) {
 			t.Fatalf("%v = %d, want %d", m, m, 38+i)
 		}
 	}
-	if len(EnumNamesMessage) != 45 {
-		t.Fatalf("Message has %d values, want 45 (NONE plus 44 messages)", len(EnumNamesMessage))
+	if len(EnumNamesMessage) < 45 {
+		t.Fatalf("Message has %d values, want at least 45", len(EnumNamesMessage))
 	}
 }
 
@@ -1314,5 +1325,485 @@ func TestShedCardIsTwoBytes(t *testing.T) {
 	// Compare two even counts so vector padding doesn't hide the size.
 	if d := len(hand(20)) - len(hand(10)); d != 20 {
 		t.Fatalf("ten more cards add %d bytes, want 20", d)
+	}
+}
+
+// New union members go at the end of Message, so older ids keep their values.
+func TestSkillMessageIDs(t *testing.T) {
+	want := []Message{
+		MessageSkillStats, MessageSkillAction, MessageResourceState, MessageLevelUp, MessageSkillResult,
+	}
+	for i, m := range want {
+		if int(m) != 45+i {
+			t.Fatalf("%v = %d, want %d", m, m, 45+i)
+		}
+	}
+}
+
+func TestSkillEnums(t *testing.T) {
+	if AnimationIdle != 0 || AnimationWalk != 1 || AnimationWave != 2 ||
+		AnimationChop != 3 || AnimationFish != 4 || AnimationCook != 5 || len(EnumNamesAnimation) != 6 {
+		t.Fatalf("Animation values changed: %v", EnumNamesAnimation)
+	}
+	if SkillWoodcutting != 0 || SkillFishing != 1 || SkillCooking != 2 || len(EnumNamesSkill) != 3 {
+		t.Fatalf("Skill values changed: %v", EnumNamesSkill)
+	}
+	if SkillTargetTree != 0 || SkillTargetFishingSpot != 1 || SkillTargetGrill != 2 || len(EnumNamesSkillTarget) != 3 {
+		t.Fatalf("SkillTarget values changed: %v", EnumNamesSkillTarget)
+	}
+}
+
+func TestRoundTripSkillAnimations(t *testing.T) {
+	for _, a := range []Animation{AnimationChop, AnimationFish, AnimationCook} {
+		b := flatbuffers.NewBuilder(64)
+		SnapshotStartEntitiesVector(b, 1)
+		CreateEntity(b, 7, 10, 20, 30, uint8(a))
+		ents := b.EndVector(1)
+		SnapshotStart(b)
+		SnapshotAddEntities(b, ents)
+		buf := finish(b, MessageSnapshot, SnapshotEnd(b))
+
+		var m Snapshot
+		tbl := open(t, buf, MessageSnapshot)
+		m.Init(tbl.Bytes, tbl.Pos)
+		var e Entity
+		if !m.Entities(&e, 0) || Animation(e.Animation()) != a {
+			t.Fatalf("animation = %d, want %v", e.Animation(), a)
+		}
+	}
+}
+
+type skillStats struct {
+	wcLevel uint8
+	wcXP    uint32
+	fLevel  uint8
+	fXP     uint32
+	cLevel  uint8
+	cXP     uint32
+}
+
+func TestRoundTripSkillStats(t *testing.T) {
+	for ci, w := range []skillStats{
+		{1, 0, 1, 0, 1, 0},
+		{15, 23375, 5, 3880, 20, 45125},
+		{30, 4294967295, 30, 1, 30, 1342340},
+	} {
+		b := flatbuffers.NewBuilder(64)
+		SkillStatsStart(b)
+		SkillStatsAddWoodcuttingLevel(b, w.wcLevel)
+		SkillStatsAddWoodcuttingXp(b, w.wcXP)
+		SkillStatsAddFishingLevel(b, w.fLevel)
+		SkillStatsAddFishingXp(b, w.fXP)
+		SkillStatsAddCookingLevel(b, w.cLevel)
+		SkillStatsAddCookingXp(b, w.cXP)
+		buf := finish(b, MessageSkillStats, SkillStatsEnd(b))
+
+		var m SkillStats
+		tbl := open(t, buf, MessageSkillStats)
+		m.Init(tbl.Bytes, tbl.Pos)
+		got := skillStats{m.WoodcuttingLevel(), m.WoodcuttingXp(), m.FishingLevel(), m.FishingXp(),
+			m.CookingLevel(), m.CookingXp()}
+		if got != w {
+			t.Fatalf("case %d: got %+v, want %+v", ci, got, w)
+		}
+	}
+}
+
+func TestRoundTripSkillAction(t *testing.T) {
+	for _, w := range []struct {
+		target SkillTarget
+		id     uint16
+	}{
+		{SkillTargetTree, 0}, {SkillTargetTree, 65535}, {SkillTargetFishingSpot, 3}, {SkillTargetGrill, 0},
+	} {
+		b := flatbuffers.NewBuilder(32)
+		SkillActionStart(b)
+		SkillActionAddTarget(b, w.target)
+		SkillActionAddTargetId(b, w.id)
+		buf := finish(b, MessageSkillAction, SkillActionEnd(b))
+
+		var m SkillAction
+		tbl := open(t, buf, MessageSkillAction)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.Target() != w.target || m.TargetId() != w.id {
+			t.Fatalf("got %v %d, want %v %d", m.Target(), m.TargetId(), w.target, w.id)
+		}
+	}
+}
+
+type fishingSpot struct {
+	id        uint16
+	candidate uint8
+}
+
+func buildResourceState(felled []uint16, spots []fishingSpot) []byte {
+	b := flatbuffers.NewBuilder(64)
+	ResourceStateStartFelledTreesVector(b, len(felled))
+	for i := len(felled) - 1; i >= 0; i-- {
+		b.PrependUint16(felled[i])
+	}
+	trees := b.EndVector(len(felled))
+	ResourceStateStartFishingSpotsVector(b, len(spots))
+	for i := len(spots) - 1; i >= 0; i-- {
+		CreateFishingSpotState(b, spots[i].id, spots[i].candidate)
+	}
+	fish := b.EndVector(len(spots))
+	ResourceStateStart(b)
+	ResourceStateAddFelledTrees(b, trees)
+	ResourceStateAddFishingSpots(b, fish)
+	return finish(b, MessageResourceState, ResourceStateEnd(b))
+}
+
+func TestRoundTripResourceState(t *testing.T) {
+	for ci, w := range []struct {
+		felled []uint16
+		spots  []fishingSpot
+	}{
+		{[]uint16{1, 7, 65535}, []fishingSpot{{1, 0}, {2, 3}, {65535, 255}}},
+		{nil, []fishingSpot{{4, 1}}},
+		{[]uint16{0}, nil},
+	} {
+		buf := buildResourceState(w.felled, w.spots)
+
+		var m ResourceState
+		tbl := open(t, buf, MessageResourceState)
+		m.Init(tbl.Bytes, tbl.Pos)
+		var felled []uint16
+		for i := 0; i < m.FelledTreesLength(); i++ {
+			felled = append(felled, m.FelledTrees(i))
+		}
+		var spots []fishingSpot
+		var s FishingSpotState
+		for i := 0; i < m.FishingSpotsLength(); i++ {
+			if !m.FishingSpots(&s, i) {
+				t.Fatalf("case %d: spot %d missing", ci, i)
+			}
+			spots = append(spots, fishingSpot{s.Id(), s.Candidate()})
+		}
+		if !reflect.DeepEqual(felled, w.felled) || !reflect.DeepEqual(spots, w.spots) {
+			t.Fatalf("case %d: got %v %+v, want %v %+v", ci, felled, spots, w.felled, w.spots)
+		}
+	}
+}
+
+// Each extra fishing spot adds exactly 4 bytes, so FishingSpotState stays 4 bytes.
+func TestFishingSpotStateIsFourBytes(t *testing.T) {
+	one := buildResourceState(nil, []fishingSpot{{1, 2}})
+	two := buildResourceState(nil, []fishingSpot{{1, 2}, {3, 4}})
+	if d := len(two) - len(one); d != 4 {
+		t.Fatalf("one more spot adds %d bytes, want 4", d)
+	}
+}
+
+func TestRoundTripLevelUp(t *testing.T) {
+	for _, w := range []struct {
+		id    uint16
+		skill Skill
+		level uint8
+	}{
+		{1, SkillWoodcutting, 2}, {500, SkillFishing, 15}, {65535, SkillCooking, 30},
+	} {
+		b := flatbuffers.NewBuilder(32)
+		LevelUpStart(b)
+		LevelUpAddEntityId(b, w.id)
+		LevelUpAddSkill(b, w.skill)
+		LevelUpAddLevel(b, w.level)
+		buf := finish(b, MessageLevelUp, LevelUpEnd(b))
+
+		var m LevelUp
+		tbl := open(t, buf, MessageLevelUp)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.EntityId() != w.id || m.Skill() != w.skill || m.Level() != w.level {
+			t.Fatalf("got %d %v %d, want %+v", m.EntityId(), m.Skill(), m.Level(), w)
+		}
+	}
+}
+
+func TestRoundTripSkillResult(t *testing.T) {
+	codes := []SkillResultCode{
+		SkillResultCodeStarted, SkillResultCodeSuccess, SkillResultCodeBurnt, SkillResultCodeNeedTool,
+		SkillResultCodeNeedLevel, SkillResultCodeInventoryFull, SkillResultCodeResourceGone,
+		SkillResultCodeNothingToCook, SkillResultCodeOutOfRange, SkillResultCodeStopped,
+	}
+	for i, code := range codes {
+		if int(code) != i {
+			t.Fatalf("%v = %d, want %d (new codes go at the end)", code, code, i)
+		}
+	}
+	if len(codes) != len(EnumNamesSkillResultCode) {
+		t.Fatalf("SkillResultCode has %d values, want %d", len(EnumNamesSkillResultCode), len(codes))
+	}
+	for i, code := range codes {
+		skill := Skill(i % 3)
+		item := uint16(100 + i)
+		level := uint8(i * 3)
+		b := flatbuffers.NewBuilder(32)
+		SkillResultStart(b)
+		SkillResultAddSkill(b, skill)
+		SkillResultAddCode(b, code)
+		SkillResultAddItemId(b, item)
+		SkillResultAddLevel(b, level)
+		buf := finish(b, MessageSkillResult, SkillResultEnd(b))
+
+		var m SkillResult
+		tbl := open(t, buf, MessageSkillResult)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.Skill() != skill || m.Code() != code || m.ItemId() != item || m.Level() != level {
+			t.Fatalf("got %v %v %d %d, want %v %v %d %d",
+				m.Skill(), m.Code(), m.ItemId(), m.Level(), skill, code, item, level)
+		}
+	}
+}
+
+func TestBankMessageIDs(t *testing.T) {
+	want := []Message{
+		MessageBankOpen, MessageBankClose, MessageBankState, MessageBankDeposit, MessageBankWithdraw,
+		MessageBankDepositInventory, MessageBankDepositEquipment, MessageBankResult,
+	}
+	for i, m := range want {
+		if int(m) != 50+i {
+			t.Fatalf("%v = %d, want %d", m, m, 50+i)
+		}
+	}
+	if len(EnumNamesMessage) != 59 {
+		t.Fatalf("Message has %d values, want 59 (NONE plus 58 messages)", len(EnumNamesMessage))
+	}
+}
+
+// Messages with no fields: BankOpen, BankClose, BankDepositInventory and
+// BankDepositEquipment.
+func TestRoundTripEmptyBankMessages(t *testing.T) {
+	for _, w := range []struct {
+		typ   Message
+		build func(*flatbuffers.Builder) flatbuffers.UOffsetT
+	}{
+		{MessageBankOpen, func(b *flatbuffers.Builder) flatbuffers.UOffsetT { BankOpenStart(b); return BankOpenEnd(b) }},
+		{MessageBankClose, func(b *flatbuffers.Builder) flatbuffers.UOffsetT { BankCloseStart(b); return BankCloseEnd(b) }},
+		{MessageBankDepositInventory, func(b *flatbuffers.Builder) flatbuffers.UOffsetT {
+			BankDepositInventoryStart(b)
+			return BankDepositInventoryEnd(b)
+		}},
+		{MessageBankDepositEquipment, func(b *flatbuffers.Builder) flatbuffers.UOffsetT {
+			BankDepositEquipmentStart(b)
+			return BankDepositEquipmentEnd(b)
+		}},
+	} {
+		b := flatbuffers.NewBuilder(16)
+		buf := finish(b, w.typ, w.build(b))
+		open(t, buf, w.typ)
+	}
+}
+
+type bankSlot struct {
+	item uint16
+	qty  uint64
+}
+
+func buildBankState(slots []bankSlot) []byte {
+	b := flatbuffers.NewBuilder(4096)
+	BankStateStartSlotsVector(b, len(slots))
+	for i := len(slots) - 1; i >= 0; i-- {
+		CreateBankSlot(b, slots[i].item, slots[i].qty)
+	}
+	vec := b.EndVector(len(slots))
+	BankStateStart(b)
+	BankStateAddSlots(b, vec)
+	return finish(b, MessageBankState, BankStateEnd(b))
+}
+
+func TestRoundTripBankState(t *testing.T) {
+	full := make([]bankSlot, 200)
+	for i := range full {
+		full[i] = bankSlot{uint16(i + 1), uint64(i) * 123456789}
+	}
+	full[0].qty = 1
+	full[198] = bankSlot{65535, 1<<53 + 1}  // beyond a JS number
+	full[199] = bankSlot{65534, ^uint64(0)} // the largest quantity
+	for ci, slots := range [][]bankSlot{full, {{7, 4294967296}}, nil} {
+		buf := buildBankState(slots)
+
+		var m BankState
+		tbl := open(t, buf, MessageBankState)
+		m.Init(tbl.Bytes, tbl.Pos)
+		var got []bankSlot
+		var s BankSlot
+		for i := 0; i < m.SlotsLength(); i++ {
+			if !m.Slots(&s, i) {
+				t.Fatalf("case %d: slot %d missing", ci, i)
+			}
+			got = append(got, bankSlot{s.ItemId(), s.Quantity()})
+		}
+		if !reflect.DeepEqual(got, slots) {
+			t.Fatalf("case %d: got %+v, want %+v", ci, got, slots)
+		}
+	}
+}
+
+// Each extra bank slot adds exactly 16 bytes.
+func TestBankSlotIsSixteenBytes(t *testing.T) {
+	one := buildBankState([]bankSlot{{1, 2}})
+	two := buildBankState([]bankSlot{{1, 2}, {3, 4}})
+	if d := len(two) - len(one); d != 16 {
+		t.Fatalf("one more slot adds %d bytes, want 16", d)
+	}
+}
+
+func TestRoundTripBankDepositWithdraw(t *testing.T) {
+	if BankAmountAll != 4294967295 || len(EnumNamesBankAmount) != 1 {
+		t.Fatalf("BankAmount values changed: %v", EnumNamesBankAmount)
+	}
+	for _, w := range []struct {
+		item   uint16
+		amount uint32
+	}{
+		{1, 1}, {42, 5}, {65535, 1234}, {300, uint32(BankAmountAll)},
+	} {
+		b := flatbuffers.NewBuilder(32)
+		BankDepositStart(b)
+		BankDepositAddItemId(b, w.item)
+		BankDepositAddAmount(b, w.amount)
+		buf := finish(b, MessageBankDeposit, BankDepositEnd(b))
+		var d BankDeposit
+		tbl := open(t, buf, MessageBankDeposit)
+		d.Init(tbl.Bytes, tbl.Pos)
+		if d.ItemId() != w.item || d.Amount() != w.amount {
+			t.Fatalf("deposit: got %d %d, want %+v", d.ItemId(), d.Amount(), w)
+		}
+
+		b = flatbuffers.NewBuilder(32)
+		BankWithdrawStart(b)
+		BankWithdrawAddItemId(b, w.item)
+		BankWithdrawAddAmount(b, w.amount)
+		buf = finish(b, MessageBankWithdraw, BankWithdrawEnd(b))
+		var wd BankWithdraw
+		tbl = open(t, buf, MessageBankWithdraw)
+		wd.Init(tbl.Bytes, tbl.Pos)
+		if wd.ItemId() != w.item || wd.Amount() != w.amount {
+			t.Fatalf("withdraw: got %d %d, want %+v", wd.ItemId(), wd.Amount(), w)
+		}
+	}
+}
+
+func TestRoundTripBankResult(t *testing.T) {
+	codes := []BankResultCode{
+		BankResultCodeOk, BankResultCodeTooFar, BankResultCodeInCombat, BankResultCodeInPvpZone,
+		BankResultCodeBankFull, BankResultCodeInventoryFull, BankResultCodeNotEnoughItems,
+		BankResultCodeBusy, BankResultCodeNotOpen, BankResultCodeSaveFailed,
+	}
+	for i, code := range codes {
+		if int(code) != i {
+			t.Fatalf("%v = %d, want %d (new codes go at the end)", code, code, i)
+		}
+	}
+	if len(codes) != len(EnumNamesBankResultCode) {
+		t.Fatalf("BankResultCode has %d values, want %d", len(EnumNamesBankResultCode), len(codes))
+	}
+	for _, code := range codes {
+		b := flatbuffers.NewBuilder(16)
+		BankResultStart(b)
+		BankResultAddCode(b, code)
+		buf := finish(b, MessageBankResult, BankResultEnd(b))
+		var m BankResult
+		tbl := open(t, buf, MessageBankResult)
+		m.Init(tbl.Bytes, tbl.Pos)
+		if m.Code() != code {
+			t.Fatalf("got %v, want %v", m.Code(), code)
+		}
+	}
+}
+
+func TestToolSkillValues(t *testing.T) {
+	if ToolSkillNone != 0 || ToolSkillWoodcutting != 1 || ToolSkillFishing != 2 || len(EnumNamesToolSkill) != 3 {
+		t.Fatalf("ToolSkill values changed: %v", EnumNamesToolSkill)
+	}
+	if BankResultCodeSaveFailed != 9 {
+		t.Fatalf("BankResultCodeSaveFailed = %d, want 9", BankResultCodeSaveFailed)
+	}
+}
+
+// An ItemDef built without the tool and cooking fields reads as not a tool
+// and not a raw fish.
+func TestItemDefDefaultsToNotATool(t *testing.T) {
+	b := flatbuffers.NewBuilder(64)
+	ItemDefStart(b)
+	ItemDefAddId(b, 3)
+	b.Finish(ItemDefEnd(b))
+	d := GetRootAsItemDef(b.FinishedBytes(), 0)
+	if d.ToolSkill() != ToolSkillNone || d.ToolLevel() != 0 || d.CookingLevel() != 0 {
+		t.Fatalf("got %v %d %d, want None 0 0", d.ToolSkill(), d.ToolLevel(), d.CookingLevel())
+	}
+}
+
+type treeKindDef struct {
+	kind  string
+	level uint8
+}
+
+type fishingSpotKindDef struct {
+	kind  string
+	level uint8
+	tool  uint16
+}
+
+func TestRoundTripSkillCatalog(t *testing.T) {
+	if MessageSkillCatalog != 58 {
+		t.Fatalf("MessageSkillCatalog = %d, want 58 (new messages go at the end)", MessageSkillCatalog)
+	}
+	trees := []treeKindDef{{"tree", 1}, {"oak", 15}, {"eucalyptus", 25}}
+	spots := []fishingSpotKindDef{{"net", 1, 22}, {"rod", 5, 65535}}
+	b := flatbuffers.NewBuilder(256)
+	treeOffs := make([]flatbuffers.UOffsetT, len(trees))
+	for i, w := range trees {
+		kind := b.CreateString(w.kind)
+		TreeKindDefStart(b)
+		TreeKindDefAddKind(b, kind)
+		TreeKindDefAddLevel(b, w.level)
+		treeOffs[i] = TreeKindDefEnd(b)
+	}
+	spotOffs := make([]flatbuffers.UOffsetT, len(spots))
+	for i, w := range spots {
+		kind := b.CreateString(w.kind)
+		FishingSpotKindDefStart(b)
+		FishingSpotKindDefAddKind(b, kind)
+		FishingSpotKindDefAddLevel(b, w.level)
+		FishingSpotKindDefAddToolItemId(b, w.tool)
+		spotOffs[i] = FishingSpotKindDefEnd(b)
+	}
+	SkillCatalogStartTreesVector(b, len(treeOffs))
+	for i := len(treeOffs) - 1; i >= 0; i-- {
+		b.PrependUOffsetT(treeOffs[i])
+	}
+	treeVec := b.EndVector(len(treeOffs))
+	SkillCatalogStartFishingSpotsVector(b, len(spotOffs))
+	for i := len(spotOffs) - 1; i >= 0; i-- {
+		b.PrependUOffsetT(spotOffs[i])
+	}
+	spotVec := b.EndVector(len(spotOffs))
+	SkillCatalogStart(b)
+	SkillCatalogAddTrees(b, treeVec)
+	SkillCatalogAddFishingSpots(b, spotVec)
+	buf := finish(b, MessageSkillCatalog, SkillCatalogEnd(b))
+
+	var m SkillCatalog
+	tbl := open(t, buf, MessageSkillCatalog)
+	m.Init(tbl.Bytes, tbl.Pos)
+	var gotTrees []treeKindDef
+	var td TreeKindDef
+	for i := 0; i < m.TreesLength(); i++ {
+		if !m.Trees(&td, i) {
+			t.Fatalf("tree %d missing", i)
+		}
+		gotTrees = append(gotTrees, treeKindDef{string(td.Kind()), td.Level()})
+	}
+	var gotSpots []fishingSpotKindDef
+	var fd FishingSpotKindDef
+	for i := 0; i < m.FishingSpotsLength(); i++ {
+		if !m.FishingSpots(&fd, i) {
+			t.Fatalf("fishing spot %d missing", i)
+		}
+		gotSpots = append(gotSpots, fishingSpotKindDef{string(fd.Kind()), fd.Level(), fd.ToolItemId()})
+	}
+	if !reflect.DeepEqual(gotTrees, trees) || !reflect.DeepEqual(gotSpots, spots) {
+		t.Fatalf("got %+v %+v, want %+v %+v", gotTrees, gotSpots, trees, spots)
 	}
 }

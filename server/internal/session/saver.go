@@ -22,6 +22,7 @@ type saveReq struct {
 	storeID int64
 	x, z    float32
 	xp      int64
+	skills  store.SkillXP
 	ver     int64 // version the player was loaded with
 }
 
@@ -260,7 +261,7 @@ func (s *saver) write(r saveReq) {
 	s.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(s.ctx, saveTimeout)
-	rec, err := s.store.Save(ctx, store.Player{ID: r.storeID, X: r.x, Z: r.z, XP: r.xp, Version: ver})
+	rec, err := s.store.Save(ctx, store.Player{ID: r.storeID, X: r.x, Z: r.z, XP: r.xp, Skills: r.skills, Version: ver})
 	cancel()
 
 	s.mu.Lock()

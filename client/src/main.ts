@@ -5,7 +5,8 @@ import { GameLoop } from './core/loop';
 import { sendMove } from './core/move';
 import { buildWorldView, controlYaw } from './core/view';
 import { sendWave } from './core/wave';
-import { memoryTokenStore, OfflineTransport, offlineOptions } from './net/offline';
+import { memoryTokenStore, OfflineTransport, offlineOptions, type OfflinePanel } from './net/offline';
+import { OFFLINE_TABLE_ID, withOfflinePanels } from './net/offlinePanels';
 import { localTokenStore, Session } from './net/session';
 import { WebSocketTransport } from './net/transport';
 import { createRenderer } from './render/renderer';
@@ -163,13 +164,38 @@ const session = new Session({
   factory: () => (offline ? new OfflineTransport(offline) : new WebSocketTransport()),
   // Offline never touches the saved guest token.
   store: offline ? memoryTokenStore() : localTokenStore(),
-  onMessage: (msg) => {
+  // ?offline&panel=<name>: fixed panel data follows the offline Welcome, then that panel opens.
+  onMessage: withOfflinePanels(offline, (msg) => {
     game.handle(msg, performance.now());
     banner.set(game.restartSeconds);
-  },
+    if (offline?.panel) openOfflinePanel(offline.panel);
+  }),
   onReload: () => location.reload(),
 });
 session.start();
+
+/** Opens a panel for npm run shots once its data is in, and marks the page so the script knows it is open. */
+function openOfflinePanel(panel: OfflinePanel): void {
+  if (document.body.dataset.offlinePanel === panel) return;
+  const opened: Record<OfflinePanel, () => boolean> = {
+    inventory: () => {
+      hud.setOpen(true);
+      return hud.isOpen;
+    },
+    shop: () => shop.tryOpen(),
+    trade: () => trade.isOpen,
+    'card-table': () => {
+      cardTable.open(OFFLINE_TABLE_ID);
+      return cardTable.isOpen;
+    },
+    'chat-log': () => game.chat.log.length > 0,
+    'big-map': () => {
+      bigMap.open();
+      return bigMap.isOpen;
+    },
+  };
+  if (opened[panel]()) document.body.dataset.offlinePanel = panel;
+}
 
 new GameLoop({
   update: (stepMs) => {

@@ -40,7 +40,7 @@ static endTradeSetGold(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createTradeSetGold(builder:flatbuffers.Builder, gold:number):flatbuffers.Offset {
+static createTradeSetGold(builder:flatbuffers.Builder, gold:number = 0):flatbuffers.Offset {
   TradeSetGold.startTradeSetGold(builder);
   TradeSetGold.addGold(builder, gold);
   return TradeSetGold.endTradeSetGold(builder);

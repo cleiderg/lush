@@ -106,6 +106,19 @@ export class RetroPass {
     renderer.render(this.quad, this.camera);
   }
 
+  /**
+   * Draws `input` (a linear HDR frame, e.g. the end of the post chain) through the retro shader
+   * onto the canvas, in place of rendering the scene into the low-resolution target.
+   */
+  renderInput(renderer: THREE.WebGLRenderer, input: THREE.Texture): void {
+    this.material.uniforms.tScene.value = input;
+    renderer.setRenderTarget(null);
+    this.frame = (this.frame + 1) % 1024;
+    this.material.uniforms.frame.value = this.frame;
+    renderer.render(this.quad, this.camera);
+    this.material.uniforms.tScene.value = this.target.texture;
+  }
+
   dispose(): void {
     this.target.dispose();
     this.material.dispose();

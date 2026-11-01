@@ -25,7 +25,8 @@ type Config struct {
 	TileSize float64
 	// Collision, if set, blocks moves into blocked cells (sliding along walls).
 	Collision *world.Grid
-	// Areas is required: NPCs never enter its safe circle.
+	// Areas is required: NPCs never enter its safe circle or its safe
+	// interiors (the Student Center café).
 	Areas *areas.Lookup
 }
 
@@ -80,7 +81,8 @@ func (s *System) Leash(n *world.NPC) {
 
 // Step walks n toward its goal by at most WalkSpeed*dt. A move into a wall
 // slides along it; a move into the safe circle walks around its edge instead.
-// When no move gets the NPC closer, it stops and drops the goal.
+// When no move gets the NPC closer, or the move would enter a safe interior,
+// it stops and drops the goal.
 func (s *System) Step(n *world.NPC, dt time.Duration) {
 	if !n.HasGoal {
 		n.Anim = world.AnimIdle
@@ -102,7 +104,7 @@ func (s *System) Step(n *world.NPC, dt time.Duration) {
 		next, ok = s.around(n.Pos, n.Goal, maxStep)
 		next = s.slide(n.Pos, next)
 	}
-	if !ok || next == n.Pos || s.cfg.Areas.InSafeCircle(next) {
+	if !ok || next == n.Pos || s.cfg.Areas.InSafeCircle(next) || s.cfg.Areas.InInterior(next) {
 		n.HasGoal = false
 		n.Anim = world.AnimIdle
 		return

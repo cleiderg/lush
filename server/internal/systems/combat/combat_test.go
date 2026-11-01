@@ -465,6 +465,93 @@ func TestNoAttackInSafeCircle(t *testing.T) {
 	}
 }
 
+// safeSpots returns, for the safe circle and the Student Center café, a spot
+// just inside the safe area and one just outside it, less than a tile apart.
+func safeSpots(t *testing.T, z *areas.Lookup) map[string][2]world.Vec2 {
+	t.Helper()
+	s, r := z.Spawn(), float32(z.SafeRadius())
+	spots := map[string][2]world.Vec2{
+		"safe circle": {{X: s.X + r - 0.2, Y: s.Y}, {X: s.X + r + 0.3, Y: s.Y}},
+		"cafe":        {{X: 45, Y: -347.3}, {X: 45, Y: -346.6}}, // across the café's south wall
+	}
+	for name, p := range spots {
+		if !z.NoCombat(p[0]) || z.NoCombat(p[1]) {
+			t.Fatalf("%s: test positions are on the wrong sides of the safe area", name)
+		}
+	}
+	return spots
+}
+
+// TestNoAttackInSafeArea checks that no PvE attack starts when the player or
+// the NPC is inside the safe circle or the café, that an aggressive NPC
+// ignores a player inside, and that an NPC drops a target who walks in and
+// heads home instead of following.
+func TestNoAttackInSafeArea(t *testing.T) {
+	z, err := areas.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, spot := range safeSpots(t, z) {
+		in, out := spot[0], spot[1]
+		t.Run(name, func(t *testing.T) {
+			tests := []struct {
+				name            string
+				playerAt, npcAt world.Vec2
+			}{
+				{"player inside", in, out},
+				{"npc inside", out, in},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					f := newFixture(t, alwaysMiss, false)
+					p := f.player(t, 1, 5, tt.playerAt, "")
+					n := f.npc(t, "rabbit", tt.npcAt)
+					f.attack(p, n)
+					f.combatTicks(3)
+					if len(f.rec.events) != 0 {
+						t.Fatalf("events: %+v", f.rec.events)
+					}
+					if _, ok := f.sys.NPCTargetOf(n.ID); ok {
+						t.Error("NPC got a target from a refused attack")
+					}
+				})
+			}
+
+			t.Run("aggressive NPC ignores player inside", func(t *testing.T) {
+				f := newFixture(t, alwaysMiss, false)
+				f.player(t, 1, 5, in, "")
+				n := f.npc(t, "coyote", out)
+				f.combatTicks(3)
+				if _, ok := f.sys.NPCTargetOf(n.ID); ok {
+					t.Error("aggressive NPC targeted a player in the safe area")
+				}
+				if len(f.rec.events) != 0 {
+					t.Errorf("events = %+v, want none", f.rec.events)
+				}
+			})
+
+			t.Run("NPC drops target who enters", func(t *testing.T) {
+				f := newFixture(t, alwaysMiss, false)
+				home := world.Vec2{X: out.X + 2, Y: out.Y}
+				p := f.player(t, 1, 5, out, "")
+				n := f.npc(t, "coyote", home)
+				f.combatTicks(1)
+				if _, ok := f.sys.NPCTargetOf(n.ID); !ok {
+					t.Fatal("aggressive NPC did not target the player outside")
+				}
+				p.Pos = in
+				f.combatTicks(1)
+				if _, ok := f.sys.NPCTargetOf(n.ID); ok {
+					t.Error("NPC kept its target after the player entered the safe area")
+				}
+				if !n.HasGoal || n.Goal != n.Home {
+					t.Errorf("NPC goal = %v (has %v), want home %v", n.Goal, n.HasGoal, n.Home)
+				}
+			})
+		})
+	}
+}
+
 // TestNPCKilled checks an NPC at 0 HP is removed and a kill event carries its
 // type, position and killer.
 func TestNPCKilled(t *testing.T) {

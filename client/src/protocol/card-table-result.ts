@@ -43,7 +43,7 @@ static endCardTableResult(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createCardTableResult(builder:flatbuffers.Builder, code:CardTableResultCode):flatbuffers.Offset {
+static createCardTableResult(builder:flatbuffers.Builder, code:CardTableResultCode = CardTableResultCode.Ok):flatbuffers.Offset {
   CardTableResult.startCardTableResult(builder);
   CardTableResult.addCode(builder, code);
   return CardTableResult.endCardTableResult(builder);
