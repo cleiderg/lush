@@ -6,6 +6,7 @@ import * as flatbuffers from 'flatbuffers';
 
 import { EquipSlot } from '../protocol/equip-slot';
 import { ItemKind } from '../protocol/item-kind';
+import { ToolSkill } from '../protocol/tool-skill';
 
 
 export class ItemDef {
@@ -93,8 +94,23 @@ shopSellsFor():number {
   return offset ? this.bb!.readUint32(this.bb_pos + offset) : 0;
 }
 
+toolSkill():ToolSkill {
+  const offset = this.bb!.__offset(this.bb_pos, 30);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : ToolSkill.None;
+}
+
+toolLevel():number {
+  const offset = this.bb!.__offset(this.bb_pos, 32);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
+}
+
+cookingLevel():number {
+  const offset = this.bb!.__offset(this.bb_pos, 34);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
+}
+
 static startItemDef(builder:flatbuffers.Builder) {
-  builder.startObject(13);
+  builder.startObject(16);
 }
 
 static addId(builder:flatbuffers.Builder, id:number) {
@@ -149,12 +165,24 @@ static addShopSellsFor(builder:flatbuffers.Builder, shopSellsFor:number) {
   builder.addFieldInt32(12, shopSellsFor, 0);
 }
 
+static addToolSkill(builder:flatbuffers.Builder, toolSkill:ToolSkill) {
+  builder.addFieldInt8(13, toolSkill, ToolSkill.None);
+}
+
+static addToolLevel(builder:flatbuffers.Builder, toolLevel:number) {
+  builder.addFieldInt8(14, toolLevel, 0);
+}
+
+static addCookingLevel(builder:flatbuffers.Builder, cookingLevel:number) {
+  builder.addFieldInt8(15, cookingLevel, 0);
+}
+
 static endItemDef(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createItemDef(builder:flatbuffers.Builder, id:number, nameOffset:flatbuffers.Offset, kind:ItemKind, equipSlot:EquipSlot, levelToEquip:number, accuracy:number, strength:number, defence:number, attackSpeed:number, heal:number, shopBuysFor:number, shopSells:boolean, shopSellsFor:number):flatbuffers.Offset {
+static createItemDef(builder:flatbuffers.Builder, id:number = 0, nameOffset:flatbuffers.Offset = 0, kind:ItemKind = ItemKind.Loot, equipSlot:EquipSlot = EquipSlot.None, levelToEquip:number = 0, accuracy:number = 0, strength:number = 0, defence:number = 0, attackSpeed:number = 0, heal:number = 0, shopBuysFor:number = 0, shopSells:boolean = false, shopSellsFor:number = 0, toolSkill:ToolSkill = ToolSkill.None, toolLevel:number = 0, cookingLevel:number = 0):flatbuffers.Offset {
   ItemDef.startItemDef(builder);
   ItemDef.addId(builder, id);
   ItemDef.addName(builder, nameOffset);
@@ -169,6 +197,9 @@ static createItemDef(builder:flatbuffers.Builder, id:number, nameOffset:flatbuff
   ItemDef.addShopBuysFor(builder, shopBuysFor);
   ItemDef.addShopSells(builder, shopSells);
   ItemDef.addShopSellsFor(builder, shopSellsFor);
+  ItemDef.addToolSkill(builder, toolSkill);
+  ItemDef.addToolLevel(builder, toolLevel);
+  ItemDef.addCookingLevel(builder, cookingLevel);
   return ItemDef.endItemDef(builder);
 }
 }

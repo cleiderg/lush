@@ -53,7 +53,7 @@ static endShedPlay(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createShedPlay(builder:flatbuffers.Builder, cardOffset:flatbuffers.Offset, chosenColour:ShedColour):flatbuffers.Offset {
+static createShedPlay(builder:flatbuffers.Builder, cardOffset:flatbuffers.Offset = 0, chosenColour:ShedColour = ShedColour.None):flatbuffers.Offset {
   ShedPlay.startShedPlay(builder);
   ShedPlay.addCard(builder, cardOffset);
   ShedPlay.addChosenColour(builder, chosenColour);

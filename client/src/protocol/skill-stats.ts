@@ -85,7 +85,7 @@ static endSkillStats(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createSkillStats(builder:flatbuffers.Builder, woodcuttingLevel:number, woodcuttingXp:number, fishingLevel:number, fishingXp:number, cookingLevel:number, cookingXp:number):flatbuffers.Offset {
+static createSkillStats(builder:flatbuffers.Builder, woodcuttingLevel:number = 0, woodcuttingXp:number = 0, fishingLevel:number = 0, fishingXp:number = 0, cookingLevel:number = 0, cookingXp:number = 0):flatbuffers.Offset {
   SkillStats.startSkillStats(builder);
   SkillStats.addWoodcuttingLevel(builder, woodcuttingLevel);
   SkillStats.addWoodcuttingXp(builder, woodcuttingXp);

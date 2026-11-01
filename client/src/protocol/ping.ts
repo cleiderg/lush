@@ -40,7 +40,7 @@ static endPing(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createPing(builder:flatbuffers.Builder, token:number):flatbuffers.Offset {
+static createPing(builder:flatbuffers.Builder, token:number = 0):flatbuffers.Offset {
   Ping.startPing(builder);
   Ping.addToken(builder, token);
   return Ping.endPing(builder);

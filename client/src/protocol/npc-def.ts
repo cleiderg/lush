@@ -60,7 +60,7 @@ static endNpcDef(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createNpcDef(builder:flatbuffers.Builder, id:number, nameOffset:flatbuffers.Offset, combatLevel:number):flatbuffers.Offset {
+static createNpcDef(builder:flatbuffers.Builder, id:number = 0, nameOffset:flatbuffers.Offset = 0, combatLevel:number = 0):flatbuffers.Offset {
   NpcDef.startNpcDef(builder);
   NpcDef.addId(builder, id);
   NpcDef.addName(builder, nameOffset);

@@ -16,6 +16,7 @@ const (
 	BankResultCodeNotEnoughItems BankResultCode = 6
 	BankResultCodeBusy           BankResultCode = 7
 	BankResultCodeNotOpen        BankResultCode = 8
+	BankResultCodeSaveFailed     BankResultCode = 9
 )
 
 var EnumNamesBankResultCode = map[BankResultCode]string{
@@ -28,6 +29,7 @@ var EnumNamesBankResultCode = map[BankResultCode]string{
 	BankResultCodeNotEnoughItems: "NotEnoughItems",
 	BankResultCodeBusy:           "Busy",
 	BankResultCodeNotOpen:        "NotOpen",
+	BankResultCodeSaveFailed:     "SaveFailed",
 }
 
 var EnumValuesBankResultCode = map[string]BankResultCode{
@@ -40,6 +42,7 @@ var EnumValuesBankResultCode = map[string]BankResultCode{
 	"NotEnoughItems": BankResultCodeNotEnoughItems,
 	"Busy":           BankResultCodeBusy,
 	"NotOpen":        BankResultCodeNotOpen,
+	"SaveFailed":     BankResultCodeSaveFailed,
 }
 
 func (v BankResultCode) String() string {

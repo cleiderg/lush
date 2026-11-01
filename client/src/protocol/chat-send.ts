@@ -42,7 +42,7 @@ static endChatSend(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createChatSend(builder:flatbuffers.Builder, textOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createChatSend(builder:flatbuffers.Builder, textOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   ChatSend.startChatSend(builder);
   ChatSend.addText(builder, textOffset);
   return ChatSend.endChatSend(builder);

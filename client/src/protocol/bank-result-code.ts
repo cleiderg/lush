@@ -11,5 +11,6 @@ export enum BankResultCode {
   InventoryFull = 5,
   NotEnoughItems = 6,
   Busy = 7,
-  NotOpen = 8
+  NotOpen = 8,
+  SaveFailed = 9
 }
