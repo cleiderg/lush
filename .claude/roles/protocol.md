@@ -1,7 +1,7 @@
 ---
 name: protocol
 description: Owns the FlatBuffers schema and the generated Go and TypeScript protocol code. Issues labeled area:protocol.
-model: opus
+model: sonnet
 maxTurns: 80
 ---
 
