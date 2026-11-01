@@ -5,9 +5,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { BBOX, ORIGIN, CHUNK_SIZE, CELL_SIZE } from './config.mjs';
-import {
-  ALDRICH_PARK_WAY, SPAWN, SAFE_RADIUS, SHOP, SOUTH_FIELDS, PVP_ZONE, CARD_PLAZA, CARD_TABLES, STUDENT_CENTER_WAY, CAFE,
-} from './areas.mjs';
+import { ALDRICH_PARK_WAY, SPAWN, SAFE_RADIUS, SHOP, SOUTH_FIELDS, PVP_ZONE, CARD_PLAZA, CARD_TABLES } from './areas.mjs';
 import {
   PROP_SEED, PROP_TYPES, BUSY_CELL, BUSY_TYPES, SPAWN_CLEAR, SHOP_CLEAR, TABLE_CLEAR, AREA_CLUSTER,
   FOOD_SEED, FOOD_CARTS, STRING_LIGHTS, STRING_SPAN, FOOD_AREAS, FOOD_CLEAR, WALL_CLEAR, TABLETOP_SPOTS, TABLETOP_REACH,
@@ -164,45 +162,6 @@ function fill(poly) {
 for (const b of buildings) fill(b.p);
 for (const g of green) if (g.k === GREEN_KIND.water) fill(g.p);
 
-// Student Center café (areas.mjs CAFE): open its floor and door cells inside the building; the building's cells
-// round the floor stay blocked as its walls. Fails unless the room is wholly inside the footprint, walled on every
-// side but the door, and the door leads to a walkable cell outside.
-const cellIdx = (x, z) => Math.floor((z * 10 - minZ) / cellDm) * width + Math.floor((x * 10 - minX) / cellDm);
-const cellBit = (x, z) => { const i = cellIdx(x, z); return (bits[i >> 3] >> (i & 7)) & 1; };
-const studentCenter = buildings.find((b) => b.id === STUDENT_CENTER_WAY);
-if (!studentCenter) throw new Error(`building way ${STUDENT_CENTER_WAY} (Student Center) missing`);
-const inStudentCenter = (x, z) => {
-  const px = x * 10, pz = z * 10, p = studentCenter.p;
-  let r = false;
-  for (let i = 0, j = p.length - 2; i < p.length; j = i, i += 2) {
-    if (p[i + 1] > pz !== p[j + 1] > pz && px < p[i] + ((pz - p[i + 1]) * (p[j] - p[i])) / (p[j + 1] - p[i + 1])) r = !r;
-  }
-  return r;
-};
-const inRect = (x, z, [x0, z0, x1, z1]) => x >= x0 && x < x1 && z >= z0 && z < z1;
-{
-  const [fx0, fz0, fx1, fz1] = CAFE.floor;
-  const open = [];
-  for (let z = fz0 - 1; z <= fz1; z++) {
-    for (let x = fx0 - 1; x <= fx1; x++) {
-      const cx = x + 0.5, cz = z + 0.5;
-      if (!inStudentCenter(cx, cz) || !cellBit(cx, cz)) throw new Error(`café cell (${x}, ${z}) is not inside the Student Center`);
-      if (inRect(x, z, CAFE.floor) || inRect(x, z, CAFE.door)) open.push(cellIdx(cx, cz));
-    }
-  }
-  const [dx0, dz0, dx1, dz1] = CAFE.door;
-  let outside = 0;
-  for (let z = dz0; z < dz1; z++) for (let x = dx0; x < dx1; x++) {
-    if (inRect(x, z, CAFE.floor)) throw new Error(`café door cell (${x}, ${z}) is on the floor`);
-    for (const [ox, oz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const nx = x + ox, nz = z + oz;
-      if (!inRect(nx, nz, CAFE.floor) && !inRect(nx, nz, CAFE.door) && !cellBit(nx + 0.5, nz + 0.5)) outside++;
-    }
-  }
-  if (!outside) throw new Error('café door does not lead to a walkable cell outside');
-  for (const i of open) bits[i >> 3] &= ~(1 << (i & 7));
-}
-
 // Header (22 bytes, little-endian) then the packed bits. See README.md.
 const header = Buffer.alloc(22);
 header.write('LCOL', 0, 'ascii');
@@ -238,9 +197,6 @@ const areas = {
     { id: 'aldrich_park', kind: 'pve', osm: ALDRICH_PARK_WAY, p: park.p },
     { id: 'south_fields', kind: 'pve', p: dm(SOUTH_FIELDS) },
     { id: 'pvp_zone', kind: 'pvp', p: dm(PVP_ZONE) },
-  ],
-  interiors: [
-    { id: CAFE.id, kind: 'safe', p: dm([[CAFE.floor[0], CAFE.floor[1]], [CAFE.floor[2], CAFE.floor[1]], [CAFE.floor[2], CAFE.floor[3]], [CAFE.floor[0], CAFE.floor[3]]]) },
   ],
 };
 // Card table plaza, in its own file so areas.json (and the server's area ids) stay as they are.
