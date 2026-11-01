@@ -1,5 +1,5 @@
 // Converts the committed OSM snapshot into the compact map file, the collision grid, the gameplay areas, the card tables,
-// the props, the M9 skill objects and the Aldrich Park nature.
+// the M8 fountain, the props, the M9 skill objects and the Aldrich Park nature.
 //   node shared/map/build.mjs [outDir] [--no-nature]      (default: this directory; --no-nature skips parknature.json)
 // Deterministic: same input -> byte-identical output. No Math.random, no timestamps.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -18,6 +18,7 @@ import {
   SKILLS_SEED, SKILL_TREES, SKILL_TREE_R, SKILL_TREE_SPACING, SAFE_MARGIN, POND_CENTRE, POND_RADII, POND_POINTS, POND_WOBBLE,
   POND_SHORE, POND_SHIFT, FISHING_SPOTS, STATION_CLEAR,
 } from './skills.mjs';
+import { FOUNTAIN_R, FOUNTAIN_PATH_CLEAR, FOUNTAIN_CLEAR, FOUNTAIN_STEP } from './fountain.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const args = process.argv.slice(2);
@@ -207,6 +208,76 @@ const cardTables = {
   tables: CARD_TABLES.map((t) => ({ id: t.id, ...cellCentre(t, `card table ${t.id}`) })),
 };
 
+// The M8 fountain (fountain.mjs): one round basin in the paved plaza nearest the spawn, clear of the safe-circle places,
+// paths and buildings. Its cells are blocked (water is not walkable) before anything else is placed, so props and nature avoid it.
+function placeFountain() {
+  const spots = [cellCentre(SPAWN, 'spawn'), cellCentre(SHOP, 'shop'), cellCentre(BANK_BOOTH, 'bank booth'), cellCentre(GRILL, 'grill')]
+    .map((c) => ({ x: c.x / 10, z: c.z / 10 }));
+  const cardPlazaDm = dm(CARD_PLAZA);
+  const edges = (p) => Array.from({ length: p.length / 2 }, (_, i) => {
+    const j = (i + 1) % (p.length / 2);
+    return [p[2 * i] / 10, p[2 * i + 1] / 10, p[2 * j] / 10, p[2 * j + 1] / 10];
+  });
+  const segD = ([x0, z0, x1, z1], x, z) => {
+    const dx = x1 - x0, dz = z1 - z0, len2 = dx * dx + dz * dz;
+    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - x0) * dx + (z - z0) * dz) / len2));
+    return Math.hypot(x0 + t * dx - x, z0 + t * dz - z);
+  };
+  const polyDist = (p, x, z) => (insideDm(x, z, p) ? 0 : Math.min(...edges(p).map((e) => segD(e, x, z))));
+  const pathSegs = paths.flatMap((w) => Array.from({ length: w.p.length / 2 - 1 }, (_, i) => ({
+    e: [w.p[2 * i] / 10, w.p[2 * i + 1] / 10, w.p[2 * i + 2] / 10, w.p[2 * i + 3] / 10], h: w.w / 20,
+  })));
+  const walls = buildings.flatMap((b) => edges(b.p));
+  const R = FOUNTAIN_R, pad = FOUNTAIN_PATH_CLEAR;
+  // Plazas by distance from the spawn (then id), skipping any too close to the safe-circle places.
+  const order = plazas
+    .map((q) => ({ q, d: polyDist(q.p, spots[0].x, spots[0].z) }))
+    .sort((a, b) => a.d - b.d || a.q.id - b.q.id);
+  for (const { q } of order) {
+    const e = edges(q.p);
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity, cx = 0, cz = 0;
+    for (const [x, z] of e) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); cx += x; cz += z; }
+    cx /= e.length; cz /= e.length;
+    const segs = pathSegs.filter((s) => Math.min(s.e[0], s.e[2]) - s.h < x1 + R + pad && Math.max(s.e[0], s.e[2]) + s.h > x0 - R - pad &&
+      Math.min(s.e[1], s.e[3]) - s.h < z1 + R + pad && Math.max(s.e[1], s.e[3]) + s.h > z0 - R - pad);
+    const near = walls.filter((w) => Math.min(w[0], w[2]) < x1 + R + pad && Math.max(w[0], w[2]) > x0 - R - pad &&
+      Math.min(w[1], w[3]) < z1 + R + pad && Math.max(w[1], w[3]) > z0 - R - pad);
+    let best = null;
+    const step = FOUNTAIN_STEP;
+    for (let z = Math.ceil(z0 / step) * step; z <= z1; z += step) {
+      for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) {
+        if (!insideDm(x, z, q.p) || e.some((s) => segD(s, x, z) < R + pad)) continue;
+        if (segs.some((s) => segD(s.e, x, z) - s.h < R + pad) || near.some((w) => segD(w, x, z) < R + pad)) continue;
+        if (blockedAt(x, z) || inBuilding(x, z)) continue;
+        if (spots.some((c) => Math.hypot(x - c.x, z - c.z) < R + FOUNTAIN_CLEAR) || polyDist(cardPlazaDm, x, z) < R + FOUNTAIN_CLEAR) continue;
+        const d = Math.hypot(x - cx, z - cz);
+        if (!best || d < best.d - 1e-9) best = { x, z, d };
+      }
+    }
+    if (best) {
+      // Snap to a cell centre so the blocked disk is symmetric on the grid.
+      const c = cellCentre(best, 'fountain');
+      const out = { version: 1, units: 'decimetres', plaza: q.id, x: c.x, z: c.z, r: Math.round(R * 10) };
+      fillDisk(c.x, c.z, out.r);
+      return out;
+    }
+  }
+  throw new Error('no plaza has room for the fountain');
+}
+/** Block every cell whose centre is within r (decimetres) of (x, z). */
+function fillDisk(x, z, r) {
+  for (let row = 0; row < height; row++) {
+    const cz = minZ + (row + 0.5) * cellDm;
+    if (Math.abs(cz - z) > r) continue;
+    for (let col = 0; col < width; col++) {
+      const cx = minX + (col + 0.5) * cellDm;
+      if (Math.hypot(cx - x, cz - z) > r) continue;
+      const idx = row * width + col;
+      bits[idx >> 3] |= 1 << (idx & 7);
+    }
+  }
+}
+
 // Props (props.mjs): visual only, kept clear of the M9 bank booth and grill (skills.mjs), so they never change collision.bin. Placed with one seeded generator in a fixed order.
 const blockedAt = (x, z) => {
   const c = Math.floor((x * 10 - minX) / cellDm);
@@ -241,6 +312,8 @@ function walkableShare(x0, z0, size) {
   return free / (size * size);
 }
 
+// The fountain's basin is blocked here, before the props, skill objects and nature are placed.
+const fountain = placeFountain();
 const spawnM = { x: areas.spawn.x / 10, z: areas.spawn.z / 10 };
 const shopM = { x: areas.shop.x / 10, z: areas.shop.z / 10 };
 const tablesM = cardTables.tables.map((t) => ({ x: t.x / 10, z: t.z / 10 }));
@@ -757,7 +830,8 @@ writeFileSync(outDir + '/campus.json', JSON.stringify(campus) + '\n');
 writeFileSync(outDir + '/collision.bin', Buffer.concat([header, Buffer.from(bits)]));
 writeFileSync(outDir + '/areas.json', JSON.stringify(areas) + '\n');
 writeFileSync(outDir + '/cardtables.json', JSON.stringify(cardTables) + '\n');
+writeFileSync(outDir + '/fountain.json', JSON.stringify(fountain) + '\n');
 writeFileSync(outDir + '/props.json', JSON.stringify(props) + '\n');
 writeFileSync(outDir + '/skills.json', JSON.stringify(skills) + '\n');
 if (nature) writeFileSync(outDir + '/parknature.json', JSON.stringify(nature) + '\n');
-console.log(`buildings=${buildings.length} paths=${paths.length} plazas=${plazas.length} green=${green.length} grid=${width}x${height} props=${placed.length} skillTrees=${skills.trees.length} nature=${nature ? nature.items.length : 'off'}`);
+console.log(`buildings=${buildings.length} paths=${paths.length} plazas=${plazas.length} green=${green.length} grid=${width}x${height} fountain=${fountain.x / 10},${fountain.z / 10} props=${placed.length} skillTrees=${skills.trees.length} nature=${nature ? nature.items.length : 'off'}`);
