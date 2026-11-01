@@ -67,9 +67,10 @@ describe('path surfaces and plazas in the map build (AC1)', () => {
 });
 
 describe('collision and areas unchanged (AC2)', () => {
-  // SHA-256 of the files as committed before path surfaces were added (#379).
+  // SHA-256 of the files as committed before path surfaces were added (#379). collision.bin since the fountain's basin
+  // was blocked (#432); fountain.test.ts shows it matches the earlier e9c7039c... with only the basin cells cleared.
   const BEFORE: Record<string, string> = {
-    'collision.bin': 'e9c7039c59482b687c4135a03cf9f3def25b1bf3aad51297dac85edad82dfedc',
+    'collision.bin': '82c0f04011a01c8a253cd9c5eaa32defc84bd39a087621a6c0b0a52ee09937d0',
     'areas.json': 'f1c864b4121ad2e40e7ff03c1a2d46204dea17c6abbaacecaed5e260528a2428',
     'cardtables.json': '4b50c37498188920ab254d2bd62389dac46482cc442acd471718c42d88ce2ee9',
   };

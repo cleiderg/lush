@@ -159,3 +159,19 @@ export function parseSkills(json: string): SkillsData {
   if (d.version !== 1) throw new Error(`unsupported skills.json version ${d.version}`);
   return d;
 }
+
+/** The M8 fountain from fountain.json (decimetres): basin centre, radius and the OSM plaza it stands in. */
+export interface FountainData {
+  version: number;
+  units: string;
+  plaza: number;
+  x: number;
+  z: number;
+  r: number;
+}
+
+export function parseFountain(json: string): FountainData {
+  const d = JSON.parse(json) as FountainData;
+  if (d.version !== 1) throw new Error(`unsupported fountain.json version ${d.version}`);
+  return d;
+}
