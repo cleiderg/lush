@@ -66,7 +66,13 @@ export class SkillsPanel {
     addPressFeedbackWithin(this.panel);
     this.rows = el('div', 'lush-skills-rows');
     this.total = el('div', 'lush-skills-total');
-    this.panel.append(this.tabs('skills'), el('div', 'lush-title lush-skills-title', 'Skills'), this.rows, this.total);
+    // The panel covers the panel area and the Bag toggle opens the inventory, so it needs its own Close.
+    const head = el('div', 'lush-skills-head');
+    const close = el('button', `lush-skills-close ${BUTTON_CLASS}`, 'Close');
+    close.type = 'button';
+    close.addEventListener('click', () => this.setOpen(false));
+    head.append(el('span', 'lush-title lush-skills-title', 'Skills'), close);
+    this.panel.append(this.tabs('skills'), head, this.rows, this.total);
 
     this.inventoryTabs = this.tabs('inventory');
     opts.inventory.panel.prepend(this.inventoryTabs);
@@ -149,6 +155,7 @@ function injectStyle(): void {
   s.textContent = `
 .lush-skills { box-sizing: border-box; z-index: 5; display: flex; flex-direction: column; gap: var(--lush-space-2); padding: var(--lush-space-2) var(--lush-space-3) var(--lush-space-3); font-size: var(--lush-text-sm); overflow-y: auto; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
 .lush-skills[hidden] { display: none; }
+.lush-skills-head { display: flex; align-items: center; justify-content: space-between; gap: var(--lush-space-2); }
 .lush-skills-title { font-size: var(--lush-text-lg); }
 .lush-tabs { display: flex; gap: var(--lush-space-1); }
 .lush-panel .lush-tab { flex: 1; background: var(--lush-surface); color: var(--lush-text-muted); border-color: var(--lush-gold-dim); }

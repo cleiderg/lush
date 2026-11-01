@@ -64,6 +64,14 @@ describe('Skills tab and panel (#466 AC1)', () => {
     expect(panel.isOpen).toBe(false);
   });
 
+  it('closes from its own Close button, leaving the inventory closed', () => {
+    const { hud, panel } = setup();
+    panel.setOpen(true);
+    panel.panel.querySelector<HTMLButtonElement>('.lush-skills-close')!.click();
+    expect(panel.isOpen).toBe(false);
+    expect(hud.isOpen).toBe(false);
+  });
+
   it('lists Woodcutting, Fishing and Cooking with level, whole-point XP and XP to the next level', () => {
     const { panel, skills } = setup();
     skills.setStats([
@@ -124,7 +132,7 @@ describe('Skills panel theme (#466 AC3)', () => {
     expect(title?.textContent).toBe('Skills');
     expect(getComputedStyle(title!).fontVariant).toBe('small-caps');
     const buttons = [...panel.panel.querySelectorAll<HTMLButtonElement>('button'), ...hud.panel.querySelectorAll<HTMLButtonElement>('button')];
-    expect(buttons).toHaveLength(4);
+    expect(buttons).toHaveLength(5);
     for (const b of buttons) {
       expect(b.classList.contains(BUTTON_CLASS), b.textContent ?? '').toBe(true);
       const cs = getComputedStyle(b);
