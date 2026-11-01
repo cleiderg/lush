@@ -9,6 +9,7 @@ import { CampusMap, loadCampus } from './campusMap';
 import { GroundItems } from './groundItems';
 import { Npcs } from './npcs';
 import { ChatText } from './chatText';
+import { FloatTexts } from './floatText';
 import { AreaMarkers, loadAreas } from './gameAreas';
 import { CardTables, loadCardTables } from './cardTables';
 import { Nature } from './nature';
@@ -65,6 +66,7 @@ export class WorldScene {
   /** Attack swings and hit flinches, started by the view's hits. */
   readonly combat = new CombatAnims();
   readonly chat = new ChatText();
+  readonly floatTexts = new FloatTexts();
   /** Created on the first view that carries groundItems, so views without it leave the scene as before. */
   private groundItems: GroundItems | null = null;
   /** Created on the first view that carries npcs, like groundItems. */
@@ -140,6 +142,8 @@ export class WorldScene {
     // Chat joins the scene with the first message, like hitsplats; it needs the DOM only from then on.
     if (view.chat?.length && !this.chat.group.parent) this.scene.add(this.chat.group);
     if (this.chat.group.parent) this.chat.update(view);
+    if (view.gains?.length && !this.floatTexts.group.parent) this.scene.add(this.floatTexts.group);
+    if (this.floatTexts.group.parent) this.floatTexts.update(view, this.now());
   }
 
   /** One shadow per drawn player and NPC, reusing the same objects each frame. */
