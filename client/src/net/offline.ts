@@ -1,6 +1,7 @@
 import * as flatbuffers from 'flatbuffers';
 import areas from '../../../shared/map/areas.json';
 import cardTablesData from '../../../shared/map/cardtables.json';
+import skills from '../../../shared/map/skills.json';
 import { Animation, Entity, Envelope, Message, Snapshot, Vec2, Welcome } from '../protocol';
 import type { EntityState } from './codec';
 import type { TokenStore } from './session';
@@ -21,15 +22,16 @@ export const OFFLINE_PLACES: Readonly<Record<string, { x: number; z: number }>> 
   spawn: { x: areas.spawn.x / 10, z: areas.spawn.z / 10 },
   park: { x: -70, z: -40 },
   shop: { x: areas.shop.x / 10 + 1, z: areas.shop.z / 10 },
+  bank: { x: skills.bank.x / 10 + 1, z: skills.bank.z / 10 },
   cardtable: { x: cardTablesData.tables[0].x / 10, z: cardTablesData.tables[0].z / 10 + 1 },
 };
 
 /** UI panels offline mode can open with fixed data (`?offline&panel=<name>`, npm run shots). */
-export const OFFLINE_PANELS = ['inventory', 'shop', 'trade', 'card-table', 'chat-log', 'big-map'] as const;
+export const OFFLINE_PANELS = ['inventory', 'shop', 'trade', 'bank', 'card-table', 'chat-log', 'big-map'] as const;
 export type OfflinePanel = (typeof OFFLINE_PANELS)[number];
 
-/** Where a panel's shot starts when the URL names no place: within reach of the shop stall or card table. */
-const PANEL_PLACES: Partial<Record<OfflinePanel, string>> = { shop: 'shop', 'card-table': 'cardtable' };
+/** Where a panel's shot starts when the URL names no place: within reach of the shop stall, bank booth or card table. */
+const PANEL_PLACES: Partial<Record<OfflinePanel, string>> = { shop: 'shop', bank: 'bank', 'card-table': 'cardtable' };
 
 export const OFFLINE_PLAYER_ID = 1;
 const DEFAULT_SEED = 1;

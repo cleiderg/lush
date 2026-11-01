@@ -101,6 +101,11 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
     msgs.push({ type: 'chat', speakerId: i === CHAT_LINES - 2 ? playerId : pick(BOT_IDS), text: pick(CHAT) });
   }
 
+  if (opts.panel === 'bank') {
+    // Every catalog item banked, so the panel has a list to search; BankState opens the bank.
+    msgs.push({ type: 'bankState', slots: CATALOG.map((d) => ({ itemId: d.id, quantity: between(rand, 1, 400) })) });
+  }
+
   if (opts.panel === 'trade') {
     const mine = slots.filter((s) => s.itemId).slice(0, 2).map((s) => ({ itemId: s.itemId, quantity: Math.min(s.quantity, 3) }));
     msgs.push({

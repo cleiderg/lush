@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { interact, interactPromptText, interactTarget, type InteractActions } from '../core/interact';
 import { EntityKind } from '../protocol';
+import { BANK_BOOTH } from '../state/bank';
 import { CARD_TABLE_POSITIONS } from '../state/cardTables';
 import { GameState } from '../state/world';
 import { hudLayout, inside, intersects } from './hudLayout';
@@ -54,6 +55,7 @@ describe('interact prompt text (AC1)', () => {
     ['an NPC to attack', () => game(OPEN, [{ id: 5, x: OPEN.x + 1, z: OPEN.z, kind: EntityKind.Npc, npcType: COYOTE, combatLevel: 12 }]),
       'Attack Coyote · Lvl 12', 'Coyote'],
     ['a player in the PvP zone', () => game(PVP, [{ id: 6, x: PVP.x + 2, z: PVP.z, kind: EntityKind.Player }]), 'Attack a player', null],
+    ['the bank booth', () => game({ x: BANK_BOOTH.x + 1, z: BANK_BOOTH.z }), 'Open Bank', 'Bank'],
     ['the shop', () => game({ ...SHOP_STALL }), 'Open Campus Market', 'Campus Market'],
     ['a ground item', () => game(OPEN, [], [{ id: 40, x: OPEN.x, z: OPEN.z, itemId: 3 }]), 'Pick up Acorn', 'Acorn'],
     ['a player to trade', () => game(OPEN, [{ id: 6, x: OPEN.x + 2, z: OPEN.z, kind: EntityKind.Player }]), 'Trade with a player', null],
@@ -95,7 +97,7 @@ describe('interact prompt and the Interact button agree (AC2)', () => {
       { id: 6, x: OPEN.x + 1, z: OPEN.z, kind: EntityKind.Player },
     ]);
     const actions: InteractActions = {
-      openShop: vi.fn(), openCardTable: vi.fn(), sendPickUp: vi.fn(), sendAttackTarget: vi.fn(), sendTradeRequest: vi.fn(),
+      openShop: vi.fn(), openBank: vi.fn(), openCardTable: vi.fn(), sendPickUp: vi.fn(), sendAttackTarget: vi.fn(), sendTradeRequest: vi.fn(),
     };
     const p = mount(g);
     expect(p.root.textContent).toBe('Attack Coyote · Lvl 9');

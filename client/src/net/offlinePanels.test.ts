@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GameState } from '../state/world';
 import { decode, type ServerMessage } from './codec';
+import { nearBank } from '../state/bank';
 import { encodeWelcome, OFFLINE_PANELS, OFFLINE_PLACES, OFFLINE_PLAYER_ID, offlineOptions, type OfflineOptions } from './offline';
 import { OFFLINE_TABLE_ID, offlinePanelMessages, withOfflinePanels } from './offlinePanels';
 import { Session } from './session';
@@ -19,6 +20,7 @@ function panelState(game: GameState) {
     hand: game.cardTables.hand,
     mySeat: game.cardTables.mySeat,
     chat: game.chat.log,
+    bank: game.bank.slots,
   };
 }
 
@@ -93,6 +95,17 @@ describe('offline panel data', () => {
     expect(s.hand?.cards.length).toBeGreaterThan(0);
     expect(s.shed.length).toBe(1);
     expect(s.chat.length).toBeGreaterThan(0);
+  });
+
+  it('opens the bank only for the bank panel, starting within reach of the booth', () => {
+    expect(offlineOptions('?offline&panel=bank')?.spawn).toEqual(OFFLINE_PLACES.bank);
+    expect(nearBank(OFFLINE_PLACES.bank)).toBe(true);
+    const s = stateFor(offlineOptions('?offline&seed=1&panel=bank')!);
+    expect(s.bank?.length).toBeGreaterThan(0);
+    for (const slot of s.bank!) expect(s.catalog.some((d) => d.id === slot.itemId)).toBe(true);
+    for (const panel of OFFLINE_PANELS.filter((p) => p !== 'bank')) {
+      expect(stateFor(offlineOptions(`?offline&panel=${panel}`)!).bank).toBeNull();
+    }
   });
 
   it('opens the trade window only for the trade panel, since it takes the panel area', () => {
