@@ -110,3 +110,26 @@ describe('SkillState', () => {
     expect(g.skills.levelUps.length).toBe(0);
   });
 });
+
+describe('skill catalog', () => {
+  const tree = (kind: string, level: number) => ({ kind, level });
+
+  it('looks up kinds by name and a resent catalog replaces the old one', () => {
+    const g = new GameState();
+    expect(g.skills.treeKind('oak')).toBeUndefined();
+    g.handle({
+      type: 'skillCatalog',
+      trees: [tree('tree', 1), tree('oak', 10), tree('eucalyptus', 20)],
+      fishingSpots: [{ kind: 'net', level: 1, toolItemId: 12 }, { kind: 'rod', level: 5, toolItemId: 13 }],
+    }, 0);
+    expect(g.skills.treeKind('tree')?.level).toBe(1);
+    expect(g.skills.treeKind('oak')?.level).toBe(10);
+    expect(g.skills.treeKind('eucalyptus')?.level).toBe(20);
+    expect(g.skills.fishingSpotKind('net')).toEqual({ kind: 'net', level: 1, toolItemId: 12 });
+    expect(g.skills.fishingSpotKind('rod')?.toolItemId).toBe(13);
+    g.handle({ type: 'skillCatalog', trees: [tree('oak', 12)], fishingSpots: [] }, 0);
+    expect(g.skills.treeKind('oak')?.level).toBe(12);
+    expect(g.skills.treeKind('tree')).toBeUndefined();
+    expect(g.skills.fishingSpotKind('net')).toBeUndefined();
+  });
+});

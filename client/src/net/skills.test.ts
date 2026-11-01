@@ -1,6 +1,7 @@
 import * as flatbuffers from 'flatbuffers';
 import { describe, expect, it } from 'vitest';
 import {
+  EntityInfo, EntityKind, EquipSlot, FishingSpotKindDef, ItemCatalog, ItemDef, ItemKind, SkillCatalog, ToolSkill, TreeKindDef,
   Envelope, FishingSpotState, LevelUp, Message, ResourceState, Skill, SkillAction, SkillResult, SkillResultCode, SkillStats,
   SkillTarget, Vec2, Welcome,
 } from '../protocol';
@@ -106,5 +107,47 @@ describe('encode SkillAction', () => {
     s.sendSkillAction(SkillTarget.Tree, 7);
     const m = skillAction(sent[sent.length - 1]);
     expect([m.target(), m.targetId()]).toEqual([SkillTarget.Tree, 7]);
+  });
+});
+
+describe('decode catalog fields', () => {
+  it('decodes SkillCatalog tree and fishing spot kinds', () => {
+    const b = new flatbuffers.Builder(128);
+    const trees = SkillCatalog.createTreesVector(b, [
+      TreeKindDef.createTreeKindDef(b, b.createString('tree'), 1),
+      TreeKindDef.createTreeKindDef(b, b.createString('oak'), 10),
+    ]);
+    const spots = SkillCatalog.createFishingSpotsVector(b, [
+      FishingSpotKindDef.createFishingSpotKindDef(b, b.createString('net'), 1, 12),
+      FishingSpotKindDef.createFishingSpotKindDef(b, b.createString('rod'), 5, 13),
+    ]);
+    expect(decode(finish(b, Message.SkillCatalog, SkillCatalog.createSkillCatalog(b, trees, spots)))).toEqual({
+      type: 'skillCatalog',
+      trees: [{ kind: 'tree', level: 1 }, { kind: 'oak', level: 10 }],
+      fishingSpots: [{ kind: 'net', level: 1, toolItemId: 12 }, { kind: 'rod', level: 5, toolItemId: 13 }],
+    });
+  });
+
+  it('decodes ItemCatalog tool and cooking fields', () => {
+    const b = new flatbuffers.Builder(256);
+    const def = (id: number, name: string, tool: ToolSkill, toolLevel: number, cooking: number) =>
+      ItemDef.createItemDef(b, id, b.createString(name), ItemKind.Loot, EquipSlot.None, 0, 0, 0, 0, 0, 0, 1, false, 0, tool, toolLevel, cooking);
+    const v = ItemCatalog.createItemsVector(b, [
+      def(1, 'Hatchet', ToolSkill.Woodcutting, 1, 0),
+      def(2, 'Small net', ToolSkill.Fishing, 1, 0),
+      def(3, 'Raw fish', ToolSkill.None, 0, 5),
+      def(4, 'Rock', ToolSkill.None, 0, 0),
+    ]);
+    const msg = decode(finish(b, Message.ItemCatalog, ItemCatalog.createItemCatalog(b, v)));
+    if (msg?.type !== 'itemCatalog') throw new Error('wrong type');
+    expect(msg.items.map((i) => [i.toolSkill, i.toolLevel, i.cookingLevel])).toEqual([
+      [ToolSkill.Woodcutting, 1, 0], [ToolSkill.Fishing, 1, 0], [ToolSkill.None, 0, 5], [ToolSkill.None, 0, 0],
+    ]);
+  });
+
+  it('decodes EntityInfo total level', () => {
+    const b = new flatbuffers.Builder(64);
+    const m = decode(finish(b, Message.EntityInfo, EntityInfo.createEntityInfo(b, 3, EntityKind.Player, 0, 7, 0, 0, 0, 0, 52)));
+    expect(m).toMatchObject({ type: 'entityInfo', id: 3, combatLevel: 7, totalLevel: 52 });
   });
 });

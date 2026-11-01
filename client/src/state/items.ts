@@ -115,10 +115,10 @@ export class ItemState {
 
   setEntityInfo(info: EntityInfoState): void {
     const c = this.infos.get(info.id);
-    if (c && c.kind === info.kind && c.npcType === info.npcType && c.combatLevel === info.combatLevel
+    if (c && c.kind === info.kind && c.npcType === info.npcType && c.combatLevel === info.combatLevel && c.totalLevel === info.totalLevel
       && sameEquipment(c.equipment, info.equipment)) return;
-    const { id, kind, npcType, combatLevel, equipment } = info;
-    this.infos.set(id, { id, kind, npcType, combatLevel, equipment: { ...equipment } });
+    const { id, kind, npcType, combatLevel, totalLevel, equipment } = info;
+    this.infos.set(id, { id, kind, npcType, combatLevel, totalLevel, equipment: { ...equipment } });
     this.notify();
   }
 
