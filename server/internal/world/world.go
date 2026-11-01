@@ -21,6 +21,8 @@ const (
 	AnimIdle Anim = iota
 	AnimWalk
 	AnimWave // matches protocol Animation.Wave (2)
+	AnimChop // matches protocol Animation.Chop (3): looping while woodcutting
+	AnimFish // matches protocol Animation.Fish (4): looping while fishing
 )
 
 // Player is an entity in the world. Only the tick may mutate it.
