@@ -1,7 +1,6 @@
 import * as flatbuffers from 'flatbuffers';
 import {
-  AttackTarget, BankAmount, BankClose, BankDeposit, BankDepositEquipment, BankDepositInventory, BankOpen, BankResult, BankResultCode,
-  BankSlot, BankState, BankWithdraw, CardTableCatalog, CardTableInfo, CardTableLeave, CardTableReady, CardTableResult, CardTableResultCode, CardTableSit, CardTableState, ChatMessage, ChatSend, CombatHit, Emote, EmoteSend, Entity, EntityHealth, EntityInfo, EntityKind, Envelope,
+  AttackTarget, CardTableCatalog, CardTableInfo, CardTableLeave, CardTableReady, CardTableResult, CardTableResultCode, CardTableSit, CardTableState, ChatMessage, ChatSend, CombatHit, Emote, EmoteSend, Entity, EntityHealth, EntityInfo, EntityKind, Envelope,
   EquipSlot, GroundItem, GroundItems, Hello, HealthRatio, Hit, Input, InventorySlot, InventoryState, ItemAction,
   ItemActionKind, ItemCatalog, ItemDef, ItemKind, Message, NpcCatalog, NpcDef, PickUp, Ping, PlayerStats, Pong,
   ProtocolVersion, Reload, RestartCountdown, ShedCard, ShedColour, ShedDraw, ShedHand, ShedPlay, ShedState, ShedSymbol, ShopBuy,
@@ -169,12 +168,6 @@ export interface ShedHandState {
   cards: ShedCardValue[];
 }
 
-/** One filled bank slot. Quantities past 2^53 lose precision, far beyond any real stack. */
-export interface BankSlotState {
-  itemId: number;
-  quantity: number;
-}
-
 /** One skill's level and XP; xp is in points (the protocol sends tenths). */
 export interface SkillValue {
   skill: Skill;
@@ -227,8 +220,6 @@ export type ServerMessage =
   | { type: 'cardTableCatalog'; tables: CardTableInfoState[] }
   | ({ type: 'shedState' } & ShedPublicState)
   | ({ type: 'shedHand' } & ShedHandState)
-  | { type: 'bankState'; slots: BankSlotState[] }
-  | { type: 'bankResult'; code: BankResultCode }
   /** Woodcutting, Fishing and Cooking, in Skill enum order. */
   | { type: 'skillStats'; skills: SkillValue[] }
   | { type: 'resourceState'; felledTrees: number[]; fishingSpots: FishingSpotPosition[] }
@@ -361,39 +352,6 @@ export function encodeShedPlay(card: ShedCardValue, chosenColour: ShedColour = S
 export function encodeShedDraw(): Uint8Array {
   const b = new flatbuffers.Builder(16);
   return wrap(b, Message.ShedDraw, ShedDraw.createShedDraw(b));
-}
-
-/** Open the bank at the booth (within 2 tiles). */
-export function encodeBankOpen(): Uint8Array {
-  const b = new flatbuffers.Builder(16);
-  return wrap(b, Message.BankOpen, BankOpen.createBankOpen(b));
-}
-
-export function encodeBankClose(): Uint8Array {
-  const b = new flatbuffers.Builder(16);
-  return wrap(b, Message.BankClose, BankClose.createBankClose(b));
-}
-
-/** Deposit `amount` of itemId from the inventory; BankAmount.All (the default) for every one. */
-export function encodeBankDeposit(itemId: number, amount: number = BankAmount.All): Uint8Array {
-  const b = new flatbuffers.Builder(32);
-  return wrap(b, Message.BankDeposit, BankDeposit.createBankDeposit(b, itemId, amount));
-}
-
-/** Withdraw `amount` of itemId from the bank; BankAmount.All (the default) for every one. */
-export function encodeBankWithdraw(itemId: number, amount: number = BankAmount.All): Uint8Array {
-  const b = new flatbuffers.Builder(32);
-  return wrap(b, Message.BankWithdraw, BankWithdraw.createBankWithdraw(b, itemId, amount));
-}
-
-export function encodeBankDepositInventory(): Uint8Array {
-  const b = new flatbuffers.Builder(16);
-  return wrap(b, Message.BankDepositInventory, BankDepositInventory.createBankDepositInventory(b));
-}
-
-export function encodeBankDepositEquipment(): Uint8Array {
-  const b = new flatbuffers.Builder(16);
-  return wrap(b, Message.BankDepositEquipment, BankDepositEquipment.createBankDepositEquipment(b));
 }
 
 /** Chop a tree or fish at a spot (ids from the shared map data); targetId is ignored for the grill. */
@@ -627,18 +585,6 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
       }
       return { type: 'shedHand', tableId: m.tableId(), cards };
     }
-    case Message.BankState: {
-      const m = env.msg(new BankState()) as BankState;
-      const slots: BankSlotState[] = [];
-      const s = new BankSlot();
-      for (let i = 0; i < m.slotsLength(); i++) {
-        m.slots(i, s);
-        slots.push({ itemId: s.itemId(), quantity: Number(s.quantity()) });
-      }
-      return { type: 'bankState', slots };
-    }
-    case Message.BankResult:
-      return { type: 'bankResult', code: (env.msg(new BankResult()) as BankResult).code() };
     case Message.SkillStats: {
       const m = env.msg(new SkillStats()) as SkillStats;
       return {

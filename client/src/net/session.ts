@@ -1,7 +1,6 @@
 import { type EquipSlot, type ItemActionKind, ShedColour, type SkillTarget } from '../protocol';
 import {
-  decode, encodeAttackTarget, encodeBankClose, encodeBankDeposit, encodeBankDepositEquipment, encodeBankDepositInventory,
-  encodeBankOpen, encodeBankWithdraw, encodeCardTableLeave, encodeCardTableReady, encodeCardTableSit, encodeChat, encodeHello, encodeItemAction, encodePickUp, encodeShedDraw, encodeShedPlay,
+  decode, encodeAttackTarget, encodeCardTableLeave, encodeCardTableReady, encodeCardTableSit, encodeChat, encodeHello, encodeItemAction, encodePickUp, encodeShedDraw, encodeShedPlay,
   encodeShopBuy, encodeShopSell, encodeSkillAction, encodeTradeAccept, encodeTradeCancel, encodeTradeOffer, encodeTradeRemove, encodeTradeRequest, encodeTradeSetGold,
   type ServerMessage, type ShedCardValue,
 } from './codec';
@@ -126,33 +125,6 @@ export class Session {
 
   sendTradeCancel(): void {
     this.send(encodeTradeCancel());
-  }
-
-  sendBankOpen(): void {
-    this.send(encodeBankOpen());
-  }
-
-  /** Tell the server the bank panel closed; also call GameState.bank.close(). */
-  sendBankClose(): void {
-    this.send(encodeBankClose());
-  }
-
-  /** amount is a count or BankAmount.All. */
-  sendBankDeposit(itemId: number, amount: number): void {
-    this.send(encodeBankDeposit(itemId, amount));
-  }
-
-  /** amount is a count or BankAmount.All. */
-  sendBankWithdraw(itemId: number, amount: number): void {
-    this.send(encodeBankWithdraw(itemId, amount));
-  }
-
-  sendBankDepositInventory(): void {
-    this.send(encodeBankDepositInventory());
-  }
-
-  sendBankDepositEquipment(): void {
-    this.send(encodeBankDepositEquipment());
   }
 
   /** Sit in the first free seat of table `tableId`. */
