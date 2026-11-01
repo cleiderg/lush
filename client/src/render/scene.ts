@@ -131,6 +131,8 @@ export class WorldScene {
     }
     this.shadows.update(this.shadowList(view));
     this.rig.follow(local.x, local.z);
+    const cam = this.rig.camera.position;
+    this.map.cutaway?.update(local.x, local.z, cam.x, cam.z, this.now());
     this.nature.cull(this.rig.camera);
     this.skills.cull(this.rig.camera);
     this.sky.update(view.sky, local.x, local.z);
