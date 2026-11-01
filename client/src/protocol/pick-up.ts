@@ -40,7 +40,7 @@ static endPickUp(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createPickUp(builder:flatbuffers.Builder, groundItemId:number):flatbuffers.Offset {
+static createPickUp(builder:flatbuffers.Builder, groundItemId:number = 0):flatbuffers.Offset {
   PickUp.startPickUp(builder);
   PickUp.addGroundItemId(builder, groundItemId);
   return PickUp.endPickUp(builder);

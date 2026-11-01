@@ -60,7 +60,7 @@ static endNpcCatalog(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createNpcCatalog(builder:flatbuffers.Builder, npcsOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createNpcCatalog(builder:flatbuffers.Builder, npcsOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   NpcCatalog.startNpcCatalog(builder);
   NpcCatalog.addNpcs(builder, npcsOffset);
   return NpcCatalog.endNpcCatalog(builder);

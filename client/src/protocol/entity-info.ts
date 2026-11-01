@@ -65,8 +65,13 @@ shield():number {
   return offset ? this.bb!.readUint16(this.bb_pos + offset) : 0;
 }
 
+totalLevel():number {
+  const offset = this.bb!.__offset(this.bb_pos, 20);
+  return offset ? this.bb!.readUint16(this.bb_pos + offset) : 0;
+}
+
 static startEntityInfo(builder:flatbuffers.Builder) {
-  builder.startObject(8);
+  builder.startObject(9);
 }
 
 static addId(builder:flatbuffers.Builder, id:number) {
@@ -101,12 +106,16 @@ static addShield(builder:flatbuffers.Builder, shield:number) {
   builder.addFieldInt16(7, shield, 0);
 }
 
+static addTotalLevel(builder:flatbuffers.Builder, totalLevel:number) {
+  builder.addFieldInt16(8, totalLevel, 0);
+}
+
 static endEntityInfo(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createEntityInfo(builder:flatbuffers.Builder, id:number, kind:EntityKind, npcType:number, combatLevel:number, weapon:number, head:number, body:number, shield:number):flatbuffers.Offset {
+static createEntityInfo(builder:flatbuffers.Builder, id:number = 0, kind:EntityKind = EntityKind.Player, npcType:number = 0, combatLevel:number = 0, weapon:number = 0, head:number = 0, body:number = 0, shield:number = 0, totalLevel:number = 0):flatbuffers.Offset {
   EntityInfo.startEntityInfo(builder);
   EntityInfo.addId(builder, id);
   EntityInfo.addKind(builder, kind);
@@ -116,6 +125,7 @@ static createEntityInfo(builder:flatbuffers.Builder, id:number, kind:EntityKind,
   EntityInfo.addHead(builder, head);
   EntityInfo.addBody(builder, body);
   EntityInfo.addShield(builder, shield);
+  EntityInfo.addTotalLevel(builder, totalLevel);
   return EntityInfo.endEntityInfo(builder);
 }
 }

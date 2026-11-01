@@ -44,8 +44,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 14 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 14", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 15 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 15", ProtocolVersionCurrent)
 	}
 }
 
@@ -329,16 +329,21 @@ type itemDef struct {
 	buysFor                     uint32
 	sells                       bool
 	sellsFor                    uint32
+	toolSkill                   ToolSkill
+	toolLevel, cookingLevel     uint8
 }
 
 func TestRoundTripItemCatalog(t *testing.T) {
 	want := []itemDef{
-		{1, "Wooden stick", ItemKindWeapon, EquipSlotWeapon, 1, 3, 2, 0, 4, 0, 2, true, 5},
-		{8, "Robot plating", ItemKindArmor, EquipSlotBody, 12, -2, 0, 14, 0, 0, 150, false, 0},
-		{9, "Boba", ItemKindFood, EquipSlotNone, 1, 0, 0, 0, 0, 4, 1, true, 5},
-		{11, "Acorn", ItemKindLoot, EquipSlotNone, 0, 0, 0, 0, 0, 0, 1, false, 0},
-		{7, "Bike helmet", ItemKindArmor, EquipSlotHead, 10, 0, 0, 6, 0, 0, 30, true, 80},
-		{5, "Cardboard shield", ItemKindArmor, EquipSlotShield, 1, 0, 0, 3, 0, 0, 3, true, 10},
+		{1, "Wooden stick", ItemKindWeapon, EquipSlotWeapon, 1, 3, 2, 0, 4, 0, 2, true, 5, ToolSkillNone, 0, 0},
+		{8, "Robot plating", ItemKindArmor, EquipSlotBody, 12, -2, 0, 14, 0, 0, 150, false, 0, ToolSkillNone, 0, 0},
+		{9, "Boba", ItemKindFood, EquipSlotNone, 1, 0, 0, 0, 0, 4, 1, true, 5, ToolSkillNone, 0, 0},
+		{11, "Acorn", ItemKindLoot, EquipSlotNone, 0, 0, 0, 0, 0, 0, 1, false, 0, ToolSkillNone, 0, 0},
+		{7, "Bike helmet", ItemKindArmor, EquipSlotHead, 10, 0, 0, 6, 0, 0, 30, true, 80, ToolSkillNone, 0, 0},
+		{5, "Cardboard shield", ItemKindArmor, EquipSlotShield, 1, 0, 0, 3, 0, 0, 3, true, 10, ToolSkillNone, 0, 0},
+		{20, "Steel hatchet", ItemKindWeapon, EquipSlotWeapon, 5, 8, 9, 0, 5, 0, 70, true, 200, ToolSkillWoodcutting, 15, 0},
+		{22, "Small net", ItemKindLoot, EquipSlotNone, 0, 0, 0, 0, 0, 0, 5, true, 20, ToolSkillFishing, 1, 0},
+		{30, "Raw trout", ItemKindLoot, EquipSlotNone, 0, 0, 0, 0, 0, 0, 8, false, 0, ToolSkillNone, 0, 15},
 	}
 	b := flatbuffers.NewBuilder(512)
 	offs := make([]flatbuffers.UOffsetT, len(want))
@@ -358,6 +363,9 @@ func TestRoundTripItemCatalog(t *testing.T) {
 		ItemDefAddShopBuysFor(b, w.buysFor)
 		ItemDefAddShopSells(b, w.sells)
 		ItemDefAddShopSellsFor(b, w.sellsFor)
+		ItemDefAddToolSkill(b, w.toolSkill)
+		ItemDefAddToolLevel(b, w.toolLevel)
+		ItemDefAddCookingLevel(b, w.cookingLevel)
 		offs[i] = ItemDefEnd(b)
 	}
 	ItemCatalogStartItemsVector(b, len(offs))
@@ -382,7 +390,7 @@ func TestRoundTripItemCatalog(t *testing.T) {
 		}
 		got := itemDef{d.Id(), string(d.Name()), d.Kind(), d.EquipSlot(), d.LevelToEquip(),
 			d.Accuracy(), d.Strength(), d.Defence(), d.AttackSpeed(), d.Heal(),
-			d.ShopBuysFor(), d.ShopSells(), d.ShopSellsFor()}
+			d.ShopBuysFor(), d.ShopSells(), d.ShopSellsFor(), d.ToolSkill(), d.ToolLevel(), d.CookingLevel()}
 		if got != w {
 			t.Fatalf("item %d = %+v, want %+v", i, got, w)
 		}
@@ -395,13 +403,15 @@ type entityInfo struct {
 	npcType                    uint16
 	level                      uint8
 	weapon, head, body, shield uint16
+	totalLevel                 uint16
 }
 
 func TestRoundTripEntityInfo(t *testing.T) {
 	for _, w := range []entityInfo{
-		{42, EntityKindPlayer, 0, 30, 1, 7, 8, 5},
-		{300, EntityKindNpc, 6, 20, uint16(EmptyItemId), uint16(EmptyItemId), uint16(EmptyItemId), uint16(EmptyItemId)},
-		{65535, EntityKindNpc, 65535, 255, 65535, 65535, 65535, 65535},
+		{42, EntityKindPlayer, 0, 30, 1, 7, 8, 5, 87},
+		{43, EntityKindPlayer, 0, 3, 0, 0, 0, 0, 4},
+		{300, EntityKindNpc, 6, 20, uint16(EmptyItemId), uint16(EmptyItemId), uint16(EmptyItemId), uint16(EmptyItemId), 0},
+		{65535, EntityKindNpc, 65535, 255, 65535, 65535, 65535, 65535, 65535},
 	} {
 		b := flatbuffers.NewBuilder(64)
 		EntityInfoStart(b)
@@ -413,12 +423,13 @@ func TestRoundTripEntityInfo(t *testing.T) {
 		EntityInfoAddHead(b, w.head)
 		EntityInfoAddBody(b, w.body)
 		EntityInfoAddShield(b, w.shield)
+		EntityInfoAddTotalLevel(b, w.totalLevel)
 		buf := finish(b, MessageEntityInfo, EntityInfoEnd(b))
 
 		var m EntityInfo
 		tbl := open(t, buf, MessageEntityInfo)
 		m.Init(tbl.Bytes, tbl.Pos)
-		got := entityInfo{m.Id(), m.Kind(), m.NpcType(), m.CombatLevel(), m.Weapon(), m.Head(), m.Body(), m.Shield()}
+		got := entityInfo{m.Id(), m.Kind(), m.NpcType(), m.CombatLevel(), m.Weapon(), m.Head(), m.Body(), m.Shield(), m.TotalLevel()}
 		if got != w {
 			t.Fatalf("entity info = %+v, want %+v", got, w)
 		}
@@ -1554,8 +1565,8 @@ func TestBankMessageIDs(t *testing.T) {
 			t.Fatalf("%v = %d, want %d", m, m, 50+i)
 		}
 	}
-	if len(EnumNamesMessage) != 58 {
-		t.Fatalf("Message has %d values, want 58 (NONE plus 57 messages)", len(EnumNamesMessage))
+	if len(EnumNamesMessage) != 59 {
+		t.Fatalf("Message has %d values, want 59 (NONE plus 58 messages)", len(EnumNamesMessage))
 	}
 }
 
@@ -1677,7 +1688,7 @@ func TestRoundTripBankResult(t *testing.T) {
 	codes := []BankResultCode{
 		BankResultCodeOk, BankResultCodeTooFar, BankResultCodeInCombat, BankResultCodeInPvpZone,
 		BankResultCodeBankFull, BankResultCodeInventoryFull, BankResultCodeNotEnoughItems,
-		BankResultCodeBusy, BankResultCodeNotOpen,
+		BankResultCodeBusy, BankResultCodeNotOpen, BankResultCodeSaveFailed,
 	}
 	for i, code := range codes {
 		if int(code) != i {
@@ -1698,5 +1709,101 @@ func TestRoundTripBankResult(t *testing.T) {
 		if m.Code() != code {
 			t.Fatalf("got %v, want %v", m.Code(), code)
 		}
+	}
+}
+
+func TestToolSkillValues(t *testing.T) {
+	if ToolSkillNone != 0 || ToolSkillWoodcutting != 1 || ToolSkillFishing != 2 || len(EnumNamesToolSkill) != 3 {
+		t.Fatalf("ToolSkill values changed: %v", EnumNamesToolSkill)
+	}
+	if BankResultCodeSaveFailed != 9 {
+		t.Fatalf("BankResultCodeSaveFailed = %d, want 9", BankResultCodeSaveFailed)
+	}
+}
+
+// An ItemDef built without the tool and cooking fields reads as not a tool
+// and not a raw fish.
+func TestItemDefDefaultsToNotATool(t *testing.T) {
+	b := flatbuffers.NewBuilder(64)
+	ItemDefStart(b)
+	ItemDefAddId(b, 3)
+	b.Finish(ItemDefEnd(b))
+	d := GetRootAsItemDef(b.FinishedBytes(), 0)
+	if d.ToolSkill() != ToolSkillNone || d.ToolLevel() != 0 || d.CookingLevel() != 0 {
+		t.Fatalf("got %v %d %d, want None 0 0", d.ToolSkill(), d.ToolLevel(), d.CookingLevel())
+	}
+}
+
+type treeKindDef struct {
+	kind  string
+	level uint8
+}
+
+type fishingSpotKindDef struct {
+	kind  string
+	level uint8
+	tool  uint16
+}
+
+func TestRoundTripSkillCatalog(t *testing.T) {
+	if MessageSkillCatalog != 58 {
+		t.Fatalf("MessageSkillCatalog = %d, want 58 (new messages go at the end)", MessageSkillCatalog)
+	}
+	trees := []treeKindDef{{"tree", 1}, {"oak", 15}, {"eucalyptus", 25}}
+	spots := []fishingSpotKindDef{{"net", 1, 22}, {"rod", 5, 65535}}
+	b := flatbuffers.NewBuilder(256)
+	treeOffs := make([]flatbuffers.UOffsetT, len(trees))
+	for i, w := range trees {
+		kind := b.CreateString(w.kind)
+		TreeKindDefStart(b)
+		TreeKindDefAddKind(b, kind)
+		TreeKindDefAddLevel(b, w.level)
+		treeOffs[i] = TreeKindDefEnd(b)
+	}
+	spotOffs := make([]flatbuffers.UOffsetT, len(spots))
+	for i, w := range spots {
+		kind := b.CreateString(w.kind)
+		FishingSpotKindDefStart(b)
+		FishingSpotKindDefAddKind(b, kind)
+		FishingSpotKindDefAddLevel(b, w.level)
+		FishingSpotKindDefAddToolItemId(b, w.tool)
+		spotOffs[i] = FishingSpotKindDefEnd(b)
+	}
+	SkillCatalogStartTreesVector(b, len(treeOffs))
+	for i := len(treeOffs) - 1; i >= 0; i-- {
+		b.PrependUOffsetT(treeOffs[i])
+	}
+	treeVec := b.EndVector(len(treeOffs))
+	SkillCatalogStartFishingSpotsVector(b, len(spotOffs))
+	for i := len(spotOffs) - 1; i >= 0; i-- {
+		b.PrependUOffsetT(spotOffs[i])
+	}
+	spotVec := b.EndVector(len(spotOffs))
+	SkillCatalogStart(b)
+	SkillCatalogAddTrees(b, treeVec)
+	SkillCatalogAddFishingSpots(b, spotVec)
+	buf := finish(b, MessageSkillCatalog, SkillCatalogEnd(b))
+
+	var m SkillCatalog
+	tbl := open(t, buf, MessageSkillCatalog)
+	m.Init(tbl.Bytes, tbl.Pos)
+	var gotTrees []treeKindDef
+	var td TreeKindDef
+	for i := 0; i < m.TreesLength(); i++ {
+		if !m.Trees(&td, i) {
+			t.Fatalf("tree %d missing", i)
+		}
+		gotTrees = append(gotTrees, treeKindDef{string(td.Kind()), td.Level()})
+	}
+	var gotSpots []fishingSpotKindDef
+	var fd FishingSpotKindDef
+	for i := 0; i < m.FishingSpotsLength(); i++ {
+		if !m.FishingSpots(&fd, i) {
+			t.Fatalf("fishing spot %d missing", i)
+		}
+		gotSpots = append(gotSpots, fishingSpotKindDef{string(fd.Kind()), fd.Level(), fd.ToolItemId()})
+	}
+	if !reflect.DeepEqual(gotTrees, trees) || !reflect.DeepEqual(gotSpots, spots) {
+		t.Fatalf("got %+v %+v, want %+v %+v", gotTrees, gotSpots, trees, spots)
 	}
 }

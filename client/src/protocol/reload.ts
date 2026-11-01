@@ -42,7 +42,7 @@ static endReload(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createReload(builder:flatbuffers.Builder, reasonOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createReload(builder:flatbuffers.Builder, reasonOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   Reload.startReload(builder);
   Reload.addReason(builder, reasonOffset);
   return Reload.endReload(builder);

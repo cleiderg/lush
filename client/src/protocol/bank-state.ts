@@ -52,7 +52,7 @@ static endBankState(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createBankState(builder:flatbuffers.Builder, slotsOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createBankState(builder:flatbuffers.Builder, slotsOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   BankState.startBankState(builder);
   BankState.addSlots(builder, slotsOffset);
   return BankState.endBankState(builder);

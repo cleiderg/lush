@@ -43,7 +43,7 @@ static endBankResult(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createBankResult(builder:flatbuffers.Builder, code:BankResultCode):flatbuffers.Offset {
+static createBankResult(builder:flatbuffers.Builder, code:BankResultCode = BankResultCode.Ok):flatbuffers.Offset {
   BankResult.startBankResult(builder);
   BankResult.addCode(builder, code);
   return BankResult.endBankResult(builder);

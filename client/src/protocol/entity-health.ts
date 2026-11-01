@@ -52,7 +52,7 @@ static endEntityHealth(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createEntityHealth(builder:flatbuffers.Builder, entriesOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createEntityHealth(builder:flatbuffers.Builder, entriesOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   EntityHealth.startEntityHealth(builder);
   EntityHealth.addEntries(builder, entriesOffset);
   return EntityHealth.endEntityHealth(builder);

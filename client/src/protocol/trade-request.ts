@@ -40,7 +40,7 @@ static endTradeRequest(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createTradeRequest(builder:flatbuffers.Builder, targetId:number):flatbuffers.Offset {
+static createTradeRequest(builder:flatbuffers.Builder, targetId:number = 0):flatbuffers.Offset {
   TradeRequest.startTradeRequest(builder);
   TradeRequest.addTargetId(builder, targetId);
   return TradeRequest.endTradeRequest(builder);

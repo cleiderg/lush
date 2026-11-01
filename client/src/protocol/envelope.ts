@@ -60,7 +60,7 @@ static finishSizePrefixedEnvelopeBuffer(builder:flatbuffers.Builder, offset:flat
   builder.finish(offset, undefined, true);
 }
 
-static createEnvelope(builder:flatbuffers.Builder, msgType:Message, msgOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createEnvelope(builder:flatbuffers.Builder, msgType:Message = Message.NONE, msgOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   Envelope.startEnvelope(builder);
   Envelope.addMsgType(builder, msgType);
   Envelope.addMsg(builder, msgOffset);

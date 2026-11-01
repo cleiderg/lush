@@ -43,7 +43,7 @@ static endShopResult(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createShopResult(builder:flatbuffers.Builder, code:ShopResultCode):flatbuffers.Offset {
+static createShopResult(builder:flatbuffers.Builder, code:ShopResultCode = ShopResultCode.Ok):flatbuffers.Offset {
   ShopResult.startShopResult(builder);
   ShopResult.addCode(builder, code);
   return ShopResult.endShopResult(builder);

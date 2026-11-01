@@ -43,7 +43,7 @@ static endEmoteSend(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createEmoteSend(builder:flatbuffers.Builder, emote:Emote):flatbuffers.Offset {
+static createEmoteSend(builder:flatbuffers.Builder, emote:Emote = Emote.Wave):flatbuffers.Offset {
   EmoteSend.startEmoteSend(builder);
   EmoteSend.addEmote(builder, emote);
   return EmoteSend.endEmoteSend(builder);
