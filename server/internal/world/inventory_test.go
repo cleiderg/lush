@@ -657,3 +657,29 @@ func TestLocked(t *testing.T) {
 		})
 	}
 }
+
+func TestReplaceAt(t *testing.T) {
+	d := gameData(t)
+	raw, _ := d.ItemByKey("raw_shrimp")
+	cooked, _ := d.ItemByKey("shrimp")
+	inv := world.NewInventory(d)
+	_, _ = inv.Add(d, cooked.ID, 1)
+	_, _ = inv.Add(d, raw.ID, 1)
+	if _, err := inv.RemoveAt(0); err != nil {
+		t.Fatal(err)
+	}
+	ch, err := inv.ReplaceAt(1, cooked.ID)
+	if err != nil || inv.Slots[1].Item != cooked.ID || inv.Slots[0].Item != 0 || len(ch) != 2 {
+		t.Fatalf("replace: %v %v %+v", err, ch, inv.Slots[:2])
+	}
+	if _, err := inv.ReplaceAt(0, raw.ID); err == nil {
+		t.Error("replaced an empty slot")
+	}
+	if _, err := inv.ReplaceAt(99, raw.ID); err == nil {
+		t.Error("replaced a missing slot")
+	}
+	inv.SetLocked(true)
+	if _, err := inv.ReplaceAt(1, raw.ID); err == nil || inv.Slots[1].Item != cooked.ID {
+		t.Error("replaced in a locked inventory")
+	}
+}

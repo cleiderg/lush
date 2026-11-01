@@ -162,6 +162,7 @@ type System struct {
 	byPlace map[string]*spotKind // by candidate id
 	kinds   []*spotKind          // deterministic order
 	active  map[world.PlayerID]*gatherer
+	onStart func(*world.Player)
 	order   []world.PlayerID // gatherers in start order, for deterministic ticking
 }
 
@@ -221,6 +222,10 @@ func New(d *gamedata.Data, l Layout, clock world.Clock, r formula.Rand, sink Sin
 	}
 	return s, nil
 }
+
+// OnStart sets a function called just before a player starts gathering, once
+// the start is accepted. The cooking system uses it to stop cooking.
+func (s *System) OnStart(f func(*world.Player)) { s.onStart = f }
 
 func (s *System) Name() string { return "gather" }
 
@@ -396,6 +401,9 @@ func (s *System) start(p *world.Player, id string) Result {
 	}
 	if _, was := s.active[p.ID]; was {
 		s.stop(p, StoppedByPlayer)
+	}
+	if s.onStart != nil {
+		s.onStart(p)
 	}
 	s.active[p.ID] = &gatherer{target: t, pos: p.Pos, lastCombat: p.LastCombat}
 	s.order = append(s.order, p.ID)
