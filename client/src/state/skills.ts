@@ -66,10 +66,18 @@ export class SkillState {
   private spots = new Map<number, number>();
   readonly levelUps = new EventQueue<LevelUpEvent>();
   readonly results = new EventQueue<SkillResultEvent>();
+  private listeners = new Set<() => void>();
+
+  /** Calls fn after every change to levels or XP; returns an unsubscribe function. */
+  subscribe(fn: () => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
 
   /** Apply a SkillStats message. */
   setStats(skills: SkillValue[]): void {
     for (const v of skills) this.values.set(v.skill, { ...v });
+    for (const fn of this.listeners) fn();
   }
 
   level(skill: Skill): number {

@@ -19,6 +19,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/ops"
 	"github.com/cleiderg/lush/server/internal/session"
 	"github.com/cleiderg/lush/server/internal/store"
+	"github.com/cleiderg/lush/server/internal/systems/bank"
 	"github.com/cleiderg/lush/server/internal/systems/cardroom"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
 	"github.com/cleiderg/lush/server/internal/systems/combat"
@@ -213,7 +214,7 @@ type scheduled struct {
 // emote overrides animation, chat delivers, items and shop apply item
 // actions and trades with the stall (whose results the session sends at
 // once), trade runs player trades and commits them through the session's
-// Committer, the card room (built from game data, with the session as its
+// Committer, the bank does the same for deposits and withdrawals, the card room (built from game data, with the session as its
 // sink and committer) runs card tables and their turn timers, ground items
 // expire, PvP and then PvE combat swing on the combat
 // tick (PvE after NPC movement; hits go to the session, PvP drops become
@@ -246,6 +247,12 @@ func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, 
 	}
 	trades := trade.New(data, lookup, tileSize, sess, sess)
 	sess.SetTrades(trades)
+	booth, err := bankBooth()
+	if err != nil {
+		return nil, err
+	}
+	banks := bank.New(data, lookup, booth, tileSize, clock, sess, sess)
+	sess.SetBank(banks)
 	cards, err := cardroom.FromData(data, tick, sess, sess)
 	if err != nil {
 		return nil, err
@@ -260,7 +267,7 @@ func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, 
 	sess.SetPvP(fights)
 	out := []scheduled{}
 	for _, s := range []world.System{mover, npcs, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess),
-		items.New(data), shop.New(data, lookup, tileSize, sess), trades, cards, ground} {
+		items.New(data), shop.New(data, lookup, tileSize, sess), trades, banks, cards, ground} {
 		out = append(out, scheduled{s, 1})
 	}
 	return append(out, scheduled{fights, combatEvery}, scheduled{pve, combatEvery}, scheduled{spawns, 1},

@@ -4,11 +4,13 @@ import { CardTableStore } from './cardTables';
 import { ChatStore } from './chat';
 import { SharedClock } from './clock';
 import type { CollisionGrid } from './collision';
+import { GainTracker } from './gains';
 import { HitQueue } from './combat';
 import { Interpolator } from './interpolation';
 import { ItemState } from './items';
 import { type PendingInput, Prediction, RUN_SPEED, WALK_SPEED } from './prediction';
 import { SkillState } from './skills';
+import { bankResultText, levelUpText, skillResultText } from './skillMessages';
 import { TradeStore } from './trade';
 
 export interface PlayerView {
@@ -40,6 +42,8 @@ export class GameState {
   readonly items = new ItemState();
   /** CombatHit batches for render to drain each frame. */
   readonly hits = new HitQueue();
+  /** XP and gold gains worked out from PlayerStats, for the world view. */
+  readonly gains = new GainTracker();
   /** Pending trade request, open trade window and last trade result; subscribe for changes. */
   readonly trade = new TradeStore();
   /** Open bank slots and the last bank result; subscribe for changes. */
@@ -73,6 +77,7 @@ export class GameState {
       this.restartSeconds = null;
       this.items.resetEntities();
       this.hits.clear();
+      this.gains.reset();
       this.trade.clear();
       this.bank.clear();
       this.cardTables.clear();
@@ -90,6 +95,7 @@ export class GameState {
       this.items.setVisible(msg.entities.map((e) => e.id));
     } else if (msg.type === 'playerStats') {
       this.items.setStats(msg);
+      this.gains.update(msg.xp, msg.gold, now);
     } else if (msg.type === 'inventory') {
       this.items.setInventory(msg);
     } else if (msg.type === 'itemCatalog') {
@@ -114,6 +120,8 @@ export class GameState {
       this.bank.setState(msg.slots);
     } else if (msg.type === 'bankResult') {
       this.bank.setResult(msg.code);
+      const text = bankResultText(msg.code);
+      if (text) this.chat.system(text);
     } else if (msg.type === 'cardTableState') {
       this.cardTables.setState(msg, this.playerId);
     } else if (msg.type === 'cardTableResult') {
@@ -132,8 +140,10 @@ export class GameState {
       this.skills.setResources(msg.felledTrees, msg.fishingSpots);
     } else if (msg.type === 'levelUp') {
       this.skills.levelUps.push({ entityId: msg.entityId, skill: msg.skill, level: msg.level });
+      if (msg.entityId === this.playerId) this.chat.system(levelUpText(msg));
     } else if (msg.type === 'skillResult') {
       this.skills.results.push({ skill: msg.skill, code: msg.code, itemId: msg.itemId, level: msg.level });
+      this.chat.system(skillResultText(msg, (id) => this.items.item(id)?.name));
     } else if (msg.type === 'chat') {
       this.chat.push(msg.speakerId, msg.text, now);
     }

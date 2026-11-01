@@ -35,6 +35,9 @@ const COAL = 0x2a2220;
 const WATER = 0x4f8fb8;
 const WATER_EDGE = 0x2e5f80;
 const MUD = 0x6b5a40;
+const RIPPLE = 0xdcf0fa;
+const BAR_BACK = 0x2a2220;
+const BAR_FILL = 0x7ac04a;
 
 /** Tree kinds in skills.json, each drawn with its own model. */
 export const SKILL_TREE_KINDS = ['tree', 'oak', 'eucalyptus'] as const;
@@ -42,6 +45,14 @@ export const SKILL_TREE_KINDS = ['tree', 'oak', 'eucalyptus'] as const;
 export const POND_EDGE = 0.22;
 /** Seed for each tree's facing. Cosmetic, but seeded so every client looks the same. */
 const FACING_SEED = 0x451;
+/** Ripples sit just above the water. */
+const Y_RIPPLE = Y_WATER + 0.02;
+/** Id of the grill as the active resource. */
+export const GRILL_ID = 'grill';
+/** Progress bar size (metres) and how high it floats over each kind of resource. */
+const BAR_W = 1.0;
+const BAR_H = 0.14;
+const BAR_HEIGHT = { tree: 4.8, oak: 5.8, eucalyptus: 7.8, spot: 1.4, grill: 2.6 };
 /** Per-tree culling sphere (metres): centred this high over the trunk, with this radius. Covers the tallest crown and some of its shadow. */
 const CULL_Y = 3;
 const CULL_RADIUS = 9;
@@ -215,6 +226,31 @@ export function pondGeometry(outline: number[]): THREE.BufferGeometry {
   return b.geometry();
 }
 
+/** A flat double ring, lying on the water: a fishing spot's ripple marker, about 1.1 m across. */
+export function rippleGeometry(): THREE.BufferGeometry {
+  const b = new MeshBuilder();
+  const up = [0, 1, 0];
+  const n = 12;
+  for (const [r0, r1] of [[0.18, 0.28], [0.48, 0.58]]) {
+    for (let i = 0; i < n; i++) {
+      const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
+      const p = (r: number, a: number): [number, number, number] => [Math.cos(a) * r, 0, Math.sin(a) * r];
+      b.tri(p(r0, a0), p(r1, a0), p(r1, a1), up, RIPPLE);
+      b.tri(p(r0, a0), p(r1, a1), p(r0, a1), up, RIPPLE);
+    }
+  }
+  return b.geometry();
+}
+
+/** A unit-sized flat quad facing +z (x from 0 to 1, y from -0.5 to 0.5), for the progress bar. */
+function barGeometry(): THREE.BufferGeometry {
+  const b = new MeshBuilder();
+  const f = [0, 0, 1];
+  b.tri([0, -0.5, 0], [1, -0.5, 0], [1, 0.5, 0], f, 0xffffff);
+  b.tri([0, -0.5, 0], [1, 0.5, 0], [0, 0.5, 0], f, 0xffffff);
+  return b.geometry();
+}
+
 function lambert(): THREE.MeshLambertMaterial {
   return new THREE.MeshLambertMaterial({ vertexColors: true });
 }
@@ -230,6 +266,13 @@ export class SkillObjects {
   readonly bank: THREE.Mesh;
   readonly grill: THREE.Mesh;
   readonly pond: THREE.Mesh;
+  /** One instance per fishing spot that holds a spot now. */
+  readonly ripples: THREE.InstancedMesh;
+  /** The progress indicator: a dark bar with a green fill, hidden when nothing is being worked. */
+  readonly progress = new THREE.Group();
+  private readonly progressFill: THREE.Mesh;
+  private readonly progressBack: THREE.Mesh;
+  private ripplesKey = '';
   private readonly facing: number[];
   /** Per tree: felled (drawn as a stump), and inside the camera's view as of the last cull. */
   private readonly felled: boolean[];
@@ -281,7 +324,26 @@ export class SkillObjects {
       new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 60, specular: 0x335566, polygonOffset: true, polygonOffsetFactor: -1 }));
     this.pond.castShadow = false;
 
-    this.group.add(this.trees.tree, this.trees.oak, this.trees.eucalyptus, this.stumps, this.bank, this.grill, this.pond);
+    this.ripples = new THREE.InstancedMesh(rippleGeometry(), new THREE.MeshBasicMaterial({ vertexColors: true }), Math.max(data.pond.spots.length, 1));
+    this.ripples.name = 'fishing-ripples';
+    this.ripples.matrixAutoUpdate = false;
+    this.ripples.frustumCulled = false;
+    this.ripples.count = 0;
+
+    const bar = barGeometry();
+    const flat = (color: number) => new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true });
+    this.progressBack = new THREE.Mesh(bar, flat(BAR_BACK));
+    this.progressFill = new THREE.Mesh(bar, flat(BAR_FILL));
+    this.progressBack.scale.set(BAR_W + 0.08, BAR_H + 0.08, 1);
+    this.progressBack.position.x = -(BAR_W + 0.08) / 2;
+    this.progressFill.position.set(-BAR_W / 2, 0, 0.01);
+    this.progressBack.renderOrder = 10;
+    this.progressFill.renderOrder = 11;
+    this.progress.name = 'resource-progress';
+    this.progress.add(this.progressBack, this.progressFill);
+    this.progress.visible = false;
+
+    this.group.add(this.ripples, this.progress, this.trees.tree, this.trees.oak, this.trees.eucalyptus, this.stumps, this.bank, this.grill, this.pond);
     this.redraw();
   }
 
@@ -298,12 +360,46 @@ export class SkillObjects {
     if (changed) this.redraw();
   }
 
+  /** Draw a ripple at each candidate (skills.json spot id) in `active`; missing means none. Cheap when nothing changed. */
+  setFishingSpots(active?: ReadonlySet<string>): void {
+    const spots = this.data.pond.spots.filter((c) => active?.has(c.id));
+    const k = spots.map((c) => c.id).join(',');
+    if (k === this.ripplesKey) return;
+    this.ripplesKey = k;
+    spots.forEach((c, i) => {
+      this.m.makeTranslation(c.x * DM, Y_RIPPLE, c.z * DM);
+      this.ripples.setMatrixAt(i, this.m);
+    });
+    this.ripples.count = spots.length;
+    this.ripples.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Show the progress bar (0 to 1) over the tree or fishing spot with this skills.json id, or the grill (`GRILL_ID`); hide it for none or an unknown id. */
+  setProgress(resource?: string, progress = 0): void {
+    let x: number, z: number, h: number;
+    const tree = resource === undefined ? undefined : this.data.trees.find((t) => t.id === resource);
+    const spot = resource === undefined || tree ? undefined : this.data.pond.spots.find((t) => t.id === resource);
+    if (tree) [x, z, h] = [tree.x, tree.z, BAR_HEIGHT[tree.kind]];
+    else if (spot) [x, z, h] = [spot.x, spot.z, BAR_HEIGHT.spot];
+    else if (resource === GRILL_ID) [x, z, h] = [this.data.grill.x, this.data.grill.z, BAR_HEIGHT.grill];
+    else {
+      this.progress.visible = false;
+      return;
+    }
+    const p = Number.isFinite(progress) ? Math.min(1, Math.max(0, progress)) : 0;
+    this.progress.position.set(x * DM, h, z * DM);
+    this.progressFill.scale.set(Math.max(p * BAR_W, 1e-4), BAR_H, 1);
+    this.progress.visible = true;
+  }
+
   /**
    * Draw only the trees near the camera's view, so a tree mesh with none in view costs no draw call.
    * The test sphere is generous, so trees just off screen still cast their shadows into it.
    */
   cull(camera: THREE.Camera): void {
     camera.updateMatrixWorld();
+    // The progress bar always faces the camera.
+    this.progress.quaternion.copy(camera.quaternion);
     this.frustum.setFromProjectionMatrix(this.viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
     let changed = false;
     this.spheres.forEach((s, i) => {
@@ -332,10 +428,11 @@ export class SkillObjects {
   }
 
   dispose(): void {
-    for (const mesh of [this.trees.tree, this.trees.oak, this.trees.eucalyptus, this.stumps, this.bank, this.grill, this.pond]) {
+    for (const mesh of [this.trees.tree, this.trees.oak, this.trees.eucalyptus, this.stumps, this.bank, this.grill, this.pond, this.ripples, this.progressBack]) {
       mesh.geometry.dispose();
       (mesh.material as THREE.Material).dispose();
     }
+    (this.progressFill.material as THREE.Material).dispose();
   }
 }
 

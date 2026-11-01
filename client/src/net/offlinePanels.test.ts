@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SKILLS, XP_TABLE } from '../state/skills';
 import { GameState } from '../state/world';
 import { decode, type ServerMessage } from './codec';
 import { encodeWelcome, OFFLINE_PANELS, OFFLINE_PLACES, OFFLINE_PLAYER_ID, offlineOptions, type OfflineOptions } from './offline';
@@ -19,6 +20,7 @@ function panelState(game: GameState) {
     hand: game.cardTables.hand,
     mySeat: game.cardTables.mySeat,
     chat: game.chat.log,
+    skills: SKILLS.map((sk) => ({ level: game.skills.level(sk), xp: game.skills.xp(sk) })),
   };
 }
 
@@ -93,6 +95,19 @@ describe('offline panel data', () => {
     expect(s.hand?.cards.length).toBeGreaterThan(0);
     expect(s.shed.length).toBe(1);
     expect(s.chat.length).toBeGreaterThan(0);
+  });
+
+  it('gives each skill a level above 1 or some XP, with XP inside its level (#466)', () => {
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const s = stateFor(offlineOptions(`?offline&seed=${seed}&panel=skills`)!);
+      expect(s.skills).toHaveLength(3);
+      for (const { level, xp } of s.skills) {
+        expect(level).toBeGreaterThanOrEqual(1);
+        expect(xp).toBeGreaterThan(0);
+        expect(xp).toBeGreaterThanOrEqual(XP_TABLE[level]);
+        expect(xp).toBeLessThan(XP_TABLE[level + 1]);
+      }
+    }
   });
 
   it('opens the trade window only for the trade panel, since it takes the panel area', () => {

@@ -13,19 +13,27 @@ import type { Transport } from './transport';
  * opened. The local player is left out of the snapshots, so prediction moves it freely.
  */
 
+/** Centre of the Student Center café floor (areas.json interiors, decimetres), in metres. */
+const cafeFloor = areas.interiors.find((a) => a.id === 'student_center_cafe')!.p;
+const cafeCentre = {
+  x: cafeFloor.filter((_, i) => i % 2 === 0).reduce((a, v) => a + v, 0) / (cafeFloor.length / 2) / 10,
+  z: cafeFloor.filter((_, i) => i % 2 === 1).reduce((a, v) => a + v, 0) / (cafeFloor.length / 2) / 10,
+};
+
 /**
  * Places the offline player can start at, in metres: the spawn from areas.json (decimetres), a point
- * among Aldrich Park's trees, one metre from the shop stall, and one metre from card table 1.
+ * among Aldrich Park's trees, one metre from the shop stall, and one metre from card table 1, and the middle of the Student Center café floor.
  */
 export const OFFLINE_PLACES: Readonly<Record<string, { x: number; z: number }>> = {
   spawn: { x: areas.spawn.x / 10, z: areas.spawn.z / 10 },
   park: { x: -70, z: -40 },
   shop: { x: areas.shop.x / 10 + 1, z: areas.shop.z / 10 },
+  cafe: cafeCentre,
   cardtable: { x: cardTablesData.tables[0].x / 10, z: cardTablesData.tables[0].z / 10 + 1 },
 };
 
 /** UI panels offline mode can open with fixed data (`?offline&panel=<name>`, npm run shots). */
-export const OFFLINE_PANELS = ['inventory', 'shop', 'trade', 'card-table', 'chat-log', 'big-map'] as const;
+export const OFFLINE_PANELS = ['inventory', 'shop', 'trade', 'card-table', 'chat-log', 'big-map', 'skills'] as const;
 export type OfflinePanel = (typeof OFFLINE_PANELS)[number];
 
 /** Where a panel's shot starts when the URL names no place: within reach of the shop stall or card table. */
