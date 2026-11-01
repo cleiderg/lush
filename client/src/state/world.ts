@@ -1,4 +1,5 @@
 import type { ServerMessage } from '../net/codec';
+import { BankStore } from './bank';
 import { CardTableStore } from './cardTables';
 import { ChatStore } from './chat';
 import { SharedClock } from './clock';
@@ -40,6 +41,8 @@ export class GameState {
   readonly hits = new HitQueue();
   /** Pending trade request, open trade window and last trade result; subscribe for changes. */
   readonly trade = new TradeStore();
+  /** Open bank slots and the last bank result; subscribe for changes. */
+  readonly bank = new BankStore();
   /** Card table seat and turn state, the local player's seat and the last result; subscribe for changes. */
   readonly cardTables = new CardTableStore();
   /** Chat log and overhead messages from the server's ChatMessages. */
@@ -68,6 +71,7 @@ export class GameState {
       this.items.resetEntities();
       this.hits.clear();
       this.trade.clear();
+      this.bank.clear();
       this.cardTables.clear();
       this.chat.clearOverheads();
     } else if (msg.type === 'restartCountdown') {
@@ -102,6 +106,10 @@ export class GameState {
       this.trade.setState(msg);
     } else if (msg.type === 'tradeResult') {
       this.trade.setResult(msg.code);
+    } else if (msg.type === 'bankState') {
+      this.bank.setState(msg.slots);
+    } else if (msg.type === 'bankResult') {
+      this.bank.setResult(msg.code);
     } else if (msg.type === 'cardTableState') {
       this.cardTables.setState(msg, this.playerId);
     } else if (msg.type === 'cardTableResult') {
