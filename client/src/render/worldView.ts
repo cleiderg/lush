@@ -96,4 +96,10 @@ export interface WorldView {
   readonly sky?: SkyView;
   /** Ids (skills.json) of woodcutting trees that are felled and drawn as stumps; missing means none. */
   readonly felledTrees?: ReadonlySet<string>;
+  /** Ids (skills.json fishing spot candidates) that hold a fishing spot now; a ripple is drawn at each. Missing means none. */
+  readonly fishingSpots?: ReadonlySet<string>;
+  /** What the local player is gathering or cooking: a tree or fishing spot id from skills.json, or `'grill'`. Missing means nothing, and no indicator. */
+  readonly activeResource?: string;
+  /** Progress of the current attempt, 0 to 1, shown by the indicator over `activeResource`. */
+  readonly resourceProgress?: number;
 }

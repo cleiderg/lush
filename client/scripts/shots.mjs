@@ -24,6 +24,7 @@ const SCENES = [
   { name: 'spawn-noon', place: 'spawn', time: 'noon' },
   { name: 'spawn-night', place: 'spawn', time: 'night' },
   { name: 'park-dusk', place: 'park', time: 'dusk' },
+  { name: 'cafe-dusk', place: 'cafe', time: 'dusk' },
   // One per UI panel, at noon, wherever offline mode puts that panel (src/net/offline.ts PANEL_PLACES).
   ...['inventory', 'shop', 'bank', 'trade', 'card-table', 'chat-log', 'big-map', 'skills'].map((panel) => ({ name: `panel-${panel}`, panel, time: 'noon' })),
 ];
