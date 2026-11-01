@@ -77,7 +77,7 @@ describe('decode bank messages', () => {
 
   it('decodes every BankResult code', () => {
     const codes = Object.values(BankResultCode).filter((v): v is BankResultCode => typeof v === 'number');
-    expect(codes.length).toBe(9);
+    expect(codes.length).toBe(10);
     for (const code of codes) {
       const b = new flatbuffers.Builder(32);
       expect(decode(finish(b, Message.BankResult, BankResult.createBankResult(b, code)))).toEqual({ type: 'bankResult', code });
