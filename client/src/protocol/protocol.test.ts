@@ -43,7 +43,7 @@ function buildSnapshot(n: number): Uint8Array {
 
 describe('protocol', () => {
   it('exposes the version constant', () => {
-    expect(ProtocolVersion.Current).toBe(15);
+    expect(ProtocolVersion.Current).toBe(16);
   });
 
   it('keeps a 101-entity snapshot under 1200 bytes', () => {
@@ -773,7 +773,7 @@ describe('protocol', () => {
       Message.BankOpen, Message.BankClose, Message.BankState, Message.BankDeposit, Message.BankWithdraw,
       Message.BankDepositInventory, Message.BankDepositEquipment, Message.BankResult,
     ]).toEqual([50, 51, 52, 53, 54, 55, 56, 57]);
-    expect(Object.values(Message).filter((v) => typeof v === 'number')).toHaveLength(59);
+    expect(Object.values(Message).filter((v) => typeof v === 'number')).toHaveLength(64);
   });
 
   it('round-trips the bank messages with no fields', () => {

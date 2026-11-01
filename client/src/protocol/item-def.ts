@@ -6,6 +6,7 @@ import * as flatbuffers from 'flatbuffers';
 
 import { EquipSlot } from '../protocol/equip-slot';
 import { ItemKind } from '../protocol/item-kind';
+import { PlacementKind } from '../protocol/placement-kind';
 import { ToolSkill } from '../protocol/tool-skill';
 
 
@@ -109,8 +110,28 @@ cookingLevel():number {
   return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
 }
 
+footprintW():number {
+  const offset = this.bb!.__offset(this.bb_pos, 36);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
+}
+
+footprintD():number {
+  const offset = this.bb!.__offset(this.bb_pos, 38);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
+}
+
+placement():PlacementKind {
+  const offset = this.bb!.__offset(this.bb_pos, 40);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : PlacementKind.None;
+}
+
+surfaceSlots():number {
+  const offset = this.bb!.__offset(this.bb_pos, 42);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
+}
+
 static startItemDef(builder:flatbuffers.Builder) {
-  builder.startObject(16);
+  builder.startObject(20);
 }
 
 static addId(builder:flatbuffers.Builder, id:number) {
@@ -177,12 +198,28 @@ static addCookingLevel(builder:flatbuffers.Builder, cookingLevel:number) {
   builder.addFieldInt8(15, cookingLevel, 0);
 }
 
+static addFootprintW(builder:flatbuffers.Builder, footprintW:number) {
+  builder.addFieldInt8(16, footprintW, 0);
+}
+
+static addFootprintD(builder:flatbuffers.Builder, footprintD:number) {
+  builder.addFieldInt8(17, footprintD, 0);
+}
+
+static addPlacement(builder:flatbuffers.Builder, placement:PlacementKind) {
+  builder.addFieldInt8(18, placement, PlacementKind.None);
+}
+
+static addSurfaceSlots(builder:flatbuffers.Builder, surfaceSlots:number) {
+  builder.addFieldInt8(19, surfaceSlots, 0);
+}
+
 static endItemDef(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createItemDef(builder:flatbuffers.Builder, id:number = 0, nameOffset:flatbuffers.Offset = 0, kind:ItemKind = ItemKind.Loot, equipSlot:EquipSlot = EquipSlot.None, levelToEquip:number = 0, accuracy:number = 0, strength:number = 0, defence:number = 0, attackSpeed:number = 0, heal:number = 0, shopBuysFor:number = 0, shopSells:boolean = false, shopSellsFor:number = 0, toolSkill:ToolSkill = ToolSkill.None, toolLevel:number = 0, cookingLevel:number = 0):flatbuffers.Offset {
+static createItemDef(builder:flatbuffers.Builder, id:number = 0, nameOffset:flatbuffers.Offset = 0, kind:ItemKind = ItemKind.Loot, equipSlot:EquipSlot = EquipSlot.None, levelToEquip:number = 0, accuracy:number = 0, strength:number = 0, defence:number = 0, attackSpeed:number = 0, heal:number = 0, shopBuysFor:number = 0, shopSells:boolean = false, shopSellsFor:number = 0, toolSkill:ToolSkill = ToolSkill.None, toolLevel:number = 0, cookingLevel:number = 0, footprintW:number = 0, footprintD:number = 0, placement:PlacementKind = PlacementKind.None, surfaceSlots:number = 0):flatbuffers.Offset {
   ItemDef.startItemDef(builder);
   ItemDef.addId(builder, id);
   ItemDef.addName(builder, nameOffset);
@@ -200,6 +237,10 @@ static createItemDef(builder:flatbuffers.Builder, id:number = 0, nameOffset:flat
   ItemDef.addToolSkill(builder, toolSkill);
   ItemDef.addToolLevel(builder, toolLevel);
   ItemDef.addCookingLevel(builder, cookingLevel);
+  ItemDef.addFootprintW(builder, footprintW);
+  ItemDef.addFootprintD(builder, footprintD);
+  ItemDef.addPlacement(builder, placement);
+  ItemDef.addSurfaceSlots(builder, surfaceSlots);
   return ItemDef.endItemDef(builder);
 }
 }
