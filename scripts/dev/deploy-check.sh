@@ -29,6 +29,22 @@ if [[ "${1:-}" == "--self-test" ]]; then
   expect_fail "hardcoded Caddy hostname" 's#{$LUSH_STAGING_HOST}#staging.example.com#' caddy/Caddyfile
   expect_fail "HTTP/3 enabled" 's#protocols h1 h2#protocols h1 h2 h3#' caddy/Caddyfile
   expect_fail "root user" 's#^User=lush#User=root#' systemd/lush-production.service
+  # Warnings about units outside deploy/ must be ignored; a real one must fail.
+  mkdir -p "$tmp/bin"
+  cat >"$tmp/bin/systemd-analyze" <<'STUB'
+#!/bin/sh
+echo "/usr/lib/systemd/system/xfs_scrub_all.service:26: Unit uses CPUAccounting=, which has been removed." >&2
+echo "system-xfs_scrub.slice:15: Unit uses CPUAccounting=, which has been removed." >&2
+[ -n "$STUB_BAD" ] && echo "$2:3: Unknown key name 'Bogus' in section 'Service', ignoring." >&2
+exit 0
+STUB
+  chmod +x "$tmp/bin/systemd-analyze"
+  if PATH="$tmp/bin:$PATH" "$0" "$root/deploy" >/dev/null 2>&1; then
+    echo "self-test: foreign unit warnings ignored (ok)"
+  else echo "self-test: foreign unit warnings were NOT ignored"; fail=1; fi
+  if STUB_BAD=1 PATH="$tmp/bin:$PATH" "$0" "$root/deploy" >/dev/null 2>&1; then
+    echo "self-test: bad deploy unit was NOT rejected"; fail=1
+  else echo "self-test: bad deploy unit rejected (ok)"; fi
   exit $fail
 fi
 
@@ -139,6 +155,9 @@ if [[ -z "${DEPLOY_CHECK_NO_SYSTEMD:-}" ]]; then
     # Verify resolves ExecStart paths on this machine; they don't exist here, so
     # ignore only that complaint.
     out="$(systemd-analyze verify "$dir"/systemd/lush-production.service "$dir"/systemd/lush-staging.service 2>&1 || true)"
+    # Verify also loads the runner image's own units and warns about them; keep
+    # only lines that name one of our units.
+    out="$(grep -e 'lush-production\.service' -e 'lush-staging\.service' <<<"$out" || true)"
     out="$(grep -v -e 'is not executable' -e 'No such file or directory' -e 'Failed to prepare filesystem' <<<"$out" || true)"
     if [[ -n "$out" ]]; then echo "$out" >&2; bad "systemd-analyze verify reported problems"; fi
   elif [[ "${CI:-}" == "true" ]]; then
