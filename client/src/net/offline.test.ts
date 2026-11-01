@@ -9,6 +9,7 @@ import {
   OfflineTransport, offlineOptions, type OfflineTimers,
 } from './offline';
 import { Session } from './session';
+import areas from '../../../shared/map/areas.json';
 
 /** Timers run by hand: one-shots on flush(), repeats on tick(). */
 function manualTimers() {
@@ -97,6 +98,20 @@ describe('offline bots', () => {
   it('both offline places are walkable', () => {
     const grid = CollisionGrid.parse(new Uint8Array(readFileSync(join(__dirname, '../../../shared/map/collision.bin'))));
     for (const p of Object.values(OFFLINE_PLACES)) expect(grid.blocked(p.x, p.z)).toBe(false);
+  });
+});
+
+describe('offline cafe place', () => {
+  it('is on a walkable cell inside the café polygon from areas.json', () => {
+    const grid = CollisionGrid.parse(new Uint8Array(readFileSync(join(__dirname, '../../../shared/map/collision.bin'))));
+    const poly = areas.interiors.find((a) => a.id === 'student_center_cafe')!.p.map((v) => v / 10);
+    const { x, z } = OFFLINE_PLACES.cafe;
+    let inside = false;
+    for (let i = 0, j = poly.length - 2; i < poly.length; j = i, i += 2) {
+      if (poly[i + 1] > z !== poly[j + 1] > z && x < poly[i] + ((z - poly[i + 1]) * (poly[j] - poly[i])) / (poly[j + 1] - poly[i + 1])) inside = !inside;
+    }
+    expect(inside).toBe(true);
+    expect(grid.blocked(x, z)).toBe(false);
   });
 });
 
