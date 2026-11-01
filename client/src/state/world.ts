@@ -4,6 +4,7 @@ import { CardTableStore } from './cardTables';
 import { ChatStore } from './chat';
 import { SharedClock } from './clock';
 import type { CollisionGrid } from './collision';
+import { GainTracker } from './gains';
 import { HitQueue } from './combat';
 import { Interpolator } from './interpolation';
 import { ItemState } from './items';
@@ -40,6 +41,8 @@ export class GameState {
   readonly items = new ItemState();
   /** CombatHit batches for render to drain each frame. */
   readonly hits = new HitQueue();
+  /** XP and gold gains worked out from PlayerStats, for the world view. */
+  readonly gains = new GainTracker();
   /** Pending trade request, open trade window and last trade result; subscribe for changes. */
   readonly trade = new TradeStore();
   /** Open bank slots and the last bank result; subscribe for changes. */
@@ -73,6 +76,7 @@ export class GameState {
       this.restartSeconds = null;
       this.items.resetEntities();
       this.hits.clear();
+      this.gains.reset();
       this.trade.clear();
       this.bank.clear();
       this.cardTables.clear();
@@ -90,6 +94,7 @@ export class GameState {
       this.items.setVisible(msg.entities.map((e) => e.id));
     } else if (msg.type === 'playerStats') {
       this.items.setStats(msg);
+      this.gains.update(msg.xp, msg.gold, now);
     } else if (msg.type === 'inventory') {
       this.items.setInventory(msg);
     } else if (msg.type === 'itemCatalog') {
