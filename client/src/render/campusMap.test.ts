@@ -112,3 +112,100 @@ describe('attribution (AC4)', () => {
     expect(added.some((e) => e.textContent === '© OpenStreetMap contributors')).toBe(true);
   });
 });
+
+describe('housing areas on the map (M10, #523)', () => {
+  const readJson = (p: string) => JSON.parse(readFileSync(p, 'utf8'));
+  const config = readFileSync(join(mapDir, 'config.mjs'), 'utf8');
+  const readme = readFileSync(join(mapDir, 'README.md'), 'utf8');
+  const origin = { lat: 33.64525, lon: -117.8425 };
+  const central = readJson(join(mapDir, 'source/osm-central.json')) as { ways: { id: number }[] };
+  const housing = readJson(join(mapDir, 'source/osm-housing.json')) as { ways: { id: number; pts: [number, number][] }[] };
+  const outlineIds = [171555779, 171559658];
+  const connecting = [365551570];
+  const centralIds = new Set(central.ways.map((w) => w.id));
+  const project = ([lat, lon]: [number, number]): [number, number] => [
+    Math.round((lon - origin.lon) * 111320 * Math.cos((origin.lat * Math.PI) / 180) * 10),
+    Math.round(-(lat - origin.lat) * 111320 * 10),
+  ];
+  const outlines = outlineIds.map((id) => {
+    const w = housing.ways.find((x) => x.id === id);
+    if (!w) throw new Error(`outline ${id} missing from osm-housing.json`);
+    return w.pts.map(project);
+  });
+  const inPoly = (poly: [number, number][], x: number, z: number) => {
+    let r = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      if (poly[i][1] > z !== poly[j][1] > z && x < ((poly[j][0] - poly[i][0]) * (z - poly[i][1])) / (poly[j][1] - poly[i][1]) + poly[i][0]) r = !r;
+    }
+    return r;
+  };
+  const pts = (p: number[]) => Array.from({ length: p.length / 2 }, (_, i) => [p[2 * i], p[2 * i + 1]] as [number, number]);
+  const wholly = (p: number[]) => outlines.some((o) => pts(p).every(([x, z]) => inPoly(o, x, z)));
+  const hash = (a: number[]) => {
+    let x = 2166136261;
+    for (const v of a) { x ^= v; x = Math.imul(x, 16777619) >>> 0; }
+    return x;
+  };
+
+  it('keeps central campus unchanged (AC1)', () => {
+    const out = mkdtempSync(join(tmpdir(), 'map-c-'));
+    build(out);
+    for (const f of ['areas.json', 'cardtables.json', 'skills.json', 'props.json', 'parknature.json']) {
+      expect(readFileSync(join(out, f)).equals(readFileSync(join(mapDir, f)))).toBe(true);
+    }
+    const campus = readJson(join(out, 'campus.json'));
+    expect(campus.origin).toEqual(origin);
+    const before = readJson(join(__dirname, 'fixtures/campus-central-hashes.json')) as { buildings: Record<string, number>; paths: Record<string, number> };
+    const b = new Map<number, number>(campus.buildings.map((x: { id: number; h: number; p: number[] }) => [x.id, hash([x.h, ...x.p])]));
+    const p = new Map<number, number>(campus.paths.map((x: { id: number; w: number; s: number; p: number[] }) => [x.id, hash([x.w, x.s, ...x.p])]));
+    for (const [id, h] of Object.entries(before.buildings)) expect(b.get(Number(id))).toBe(h);
+    for (const [id, h] of Object.entries(before.paths)) expect(p.get(Number(id))).toBe(h);
+    expect(Object.keys(before.buildings).length).toBeGreaterThan(200);
+  });
+
+  it('adds the housing buildings and paths, and nothing else outside central campus (AC2)', () => {
+    const campus = loadCampus();
+    const addedB = campus.buildings.filter((x) => !centralIds.has(x.id));
+    const addedP = campus.paths.filter((x) => !centralIds.has(x.id));
+    expect(addedB.length).toBeGreaterThan(30);
+    expect(addedP.length).toBeGreaterThan(50);
+    for (const x of addedB) expect(wholly(x.p), `building ${x.id}`).toBe(true);
+    for (const x of addedP) expect(wholly(x.p) || connecting.includes(x.id), `path ${x.id}`).toBe(true);
+    for (const id of connecting) expect(addedP.some((x) => x.id === id)).toBe(true);
+    for (const id of [...outlineIds, ...connecting]) {
+      expect(config).toContain(String(id));
+      expect(readme).toContain(String(id));
+    }
+  });
+
+  it('has a walkable route from the spawn into each housing area (AC3)', () => {
+    const grid = parseCollision(new Uint8Array(readFileSync(join(mapDir, 'collision.bin'))));
+    const areas = readJson(join(mapDir, 'areas.json'));
+    const campus = loadCampus();
+    const col = (x: number) => Math.floor((x - grid.originX) / grid.cellSize);
+    const row = (z: number) => Math.floor((z - grid.originZ) / grid.cellSize);
+    const seen = new Uint8Array(grid.width * grid.height);
+    const stack = [row(areas.spawn.z / 10) * grid.width + col(areas.spawn.x / 10)];
+    seen[stack[0]] = 1;
+    while (stack.length) {
+      const i = stack.pop() as number;
+      const c = i % grid.width, r = (i - c) / grid.width;
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nc = c + dc, nr = r + dr;
+        if (nc < 0 || nr < 0 || nc >= grid.width || nr >= grid.height) continue;
+        const n = nr * grid.width + nc;
+        if (seen[n] || isBlocked(grid, grid.originX + (nc + 0.5) * grid.cellSize, grid.originZ + (nr + 0.5) * grid.cellSize)) continue;
+        seen[n] = 1;
+        stack.push(n);
+      }
+    }
+    outlines.forEach((o, k) => {
+      // a vertex of a footway lying wholly inside this outline
+      const path = campus.paths.find((x) => !centralIds.has(x.id) && pts(x.p).every(([px, pz]) => inPoly(o, px, pz)));
+      expect(path, `housing path in area ${k}`).toBeDefined();
+      const [px, pz] = pts((path as { p: number[] }).p)[0];
+      expect(isBlocked(grid, px / 10, pz / 10)).toBe(false);
+      expect(seen[row(pz / 10) * grid.width + col(px / 10)]).toBe(1);
+    });
+  });
+});

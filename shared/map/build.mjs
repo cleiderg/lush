@@ -4,7 +4,7 @@
 // Deterministic: same input -> byte-identical output. No Math.random, no timestamps.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { BBOX, ORIGIN, CHUNK_SIZE, CELL_SIZE } from './config.mjs';
+import { BBOX, ORIGIN, CHUNK_SIZE, CELL_SIZE, HOUSING } from './config.mjs';
 import {
   ALDRICH_PARK_WAY, SPAWN, SAFE_RADIUS, SHOP, SOUTH_FIELDS, PVP_ZONE, CARD_PLAZA, CARD_TABLES, STUDENT_CENTER_WAY, CAFE,
 } from './areas.mjs';
@@ -26,6 +26,7 @@ const args = process.argv.slice(2);
 const outDir = args.find((a) => !a.startsWith('--')) ?? here;
 const withNature = !args.includes('--no-nature');
 const src = JSON.parse(readFileSync(here + 'source/osm-central.json', 'utf8'));
+const housingSrc = JSON.parse(readFileSync(here + 'source/osm-housing.json', 'utf8'));
 
 const M_PER_DEG = 111320;
 const cosLat = Math.cos((ORIGIN.lat * Math.PI) / 180);
@@ -77,7 +78,30 @@ const plazas = [];
 const green = [];
 const GREEN_KIND = { grass: 0, wood: 1, water: 2, pitch: 3 };
 
-for (const w of src.ways) {
+// M10: from the housing snapshot, only ways wholly inside a housing outline, plus the listed connecting paths. Ways
+// already in the central snapshot keep their central copy, so nothing on central campus changes.
+const centralIds = new Set(src.ways.map((w) => w.id));
+const pointInPoly = (p, [lat, lon]) => {
+  let r = false;
+  for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+    if (p[i][1] > lon !== p[j][1] > lon && lat < ((p[j][0] - p[i][0]) * (lon - p[i][1])) / (p[j][1] - p[i][1]) + p[i][0]) r = !r;
+  }
+  return r;
+};
+const outlinePolys = HOUSING.areas.map((a) => {
+  const w = housingSrc.ways.find((x) => x.id === a.outline);
+  if (!w) throw new Error(`housing outline way ${a.outline} (${a.id}) missing`);
+  return w.pts;
+});
+const outlineIds = new Set(HOUSING.areas.map((a) => a.outline));
+const housingWays = housingSrc.ways.filter((w) => {
+  if (centralIds.has(w.id) || outlineIds.has(w.id)) return false;
+  if (HOUSING.connecting.includes(w.id)) return true;
+  return outlinePolys.some((o) => w.pts.every((pt) => pointInPoly(o, pt)));
+});
+for (const id of HOUSING.connecting) if (!housingWays.some((w) => w.id === id)) throw new Error(`connecting path ${id} missing`);
+
+for (const w of [...src.ways, ...housingWays]) {
   const t = w.tags;
   if (t.building) {
     const p = flat(w.pts, true);
@@ -106,10 +130,12 @@ for (const w of src.ways) {
   }
 }
 
-// Bounds in whole chunks around the bbox.
+// Bounds in whole chunks around the bbox and the housing outlines.
 const corner = (lat, lon) => project([lat, lon]);
-const sw = corner(BBOX.south, BBOX.west);
-const ne = corner(BBOX.north, BBOX.east);
+const allPts = [[BBOX.south, BBOX.west], [BBOX.north, BBOX.east], ...outlinePolys.flat()];
+const lats = allPts.map((p) => p[0]), lons = allPts.map((p) => p[1]);
+const sw = corner(Math.min(...lats), Math.min(...lons));
+const ne = corner(Math.max(...lats), Math.max(...lons));
 const chunkDm = CHUNK_SIZE * 10;
 const minX = Math.floor(sw[0] / chunkDm) * chunkDm;
 const maxX = Math.ceil(ne[0] / chunkDm) * chunkDm;
