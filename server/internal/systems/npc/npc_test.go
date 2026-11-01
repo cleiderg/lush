@@ -270,6 +270,41 @@ func TestSafeCircleAvoided(t *testing.T) {
 	}
 }
 
+// TestCafeNotEntered: an NPC walking toward a goal inside the Student Center
+// café stops at its edge and never steps inside.
+func TestCafeNotEntered(t *testing.T) {
+	l := lookup(t)
+	tests := []struct {
+		name      string
+		pos, goal world.Vec2
+	}{
+		{"from the south door", world.Vec2{X: 45, Y: -340}, world.Vec2{X: 45, Y: -351}},
+		{"from the west", world.Vec2{X: 30, Y: -351}, world.Vec2{X: 45, Y: -351}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if !l.InInterior(tc.goal) || l.InInterior(tc.pos) {
+				t.Fatal("test setup: want the goal inside the café and the start outside")
+			}
+			w := world.New(world.DefaultConfig())
+			s := newSystem(t, nil)
+			n := &world.NPC{Pos: tc.pos, Home: tc.pos, Goal: tc.goal, HasGoal: true}
+			for i := 0; i < 200 && n.HasGoal; i++ {
+				s.Step(n, w.TickInterval())
+				if l.NoCombat(n.Pos) {
+					t.Fatalf("tick %d: inside the café at %v", i, n.Pos)
+				}
+			}
+			if n.HasGoal {
+				t.Fatalf("still walking at %v", n.Pos)
+			}
+			if d := dist(n.Pos, tc.goal); d > 15 || d < 3 {
+				t.Errorf("stopped at %v, %.2f m from the goal; want at the café's edge", n.Pos, d)
+			}
+		})
+	}
+}
+
 func TestHandleIgnoresCommands(t *testing.T) {
 	s := newSystem(t, nil)
 	p := &world.Player{ID: 1, Pos: world.Vec2{X: 1}}
