@@ -174,6 +174,7 @@ type entityInfo struct {
 	npcType uint16
 	level   int
 	equip   world.Equipment
+	total   int // total level; 0 for NPCs
 }
 
 func encodeEntityInfo(b *flatbuffers.Builder, id world.PlayerID, in entityInfo) []byte {
@@ -187,6 +188,7 @@ func encodeEntityInfo(b *flatbuffers.Builder, id world.PlayerID, in entityInfo) 
 	protocol.EntityInfoAddHead(b, uint16(in.equip.Head))
 	protocol.EntityInfoAddBody(b, uint16(in.equip.Body))
 	protocol.EntityInfoAddShield(b, uint16(in.equip.Shield))
+	protocol.EntityInfoAddTotalLevel(b, uint16(min(max(in.total, 0), math.MaxUint16)))
 	return finish(b, protocol.MessageEntityInfo, protocol.EntityInfoEnd(b))
 }
 

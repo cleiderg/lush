@@ -244,6 +244,9 @@ func TestEntityInfoOnEnterAndChange(t *testing.T) {
 	checkPlayer := func(e protocol.EntityInfo, p *world.Player) {
 		t.Helper()
 		eq := p.Inv.Equipment
+		if int(e.TotalLevel()) != p.TotalLevel(d.Rules) {
+			t.Fatalf("EntityInfo %d total level %d, want %d", e.Id(), e.TotalLevel(), p.TotalLevel(d.Rules))
+		}
 		if e.Kind() != protocol.EntityKindPlayer || e.NpcType() != 0 || int(e.CombatLevel()) != p.CombatLevel(d.Rules) ||
 			e.Weapon() != uint16(eq.Weapon) || e.Head() != uint16(eq.Head) || e.Body() != uint16(eq.Body) || e.Shield() != uint16(eq.Shield) {
 			t.Fatalf("EntityInfo %d = kind %v type %d level %d equip %d/%d/%d/%d, want player level %d equip %+v",
@@ -252,6 +255,9 @@ func TestEntityInfoOnEnterAndChange(t *testing.T) {
 	}
 	checkNPC := func(e protocol.EntityInfo) {
 		t.Helper()
+		if e.TotalLevel() != 0 {
+			t.Fatalf("NPC EntityInfo %d total level %d, want 0", e.Id(), e.TotalLevel())
+		}
 		if e.Kind() != protocol.EntityKindNpc || e.NpcType() != uint16(npcType.ID) || int(e.CombatLevel()) != npcType.Level {
 			t.Fatalf("EntityInfo %d = kind %v type %d level %d, want NPC type %d level %d",
 				e.Id(), e.Kind(), e.NpcType(), e.CombatLevel(), npcType.ID, npcType.Level)
@@ -316,6 +322,14 @@ func TestEntityInfoOnEnterAndChange(t *testing.T) {
 	}
 	checkPlayer(only(c, uint16(other.ID), "level change"), other)
 	quiet(c, "after level change")
+
+	// A skill level-up changes the total level too.
+	before := other.TotalLevel(d.Rules)
+	for other.TotalLevel(d.Rules) == before {
+		other.AddSkillXP(world.Skill(0), 100)
+	}
+	checkPlayer(only(c, uint16(other.ID), "skill level-up"), other)
+	quiet(c, "after skill level-up")
 
 	// Leaving view and coming back counts as entering view again.
 	near.Pos = world.Vec2{X: -500}
