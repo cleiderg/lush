@@ -96,12 +96,16 @@ export class ChatLog {
       const row = document.createElement('div');
       row.className = 'lush-chat-line';
       row.style.cssText = 'word-break:break-word;';
-      const who = document.createElement('span');
-      who.style.cssText = 'font-weight:600;color:var(--lush-gold-bright);';
-      who.textContent = `${speakerLabel(line.speakerId, me)}: `;
       const text = document.createElement('span');
       text.textContent = line.text;
-      row.append(who, text);
+      if (line.system) {
+        row.append(text);
+      } else {
+        const who = document.createElement('span');
+        who.style.cssText = 'font-weight:600;color:var(--lush-gold-bright);';
+        who.textContent = `${speakerLabel(line.speakerId, me)}: `;
+        row.append(who, text);
+      }
       this.body.append(row);
       this.rows.set(line, row);
     }

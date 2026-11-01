@@ -9,6 +9,7 @@ import { Interpolator } from './interpolation';
 import { ItemState } from './items';
 import { type PendingInput, Prediction, RUN_SPEED, WALK_SPEED } from './prediction';
 import { SkillState } from './skills';
+import { bankResultText, levelUpText, skillResultText } from './skillMessages';
 import { TradeStore } from './trade';
 
 export interface PlayerView {
@@ -114,6 +115,8 @@ export class GameState {
       this.bank.setState(msg.slots);
     } else if (msg.type === 'bankResult') {
       this.bank.setResult(msg.code);
+      const text = bankResultText(msg.code);
+      if (text) this.chat.system(text);
     } else if (msg.type === 'cardTableState') {
       this.cardTables.setState(msg, this.playerId);
     } else if (msg.type === 'cardTableResult') {
@@ -132,8 +135,10 @@ export class GameState {
       this.skills.setResources(msg.felledTrees, msg.fishingSpots);
     } else if (msg.type === 'levelUp') {
       this.skills.levelUps.push({ entityId: msg.entityId, skill: msg.skill, level: msg.level });
+      if (msg.entityId === this.playerId) this.chat.system(levelUpText(msg));
     } else if (msg.type === 'skillResult') {
       this.skills.results.push({ skill: msg.skill, code: msg.code, itemId: msg.itemId, level: msg.level });
+      this.chat.system(skillResultText(msg, (id) => this.items.item(id)?.name));
     } else if (msg.type === 'chat') {
       this.chat.push(msg.speakerId, msg.text, now);
     }
