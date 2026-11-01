@@ -106,7 +106,7 @@ export function createRenderer(canvas: HTMLCanvasElement): GameRenderer {
       if (post) post.render();
       else if (retro) retro.render(renderer, world.scene, world.rig.camera);
       else renderer.render(world.scene, world.rig.camera);
-      if (!labels && world.chat.group.parent) {
+      if (!labels && (world.chat.group.parent || world.floatTexts.group.parent)) {
         labels = new CSS2DRenderer();
         labels.domElement.style.cssText += 'position:fixed;pointer-events:none;overflow:hidden;z-index:4;';
         document.body.appendChild(labels.domElement);
