@@ -47,7 +47,7 @@ describe('bank state', () => {
   });
 
   it('stays open after other BankResult codes', () => {
-    for (const code of [BankResultCode.Ok, BankResultCode.BankFull, BankResultCode.InventoryFull, BankResultCode.NotEnoughItems, BankResultCode.Busy]) {
+    for (const code of [BankResultCode.Ok, BankResultCode.BankFull, BankResultCode.InventoryFull, BankResultCode.NotEnoughItems, BankResultCode.Busy, BankResultCode.SaveFailed]) {
       const g = opened();
       g.handle({ type: 'bankResult', code }, 0);
       expect(g.bank.isOpen, BankResultCode[code]).toBe(true);
