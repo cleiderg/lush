@@ -227,10 +227,10 @@ function build(): Placement[] {
   for (const x of [43.4, 45, 46.6]) put('stool', x, -352.5);
   put('cup', 43.6, -353.9, 0, 1.03);
   put('plate', 46.3, -353.5, 0, 1.03);
-  // East wall: the fireplace, with a plant either side. West wall: a big window, and one more on the south wall.
+  // East wall: the fireplace. West wall: a big window, and one more on the south wall.
   put('fireplace', 49.55, -351, 90);
   put('window', 40.35, -351, 270);
-  put('window', 40.35, -348.6, 270);
+  put('window', 42, -347.35, 180);
   // Rugs.
   put('rug', 45, -350.3);
   put('rug_small', 48.2, -351);
