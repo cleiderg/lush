@@ -100,7 +100,11 @@ type Sink interface {
 	Stopped(to world.PlayerID, why StopReason)
 	// Gained is sent for each success: the skill, the XP in tenths, and
 	// whether the player reached a new level (then level is the new one).
-	Gained(to world.PlayerID, s world.Skill, xpTenths int, leveled bool, level int)
+	// item is what the success gave: the log, or the fish actually caught.
+	Gained(to world.PlayerID, s world.Skill, item gamedata.ItemID, xpTenths int, leveled bool, level int)
+	// ResourcesChanged is sent once in a tick in which a tree fell, a felled
+	// tree regrew or a fishing spot moved; read the new state with Resources.
+	ResourcesChanged()
 }
 
 // Config tunes the system.
@@ -116,6 +120,7 @@ func DefaultConfig() Config { return Config{TicksPerCombatTick: 12, TileSize: Ti
 
 type tree struct {
 	Place
+	num int // 0-based index in the layout's trees
 	def *gamedata.Tree
 	// regrow is when a felled tree stands again; zero while it stands.
 	regrow time.Time
@@ -125,6 +130,7 @@ type spotKind struct {
 	def    *gamedata.FishingSpot
 	slots  []*slot
 	places []Place
+	index  []int // index of each place in the layout's spots
 }
 
 // slot is one fishing spot out at the pond; it holds a candidate position
@@ -158,6 +164,8 @@ type System struct {
 	cfg   Config
 
 	trees   map[string]*tree
+	treeSeq []*tree              // by tree number
+	changed bool                 // resources changed during this tick
 	spots   map[string]*spotKind // by spot kind (net, rod)
 	byPlace map[string]*spotKind // by candidate id
 	kinds   []*spotKind          // deterministic order
@@ -188,10 +196,12 @@ func New(d *gamedata.Data, l Layout, clock world.Clock, r formula.Rand, sink Sin
 		if def == nil {
 			return nil, fmt.Errorf("gather: tree %q: no %q row in the tree table", p.ID, p.Kind)
 		}
-		s.trees[p.ID] = &tree{Place: p, def: def}
+		t := &tree{Place: p, num: len(s.treeSeq), def: def}
+		s.trees[p.ID] = t
+		s.treeSeq = append(s.treeSeq, t)
 	}
 	now := clock.Now()
-	for _, p := range l.Spots {
+	for pi, p := range l.Spots {
 		k := s.spots[p.Kind]
 		if k == nil {
 			var def *gamedata.FishingSpot
@@ -208,6 +218,7 @@ func New(d *gamedata.Data, l Layout, clock world.Clock, r formula.Rand, sink Sin
 			s.kinds = append(s.kinds, k)
 		}
 		k.places = append(k.places, p)
+		k.index = append(k.index, pi)
 		s.byPlace[p.ID] = k
 	}
 	for kind, k := range s.spots {
@@ -249,6 +260,66 @@ func (s *System) TreeStanding(id string) bool {
 
 func (s *System) standing(t *tree) bool {
 	return t.regrow.IsZero() || !s.clock.Now().Before(t.regrow)
+}
+
+// SpotState is one fishing spot slot: Slot is its number (SkillAction.target_id
+// and FishingSpotState.id) and Candidate the index into the layout's spots of
+// its current position.
+type SpotState struct {
+	Slot      int
+	Candidate int
+}
+
+// ResourceState is what players are told about gathering resources.
+type ResourceState struct {
+	// Felled are the numbers (indexes into the layout's trees) of the trees
+	// that are stumps now, in ascending order.
+	Felled []int
+	// Spots are the active fishing spots: slots are numbered from 0 kind by
+	// kind, kinds in order of first appearance in the layout, and the
+	// numbering is fixed while the server runs.
+	Spots []SpotState
+}
+
+// Resources returns the current resource state.
+func (s *System) Resources() ResourceState {
+	var r ResourceState
+	for _, t := range s.treeSeq {
+		if !s.standing(t) {
+			r.Felled = append(r.Felled, t.num)
+		}
+	}
+	n := 0
+	for _, k := range s.kinds {
+		for _, sl := range k.slots {
+			r.Spots = append(r.Spots, SpotState{Slot: n, Candidate: k.index[sl.at]})
+			n++
+		}
+	}
+	return r
+}
+
+// TreePlace returns the map id of the tree with the number n.
+func (s *System) TreePlace(n int) (string, bool) {
+	if n < 0 || n >= len(s.treeSeq) {
+		return "", false
+	}
+	return s.treeSeq[n].ID, true
+}
+
+// SpotPlace returns the map id of the current position of the fishing spot
+// slot n.
+func (s *System) SpotPlace(n int) (string, bool) {
+	if n < 0 {
+		return "", false
+	}
+	for _, k := range s.kinds {
+		if n < len(k.slots) {
+			return k.places[k.slots[n].at].ID, true
+		}
+		n -= len(k.slots)
+	}
+	return "", false
 }
 
 // ActiveSpots appends to dst the fishing spots out at the pond right now, kinds
@@ -438,7 +509,9 @@ func (s *System) drop(id world.PlayerID) {
 // player moved or fought, sets the animation of the rest and, on a combat
 // tick, makes the attempts that are due.
 func (s *System) Tick(w *world.World, _ time.Duration) {
+	s.regrow()
 	s.moveSpots(w)
+	defer s.flushChanged()
 	combatTick := w.TickCount()%uint64(s.cfg.TicksPerCombatTick) == 0
 	// Iterate a copy: stops edit s.order.
 	for _, id := range append([]world.PlayerID(nil), s.order...) {
@@ -474,6 +547,24 @@ func (s *System) Tick(w *world.World, _ time.Duration) {
 	}
 }
 
+// regrow clears the stumps whose time is up, so the change is seen once.
+func (s *System) regrow() {
+	now := s.clock.Now()
+	for _, t := range s.treeSeq {
+		if !t.regrow.IsZero() && !now.Before(t.regrow) {
+			t.regrow = time.Time{}
+			s.changed = true
+		}
+	}
+}
+
+func (s *System) flushChanged() {
+	if s.changed && s.sink != nil {
+		s.sink.ResourcesChanged()
+	}
+	s.changed = false
+}
+
 // moveSpots moves each fishing spot whose time is up to another candidate
 // position of its kind that no spot holds, and stops whoever was fishing it.
 func (s *System) moveSpots(w *world.World) {
@@ -495,6 +586,7 @@ func (s *System) moveSpots(w *world.World) {
 			}
 			old := k.places[sl.at].ID
 			sl.at = free[s.rand.IntN(len(free))]
+			s.changed = true
 			for _, id := range append([]world.PlayerID(nil), s.order...) {
 				if g := s.active[id]; g != nil && g.target.id == old {
 					if p := w.Player(id); p != nil {
@@ -567,7 +659,7 @@ func (s *System) attempt(p *world.Player, g *gatherer) {
 	tenths := int(math.Round(xp * world.SkillXPScale))
 	leveled, level := p.AddSkillXP(sk, tenths)
 	if s.sink != nil {
-		s.sink.Gained(p.ID, sk, tenths, leveled, level)
+		s.sink.Gained(p.ID, sk, item, tenths, leveled, level)
 	}
 	if t.tree != nil && s.rand.IntN(s.data.Skills.TreeFallOneIn) == 0 {
 		s.fell(t.tree)
@@ -583,4 +675,5 @@ func (s *System) attempt(p *world.Player, g *gatherer) {
 // players chopping it stop on their next check in Tick.
 func (s *System) fell(t *tree) {
 	t.regrow = s.clock.Now().Add(t.def.Respawn())
+	s.changed = true
 }
