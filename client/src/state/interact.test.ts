@@ -236,16 +236,17 @@ describe('the bank booth (#467 AC1)', () => {
     expect(BANK_BOOTH).toEqual({ x: skills.bank.x / 10, z: skills.bank.z / 10 });
   });
 
-  it('is within 2 tiles, diagonals included', () => {
-    expect(nearBank(at(2, 2), booth)).toBe(true);
+  it('is within 2 tiles in a straight line, as the server measures it', () => {
+    expect(nearBank(at(1.4, 1.4), booth)).toBe(true);
     expect(nearBank(at(-2, 0), booth)).toBe(true);
+    expect(nearBank(at(1.5, 1.5), booth)).toBe(false);
     expect(nearBank(at(2.1, 0), booth)).toBe(false);
     expect(nearBank(at(0, -2.1), booth)).toBe(false);
   });
 
   it('is targeted within 2 tiles of the shared position', () => {
     expect(pickInteractTarget({ pos: BANK_BOOTH, stall: STALL, entities: [] })).toEqual({ type: 'bank' });
-    expect(pickInteractTarget({ pos: { x: BANK_BOOTH.x + 2, z: BANK_BOOTH.z - 2 }, stall: STALL, entities: [] })).toEqual({ type: 'bank' });
+    expect(pickInteractTarget({ pos: { x: BANK_BOOTH.x + 1.4, z: BANK_BOOTH.z - 1.4 }, stall: STALL, entities: [] })).toEqual({ type: 'bank' });
     expect(pickInteractTarget({ pos: { x: BANK_BOOTH.x + 3, z: BANK_BOOTH.z }, stall: STALL, entities: [] })).toBeNull();
   });
 

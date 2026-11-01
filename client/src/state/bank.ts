@@ -9,15 +9,18 @@ export type { BankSlotState };
 export const BANK_BOOTH: Point = { x: skills.bank.x / 10, z: skills.bank.z / 10 };
 
 /**
- * How close (in tiles, counting diagonals) a player must be to the booth to open the bank
- * (skills spec, Bank): the same distance as the shop stall.
+ * How close (in tiles) a player must be to the booth to open the bank (skills spec, Bank): the same
+ * distance as the shop stall.
  */
 export const BANK_DISTANCE_TILES = SHOP_DISTANCE_TILES;
 
-/** Whether pos (metres) is within BANK_DISTANCE_TILES of the booth. */
+/**
+ * Whether pos (metres) is within BANK_DISTANCE_TILES of the booth, measured in a straight line like the
+ * server's bank reach check (bank.InReach), so the prompt never offers a bank the server would refuse as too far.
+ */
 export function nearBank(pos: Point, booth: Point = BANK_BOOTH): boolean {
   const reach = BANK_DISTANCE_TILES * TILE_METRES;
-  return Math.abs(pos.x - booth.x) <= reach && Math.abs(pos.z - booth.z) <= reach;
+  return Math.hypot(pos.x - booth.x, pos.z - booth.z) <= reach;
 }
 
 /** The slots whose item name (from nameOf) contains query, ignoring case and outer spaces; all of them for an empty query. */
