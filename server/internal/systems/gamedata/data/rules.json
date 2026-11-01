@@ -28,5 +28,11 @@
   "pickup_range_tiles": 1,
   "pickup_range_diagonal": true,
   "logout_combat_lock_s": 10,
-  "eat_attack_delay_combat_ticks": 1
+  "eat_attack_delay_combat_ticks": 1,
+  "house_rent_per_month": 200,
+  "house_days_per_month": 30,
+  "house_claim_months": 2,
+  "house_max_prepaid_months": 6,
+  "house_warning_days": 7,
+  "house_auction_days": 5
 }

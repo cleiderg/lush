@@ -252,6 +252,12 @@ func TestRulesMatchSpec(t *testing.T) {
 		{"pickup range includes diagonals", r.PickupRangeDiagonal, true},
 		{"logout combat lock", r.LogoutCombatLock(), 10 * time.Second},
 		{"eat attack delay combat ticks", r.EatAttackDelayTicks, 1},
+		{"house rent per month", r.HouseRentPerMonth, 200},
+		{"house days per month", r.HouseDaysPerMonth, 30},
+		{"house claim months", r.HouseClaimMonths, 2},
+		{"house max prepaid months", r.HouseMaxPrepaidMonths, 6},
+		{"house warning days", r.HouseWarningDays, 7},
+		{"house auction days", r.HouseAuctionDays, 5},
 	}
 	for _, tt := range tests {
 		if tt.got != tt.want {
