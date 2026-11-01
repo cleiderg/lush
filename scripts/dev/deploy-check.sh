@@ -7,6 +7,14 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
 
+# Filters systemd-analyze verify output (stdin) down to real problems: drops the
+# complaints expected on a machine without the deployed binary, and anything not
+# naming our own units (warnings about the runner's system units, e.g. CPUAccounting=).
+filter_systemd_output() {
+  { grep -v -e 'is not executable' -e 'No such file or directory' -e 'Failed to prepare filesystem' || true; } \
+    | { grep -e 'lush-production\.service' -e 'lush-staging\.service' || true; }
+}
+
 if [[ "${1:-}" == "--self-test" ]]; then
   tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
   fail=0
@@ -29,6 +37,17 @@ if [[ "${1:-}" == "--self-test" ]]; then
   expect_fail "hardcoded Caddy hostname" 's#{$LUSH_STAGING_HOST}#staging.example.com#' caddy/Caddyfile
   expect_fail "HTTP/3 enabled" 's#protocols h1 h2#protocols h1 h2 h3#' caddy/Caddyfile
   expect_fail "root user" 's#^User=lush#User=root#' systemd/lush-production.service
+  # systemd-analyze output filter: system-unit noise passes, our units still fail.
+  noise='/usr/lib/systemd/system/xfs_scrub_all.service:26: Support for option CPUAccounting= has been removed and it is ignored'
+  if [[ -n "$(filter_systemd_output <<<"$noise")" ]]; then
+    echo "self-test: system unit warning was NOT ignored"; fail=1
+  else echo "self-test: system unit warning ignored (ok)"; fi
+  for u in lush-production lush-staging; do
+    ours="/x/deploy/systemd/$u.service:12: Unknown key name 'Bogus' in section 'Service', ignoring."
+    if [[ -z "$(filter_systemd_output <<<"$noise"$'\n'"$ours")" ]]; then
+      echo "self-test: warning naming $u.service was NOT reported"; fail=1
+    else echo "self-test: warning naming $u.service reported (ok)"; fi
+  done
   exit $fail
 fi
 
@@ -139,7 +158,7 @@ if [[ -z "${DEPLOY_CHECK_NO_SYSTEMD:-}" ]]; then
     # Verify resolves ExecStart paths on this machine; they don't exist here, so
     # ignore only that complaint.
     out="$(systemd-analyze verify "$dir"/systemd/lush-production.service "$dir"/systemd/lush-staging.service 2>&1 || true)"
-    out="$(grep -v -e 'is not executable' -e 'No such file or directory' -e 'Failed to prepare filesystem' <<<"$out" || true)"
+    out="$(filter_systemd_output <<<"$out")"
     if [[ -n "$out" ]]; then echo "$out" >&2; bad "systemd-analyze verify reported problems"; fi
   elif [[ "${CI:-}" == "true" ]]; then
     bad "systemd-analyze not installed (required when CI=true)"
