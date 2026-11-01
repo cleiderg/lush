@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EntityKind } from '../protocol';
+import { FLOAT_TEXT_MS } from '../render/floatText';
 import { CHAT_FADE_MS, OVERHEAD_CHAT_MS } from '../state/chat';
 import { GameState } from '../state/world';
 import { sunPosition } from './sun';
@@ -109,6 +110,18 @@ describe('buildWorldView', () => {
     g.handle({ type: 'groundItems', items } as never, 0);
     expect(buildWorldView(g, 0).groundItems).toEqual(items);
     expect(buildWorldView(g, 0).groundItems).toEqual(g.items.groundItems);
+  });
+
+  it('passes PlayerStats gains for FLOAT_TEXT_MS, then drops them', () => {
+    const g = new GameState();
+    g.handle({ type: 'welcome', playerId: 7, tickRate: 20, spawn: { x: 0, z: 0 } } as never, 0);
+    const stats = (xp: number, gold: number) => ({ type: 'playerStats', hp: 1, maxHp: 1, combatLevel: 1, xp, gold }) as never;
+    g.handle(stats(10, 100), 0);
+    g.handle(stats(25, 130), 1000);
+    const gains = buildWorldView(g, 1000).gains ?? [];
+    expect(gains.map((e) => [e.kind, e.amount])).toEqual([['xp', 15], ['gold', 30]]);
+    expect(buildWorldView(g, 1000 + FLOAT_TEXT_MS - 1).gains).toEqual(gains);
+    expect(buildWorldView(g, 1000 + FLOAT_TEXT_MS).gains).toEqual([]);
   });
 
   it('passes each hit batch once with its attacker, flattened oldest first', () => {
