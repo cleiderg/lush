@@ -33,6 +33,8 @@ type Layout struct {
 	Spots []Place // candidate positions, in file order
 	// Active is how many spots of each kind are out at once.
 	Active map[string]int
+	// Grill is where the cooking range is.
+	Grill world.Vec2
 }
 
 type placeJSON struct {
@@ -43,10 +45,14 @@ type placeJSON struct {
 }
 
 type layoutFile struct {
-	Version int         `json:"version"`
-	Units   string      `json:"units"`
-	Trees   []placeJSON `json:"trees"`
-	Pond    struct {
+	Version int `json:"version"`
+	Grill   *struct {
+		X *int `json:"x"`
+		Z *int `json:"z"`
+	} `json:"grill"`
+	Units string      `json:"units"`
+	Trees []placeJSON `json:"trees"`
+	Pond  struct {
 		Active map[string]int `json:"active"`
 		Spots  []placeJSON    `json:"spots"`
 	} `json:"pond"`
@@ -93,5 +99,8 @@ func ParseLayout(data []byte) (Layout, error) {
 		return Layout{}, err
 	}
 	l.Active = f.Pond.Active
+	if f.Grill != nil && f.Grill.X != nil && f.Grill.Z != nil {
+		l.Grill = world.Vec2{X: float32(*f.Grill.X) / 10, Y: float32(*f.Grill.Z) / 10}
+	}
 	return l, nil
 }
