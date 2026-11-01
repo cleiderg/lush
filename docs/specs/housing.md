@@ -65,7 +65,7 @@ Homes are real houses in UCI's housing areas, claimed first come, first served a
 - **house_plots:** plot_id, area_id, map position, owner_id (null when empty), claimed_at, rent_paid_until.
 - **homes:** home_id, plot_id, owner_id, wallpaper_item_id, flooring_item_id, grid_size.
 - **placed_items:** placed_id, home_id, item_id, x, y, rotation, layer (floor, surface or wall), parent_placed_id (null unless stacked).
-- **item_defs:** item_id, name, footprint_w, footprint_h, category, is_surface, surface_slots, is_wall_item, model_path.
+- **Furniture definitions** (name, footprint, category, surface slots, wall item, model) live with every other item in the server data file items.json ([[gameplay]]); there is no item_defs table.
 - The player's inventory keeps owning unplaced items. Placing moves an item from the inventory into placed_items, and removing moves it back, each as one transaction written to the economy audit log ([[persistence]]).
 
 ## Server (Go)
