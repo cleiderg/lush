@@ -29,6 +29,7 @@ Three skills, OSRS style, give players something to do besides fighting, and fee
 - The player taps Interact next to a tree or fishing spot (range 1 tile, including diagonals). The server checks the level and tool, then the player keeps trying on its own until the inventory is full, the resource is used up, the player moves, or combat starts.
 - One attempt every **4 combat ticks** (2.4 s). Each attempt succeeds with a chance that rises with level, the OSRS way: chance = low + (high − low) × (level − 1) / 29, using the low and high values in the tables. A better tool adds its bonus to both.
 - A success puts one item in the inventory and gives the XP in the table.
+- Logs, raw fish, cooked fish, burnt fish and tools don't stack in the inventory: each takes one slot, like food and equipment ([[gameplay]]). Every item still stacks in the bank.
 - **Trees** fall after a number of logs (1 in 8 chance per log, so 8 on average) and grow back after the respawn time. While felled they show as a stump and can't be chopped.
 - **Fishing spots** never run out but move to another spot at the same pond every 3 to 5 minutes.
 - Equipping a hatchet as a weapon still lets it chop; holding it in the inventory works too.
