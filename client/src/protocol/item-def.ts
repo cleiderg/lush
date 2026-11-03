@@ -130,8 +130,18 @@ surfaceSlots():number {
   return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
 }
 
+thriftSellsFor():number {
+  const offset = this.bb!.__offset(this.bb_pos, 44);
+  return offset ? this.bb!.readUint32(this.bb_pos + offset) : 0;
+}
+
+thriftBuysFor():number {
+  const offset = this.bb!.__offset(this.bb_pos, 46);
+  return offset ? this.bb!.readUint32(this.bb_pos + offset) : 0;
+}
+
 static startItemDef(builder:flatbuffers.Builder) {
-  builder.startObject(20);
+  builder.startObject(22);
 }
 
 static addId(builder:flatbuffers.Builder, id:number) {
@@ -214,12 +224,20 @@ static addSurfaceSlots(builder:flatbuffers.Builder, surfaceSlots:number) {
   builder.addFieldInt8(19, surfaceSlots, 0);
 }
 
+static addThriftSellsFor(builder:flatbuffers.Builder, thriftSellsFor:number) {
+  builder.addFieldInt32(20, thriftSellsFor, 0);
+}
+
+static addThriftBuysFor(builder:flatbuffers.Builder, thriftBuysFor:number) {
+  builder.addFieldInt32(21, thriftBuysFor, 0);
+}
+
 static endItemDef(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createItemDef(builder:flatbuffers.Builder, id:number = 0, nameOffset:flatbuffers.Offset = 0, kind:ItemKind = ItemKind.Loot, equipSlot:EquipSlot = EquipSlot.None, levelToEquip:number = 0, accuracy:number = 0, strength:number = 0, defence:number = 0, attackSpeed:number = 0, heal:number = 0, shopBuysFor:number = 0, shopSells:boolean = false, shopSellsFor:number = 0, toolSkill:ToolSkill = ToolSkill.None, toolLevel:number = 0, cookingLevel:number = 0, footprintW:number = 0, footprintD:number = 0, placement:PlacementKind = PlacementKind.None, surfaceSlots:number = 0):flatbuffers.Offset {
+static createItemDef(builder:flatbuffers.Builder, id:number = 0, nameOffset:flatbuffers.Offset = 0, kind:ItemKind = ItemKind.Loot, equipSlot:EquipSlot = EquipSlot.None, levelToEquip:number = 0, accuracy:number = 0, strength:number = 0, defence:number = 0, attackSpeed:number = 0, heal:number = 0, shopBuysFor:number = 0, shopSells:boolean = false, shopSellsFor:number = 0, toolSkill:ToolSkill = ToolSkill.None, toolLevel:number = 0, cookingLevel:number = 0, footprintW:number = 0, footprintD:number = 0, placement:PlacementKind = PlacementKind.None, surfaceSlots:number = 0, thriftSellsFor:number = 0, thriftBuysFor:number = 0):flatbuffers.Offset {
   ItemDef.startItemDef(builder);
   ItemDef.addId(builder, id);
   ItemDef.addName(builder, nameOffset);
@@ -241,6 +259,8 @@ static createItemDef(builder:flatbuffers.Builder, id:number = 0, nameOffset:flat
   ItemDef.addFootprintD(builder, footprintD);
   ItemDef.addPlacement(builder, placement);
   ItemDef.addSurfaceSlots(builder, surfaceSlots);
+  ItemDef.addThriftSellsFor(builder, thriftSellsFor);
+  ItemDef.addThriftBuysFor(builder, thriftBuysFor);
   return ItemDef.endItemDef(builder);
 }
 }

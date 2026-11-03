@@ -113,8 +113,44 @@ func (rcv *HouseInfo) MutateOpen(n bool) bool {
 	return rcv._tab.MutateBoolSlot(16, n)
 }
 
+func (rcv *HouseInfo) TopBid() uint32 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(18))
+	if o != 0 {
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *HouseInfo) MutateTopBid(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(18, n)
+}
+
+func (rcv *HouseInfo) AuctionEnd() int64 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(20))
+	if o != 0 {
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *HouseInfo) MutateAuctionEnd(n int64) bool {
+	return rcv._tab.MutateInt64Slot(20, n)
+}
+
+func (rcv *HouseInfo) MyBid() uint32 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(22))
+	if o != 0 {
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *HouseInfo) MutateMyBid(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(22, n)
+}
+
 func HouseInfoStart(builder *flatbuffers.Builder) {
-	builder.StartObject(7)
+	builder.StartObject(10)
 }
 func HouseInfoAddId(builder *flatbuffers.Builder, id uint16) {
 	builder.PrependUint16Slot(0, id, 0)
@@ -136,6 +172,15 @@ func HouseInfoAddState(builder *flatbuffers.Builder, state HouseState) {
 }
 func HouseInfoAddOpen(builder *flatbuffers.Builder, open bool) {
 	builder.PrependBoolSlot(6, open, false)
+}
+func HouseInfoAddTopBid(builder *flatbuffers.Builder, topBid uint32) {
+	builder.PrependUint32Slot(7, topBid, 0)
+}
+func HouseInfoAddAuctionEnd(builder *flatbuffers.Builder, auctionEnd int64) {
+	builder.PrependInt64Slot(8, auctionEnd, 0)
+}
+func HouseInfoAddMyBid(builder *flatbuffers.Builder, myBid uint32) {
+	builder.PrependUint32Slot(9, myBid, 0)
 }
 func HouseInfoEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

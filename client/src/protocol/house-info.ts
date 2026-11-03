@@ -62,8 +62,23 @@ open():boolean {
   return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
 }
 
+topBid():number {
+  const offset = this.bb!.__offset(this.bb_pos, 18);
+  return offset ? this.bb!.readUint32(this.bb_pos + offset) : 0;
+}
+
+auctionEnd():bigint {
+  const offset = this.bb!.__offset(this.bb_pos, 20);
+  return offset ? this.bb!.readInt64(this.bb_pos + offset) : BigInt('0');
+}
+
+myBid():number {
+  const offset = this.bb!.__offset(this.bb_pos, 22);
+  return offset ? this.bb!.readUint32(this.bb_pos + offset) : 0;
+}
+
 static startHouseInfo(builder:flatbuffers.Builder) {
-  builder.startObject(7);
+  builder.startObject(10);
 }
 
 static addId(builder:flatbuffers.Builder, id:number) {
@@ -94,12 +109,24 @@ static addOpen(builder:flatbuffers.Builder, open:boolean) {
   builder.addFieldInt8(6, +open, +false);
 }
 
+static addTopBid(builder:flatbuffers.Builder, topBid:number) {
+  builder.addFieldInt32(7, topBid, 0);
+}
+
+static addAuctionEnd(builder:flatbuffers.Builder, auctionEnd:bigint) {
+  builder.addFieldInt64(8, auctionEnd, BigInt('0'));
+}
+
+static addMyBid(builder:flatbuffers.Builder, myBid:number) {
+  builder.addFieldInt32(9, myBid, 0);
+}
+
 static endHouseInfo(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createHouseInfo(builder:flatbuffers.Builder, id:number = 0, areaId:number = 0, ownerNameOffset:flatbuffers.Offset = 0, mine:boolean = false, paidUntil:bigint = BigInt('0'), state:HouseState = HouseState.Empty, open:boolean = false):flatbuffers.Offset {
+static createHouseInfo(builder:flatbuffers.Builder, id:number = 0, areaId:number = 0, ownerNameOffset:flatbuffers.Offset = 0, mine:boolean = false, paidUntil:bigint = BigInt('0'), state:HouseState = HouseState.Empty, open:boolean = false, topBid:number = 0, auctionEnd:bigint = BigInt('0'), myBid:number = 0):flatbuffers.Offset {
   HouseInfo.startHouseInfo(builder);
   HouseInfo.addId(builder, id);
   HouseInfo.addAreaId(builder, areaId);
@@ -108,6 +135,9 @@ static createHouseInfo(builder:flatbuffers.Builder, id:number = 0, areaId:number
   HouseInfo.addPaidUntil(builder, paidUntil);
   HouseInfo.addState(builder, state);
   HouseInfo.addOpen(builder, open);
+  HouseInfo.addTopBid(builder, topBid);
+  HouseInfo.addAuctionEnd(builder, auctionEnd);
+  HouseInfo.addMyBid(builder, myBid);
   return HouseInfo.endHouseInfo(builder);
 }
 }

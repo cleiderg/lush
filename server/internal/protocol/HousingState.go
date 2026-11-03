@@ -53,14 +53,59 @@ func (rcv *HousingState) HousesLength() int {
 	return 0
 }
 
+func (rcv *HousingState) RentPerMonth() uint32 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
+	if o != 0 {
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *HousingState) MutateRentPerMonth(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(6, n)
+}
+
+func (rcv *HousingState) ClaimMonths() byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	if o != 0 {
+		return rcv._tab.GetByte(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *HousingState) MutateClaimMonths(n byte) bool {
+	return rcv._tab.MutateByteSlot(8, n)
+}
+
+func (rcv *HousingState) MaxPrepaidMonths() byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	if o != 0 {
+		return rcv._tab.GetByte(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *HousingState) MutateMaxPrepaidMonths(n byte) bool {
+	return rcv._tab.MutateByteSlot(10, n)
+}
+
 func HousingStateStart(builder *flatbuffers.Builder) {
-	builder.StartObject(1)
+	builder.StartObject(4)
 }
 func HousingStateAddHouses(builder *flatbuffers.Builder, houses flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(houses), 0)
 }
 func HousingStateStartHousesVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(4, numElems, 4)
+}
+func HousingStateAddRentPerMonth(builder *flatbuffers.Builder, rentPerMonth uint32) {
+	builder.PrependUint32Slot(1, rentPerMonth, 0)
+}
+func HousingStateAddClaimMonths(builder *flatbuffers.Builder, claimMonths byte) {
+	builder.PrependByteSlot(2, claimMonths, 0)
+}
+func HousingStateAddMaxPrepaidMonths(builder *flatbuffers.Builder, maxPrepaidMonths byte) {
+	builder.PrependByteSlot(3, maxPrepaidMonths, 0)
 }
 func HousingStateEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

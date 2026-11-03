@@ -269,8 +269,32 @@ func (rcv *ItemDef) MutateSurfaceSlots(n byte) bool {
 	return rcv._tab.MutateByteSlot(42, n)
 }
 
+func (rcv *ItemDef) ThriftSellsFor() uint32 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(44))
+	if o != 0 {
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *ItemDef) MutateThriftSellsFor(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(44, n)
+}
+
+func (rcv *ItemDef) ThriftBuysFor() uint32 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(46))
+	if o != 0 {
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *ItemDef) MutateThriftBuysFor(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(46, n)
+}
+
 func ItemDefStart(builder *flatbuffers.Builder) {
-	builder.StartObject(20)
+	builder.StartObject(22)
 }
 func ItemDefAddId(builder *flatbuffers.Builder, id uint16) {
 	builder.PrependUint16Slot(0, id, 0)
@@ -331,6 +355,12 @@ func ItemDefAddPlacement(builder *flatbuffers.Builder, placement PlacementKind) 
 }
 func ItemDefAddSurfaceSlots(builder *flatbuffers.Builder, surfaceSlots byte) {
 	builder.PrependByteSlot(19, surfaceSlots, 0)
+}
+func ItemDefAddThriftSellsFor(builder *flatbuffers.Builder, thriftSellsFor uint32) {
+	builder.PrependUint32Slot(20, thriftSellsFor, 0)
+}
+func ItemDefAddThriftBuysFor(builder *flatbuffers.Builder, thriftBuysFor uint32) {
+	builder.PrependUint32Slot(21, thriftBuysFor, 0)
 }
 func ItemDefEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

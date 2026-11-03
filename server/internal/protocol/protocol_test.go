@@ -44,8 +44,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 17 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 17", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 18 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 18", ProtocolVersionCurrent)
 	}
 }
 
@@ -942,7 +942,7 @@ func TestTradeStateSize(t *testing.T) {
 	small := buildTradeState(tradeState{mine: items[:10]})
 	big := buildTradeState(tradeState{mine: items[:12]})
 	if d := len(big) - len(small); d != 16 {
-		t.Fatalf("two more items add %d bytes, want 17", d)
+		t.Fatalf("two more items add %d bytes, want 16", d)
 	}
 }
 
@@ -1565,8 +1565,8 @@ func TestBankMessageIDs(t *testing.T) {
 			t.Fatalf("%v = %d, want %d", m, m, 50+i)
 		}
 	}
-	if len(EnumNamesMessage) != 74 {
-		t.Fatalf("Message has %d values, want 74 (NONE plus 73 messages)", len(EnumNamesMessage))
+	if len(EnumNamesMessage) != 79 {
+		t.Fatalf("Message has %d values, want 79 (NONE plus 78 messages)", len(EnumNamesMessage))
 	}
 }
 
