@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"math"
 	"testing"
 	"time"
 
@@ -72,8 +71,8 @@ func TestGathererChops(t *testing.T) {
 			t.Errorf("action %+v, want tree 2", a)
 		}
 	}
-	if d := math.Hypot(x+5, z); d > 1.5 {
-		t.Errorf("acted %.2f m from the tree", d)
+	if !inReach(x, z, place{"oak", -5, 0}) {
+		t.Errorf("acted at %.2f, %.2f, not within 1 tile of the tree", x, z)
 	}
 }
 
@@ -94,8 +93,8 @@ func TestGathererFishes(t *testing.T) {
 			t.Errorf("action %+v, want fishing spot 2", a)
 		}
 	}
-	if d := math.Hypot(x, z-20); d > 1.5 {
-		t.Errorf("acted %.2f m from the spot", d)
+	if !inReach(x, z, place{"net", 0, 20}) {
+		t.Errorf("acted at %.2f, %.2f, not within 1 tile of the spot", x, z)
 	}
 }
 
@@ -119,6 +118,32 @@ func TestGathererWaitsAndMoves(t *testing.T) {
 	g.noteResult(protocol.SkillResultCodeInventoryFull)
 	if s := g.step(now, -4.5, 0, inv, res); s != (gatherStep{}) {
 		t.Errorf("inventory full: %+v", s)
+	}
+}
+
+// TestGathererTileReach: the server's range is in tiles, so a spot off its
+// tile centre can be 1.4 m away yet 2 tiles off. The bot keeps walking there,
+// and an OutOfRange answer doesn't make it resend every input.
+func TestGathererTileReach(t *testing.T) {
+	m := testMap()
+	m.spots = []place{{"net", -82.9, -17.7}}
+	g := newGatherer(m, true)
+	inv := inventory{known: true, slots: []uint16{smallNetID}}
+	res := resources{known: true, spots: []spotState{{0, 0}}}
+	now := time.Unix(1000, 0)
+	if s := g.step(now, -84.3, -17.7, inv, res); s.act != nil || s.moveX <= 0 {
+		t.Errorf("1.4 m but 2 tiles away: %+v", s)
+	}
+	s := g.step(now, -83.5, -17.7, inv, res)
+	if s.act == nil || s.act.id != 0 {
+		t.Fatalf("1 tile away: %+v", s)
+	}
+	g.noteResult(protocol.SkillResultCodeOutOfRange)
+	if s := g.step(now.Add(inputEvery), -83.5, -17.7, inv, res); s.act != nil {
+		t.Errorf("resent at once after OutOfRange: %+v", s)
+	}
+	if s := g.step(now.Add(retryEvery), -83.5, -17.7, inv, res); s.act == nil {
+		t.Errorf("no retry after %v: %+v", retryEvery, s)
 	}
 }
 

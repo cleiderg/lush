@@ -21,9 +21,6 @@ const (
 	// shopReach is how close to the stall a bot stands to buy; the server's
 	// shop distance is 2 tiles, so this leaves a margin.
 	shopReach = 1.5
-	// gatherReach is "within 1 tile" of a tree or spot, diagonals included
-	// (1.5 m from the centre covers a diagonal neighbour).
-	gatherReach = 1.5
 	// retryEvery spaces repeated ShopBuys and SkillActions that got no answer.
 	retryEvery = 5 * time.Second
 )
@@ -126,7 +123,7 @@ type gatherer struct {
 }
 
 func newGatherer(m *gatherMap, fishing bool) *gatherer {
-	return &gatherer{m: m, fishing: fishing}
+	return &gatherer{m: m, fishing: fishing, target: -1}
 }
 
 func (g *gatherer) tool() uint16 {
@@ -155,6 +152,14 @@ func headTo(x, z, px, pz float64) (dx, dz, d float64) {
 		return 0, 0, 0
 	}
 	return (px - x) / d, (pz - z) / d, d
+}
+
+// inReach is the server's range check for gathering: the bot's tile is within
+// 1 tile of the target's, diagonals included (skills range_tiles 1 and
+// range_diagonal; a tile is 1 m). A distance check isn't enough: trees and
+// spots needn't sit at a tile centre, so 1.4 m can be 2 tiles away.
+func inReach(x, z float64, p place) bool {
+	return math.Abs(math.Floor(x)-math.Floor(p.x)) <= 1 && math.Abs(math.Floor(z)-math.Floor(p.z)) <= 1
 }
 
 // pick chooses the nearest standing tree or active net spot to (x, z).
@@ -240,10 +245,13 @@ func (g *gatherer) step(now time.Time, x, z float64, inv inventory, res resource
 		if id, p, ok = g.pick(x, z, res); !ok {
 			return gatherStep{}
 		}
-		g.target, g.hasTarget, g.lastSent = id, true, time.Time{}
+		if id != g.target {
+			g.lastSent = time.Time{} // a new target: act at once, a repeat waits
+		}
+		g.target, g.hasTarget = id, true
 	}
-	dx, dz, d := headTo(x, z, p.x, p.z)
-	if d > gatherReach {
+	if !inReach(x, z, p) {
+		dx, dz, _ := headTo(x, z, p.x, p.z)
 		return gatherStep{moveX: dx, moveZ: dz}
 	}
 	if now.Sub(g.lastSent) < retryEvery {
