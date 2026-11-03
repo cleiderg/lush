@@ -41,6 +41,10 @@ describe('QualityControl', () => {
   it('is themed with the shared button class', () => {
     const { button } = setup();
     expect(button.classList.contains('lush-button')).toBe(true);
+    button.dispatchEvent(new Event('pointerdown'));
+    expect(button.classList.contains('pressed')).toBe(true);
+    button.dispatchEvent(new Event('pointerup'));
+    expect(button.classList.contains('pressed')).toBe(false);
   });
 
   it('Retro keeps working on every preset', () => {

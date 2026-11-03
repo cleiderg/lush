@@ -1,6 +1,6 @@
 import type { QualityChoice, QualityPreset } from '../core/quality';
 import { hudLayout, place } from './hudLayout';
-import { BUTTON_CLASS } from './theme';
+import { addPressFeedback, BUTTON_CLASS } from './theme';
 
 export const QUALITY_CYCLE: readonly QualityChoice[] = ['auto', 'low', 'medium', 'high'];
 
@@ -35,6 +35,7 @@ export class QualityControl {
       opts.model.setChoice(QUALITY_CYCLE[(i + 1) % QUALITY_CYCLE.length]!);
       this.update();
     });
+    addPressFeedback(this.button);
     opts.parent.append(this.button);
     window.addEventListener('resize', this.onResize);
     this.layout();

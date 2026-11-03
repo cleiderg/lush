@@ -48,6 +48,22 @@ describe('QualityController', () => {
     expect(setQuality).toHaveBeenLastCalledWith('high');
   });
 
+  it('the gap while the page is hidden is not fed to the chooser', () => {
+    const { setQuality, controller, chooser } = setup('auto', 'high');
+    const frame = vi.spyOn(chooser, 'frame');
+    let t = 0;
+    for (let i = 0; i < 30 * (QUALITY_WARMUP_S + 10); i++) controller.rendered((t += 33));
+    expect(setQuality).toHaveBeenLastCalledWith('high');
+    frame.mockClear();
+    controller.pause();
+    controller.rendered((t += 60000));
+    controller.rendered(t + 33);
+    expect(frame).toHaveBeenCalledTimes(1);
+    expect(frame.mock.calls[0]![0]).toBeCloseTo(0.033);
+    expect(controller.preset).toBe('high');
+    expect(setQuality).toHaveBeenLastCalledWith('high');
+  });
+
   it('the game loop feeds each rendered frame time to the chooser', () => {
     const { controller, chooser } = setup('auto', 'high');
     const frame = vi.spyOn(chooser, 'frame');

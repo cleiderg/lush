@@ -51,6 +51,9 @@ new RetroToggle({ parent: document.body, target: renderer, store: localRetroStor
 // Applies the saved Quality choice (Auto when nothing is saved); Auto steps down as frame times come in.
 const quality = new QualityController(renderer, localQualityStore(), new QualityChooser(startingPreset(detectDevice())));
 const qualityControl = new QualityControl({ parent: document.body, model: quality });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) quality.pause();
+});
 
 const controls = new Controls({
   onWave: () => sendWave(session),

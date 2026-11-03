@@ -49,6 +49,14 @@ export class QualityController {
     this.lastMs = nowMs;
   }
 
+  /**
+   * Call when the page is hidden: no frames are drawn until it is shown again, so the gap before the next frame is
+   * not fed to the chooser (it would read as one very slow frame and step Auto down).
+   */
+  pause(): void {
+    this.lastMs = null;
+  }
+
   private apply(): void {
     this.target.setQuality(this.preset);
   }
