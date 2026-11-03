@@ -314,9 +314,6 @@ func (s *System) ResolveAuction(id CommitID, winner world.PlayerID) {
 // List returns every house as of now, without anyone's own bid.
 func (s *System) List() []Info { return s.listFor(0) }
 
-// ListFor is List with MyBid set for player. Call it on the tick goroutine.
-func (s *System) ListFor(player world.PlayerID) []Info { return s.listFor(player) }
-
 // listFor is List with MyBid set for player.
 func (s *System) listFor(player world.PlayerID) []Info {
 	now := s.clock.Now()

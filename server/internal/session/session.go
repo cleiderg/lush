@@ -193,9 +193,10 @@ type Server struct {
 	mu       sync.Mutex
 	guests   map[int64]*guest // by store id; session ids for known players
 	nextID   uint32
-	auctions store.Auctions           // nil if the player store keeps no auctions
-	keep     map[int64]world.PlayerID // owners of houses: their session ids are never reused
-	idle     *list.List               // offline guests, longest offline first
+	myBids   map[world.PlayerID]map[housing.HouseID]int // held bid of each player per house, as last told or loaded
+	auctions store.Auctions                             // nil if the player store keeps no auctions
+	keep     map[int64]world.PlayerID                   // owners of houses: their session ids are never reused
+	idle     *list.List                                 // offline guests, longest offline first
 	ops      []op
 	conns    map[transport.Conn]struct{}
 
@@ -1035,7 +1036,7 @@ func (s *Server) sendInitial(g *guest, p *world.Player) {
 	g.conn.Send(encodeSkillStats(s.bld, &p.SkillXP))
 	s.sendInitialSkills(g)
 	if s.housing != nil {
-		g.conn.Send(s.housingState(g, s.housing.ListFor(g.id)))
+		g.conn.Send(s.housingState(g, s.joinHouses(g)))
 	}
 }
 

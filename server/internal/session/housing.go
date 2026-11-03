@@ -70,6 +70,13 @@ func (s *Server) AuctionResult(to world.PlayerID, _ housing.HouseID, o housing.A
 // mine set for their own. House owners' session ids are kept from then on.
 // Called on the tick goroutine.
 func (s *Server) HouseList(to world.PlayerID, houses []housing.Info) {
+	mine := map[housing.HouseID]int{}
+	for _, h := range houses {
+		if h.MyBid > 0 {
+			mine[h.ID] = h.MyBid
+		}
+	}
+	s.setMyBids(to, mine)
 	s.mu.Lock()
 	for _, h := range houses {
 		if g := s.live[h.Owner]; g != nil {
@@ -189,6 +196,32 @@ func (s *Server) storeIDOf(id world.PlayerID) (int64, bool) {
 	return 0, false
 }
 
+func (s *Server) setMyBids(id world.PlayerID, mine map[housing.HouseID]int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.myBids == nil {
+		s.myBids = map[world.PlayerID]map[housing.HouseID]int{}
+	}
+	s.myBids[id] = mine
+}
+
+// joinHouses is the house list for a player who just connected. The housing
+// system lists a player's own bid only when it sends them a list, so it comes
+// from the bids the session loaded or last sent; a bid that is no longer the
+// top bid was refunded or settled, and is dropped.
+func (s *Server) joinHouses(g *guest) []housing.Info {
+	houses := s.housing.List()
+	s.mu.Lock()
+	mine := s.myBids[g.id]
+	s.mu.Unlock()
+	for i := range houses {
+		if h := &houses[i]; h.State == housing.InAuction && mine[h.ID] == h.TopBid {
+			h.MyBid = mine[h.ID]
+		}
+	}
+	return houses
+}
+
 // AuctionOf is the housing system's auction for a stored one. Every bidder
 // and the previous owner are given their session ids first, as for owners
 // (ReserveOwner). Call it before the world starts ticking.
@@ -213,6 +246,17 @@ func (s *Server) AuctionOf(a store.Auction) (*housing.Auction, error) {
 			return nil, err
 		}
 		out.Bids = append(out.Bids, housing.Bid{Player: id, Amount: int(b.Amount), Held: int(b.Held)})
+		if b.Held > 0 {
+			s.mu.Lock()
+			if s.myBids == nil {
+				s.myBids = map[world.PlayerID]map[housing.HouseID]int{}
+			}
+			if s.myBids[id] == nil {
+				s.myBids[id] = map[housing.HouseID]int{}
+			}
+			s.myBids[id][housing.HouseID(a.PlotID)] = int(b.Held)
+			s.mu.Unlock()
+		}
 	}
 	return out, nil
 }
