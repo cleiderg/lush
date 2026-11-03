@@ -15,6 +15,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/furniture"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/grounditems"
+	"github.com/cleiderg/lush/server/internal/systems/housing"
 	"github.com/cleiderg/lush/server/internal/systems/items"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
 	"github.com/cleiderg/lush/server/internal/systems/trade"
@@ -381,6 +382,9 @@ type message struct {
 	// SkillAction.
 	skillTarget protocol.SkillTarget
 	skillID     uint16
+	// HouseClaim and RentPay.
+	houseID uint16
+	months  uint8
 }
 
 // gameSlots maps wire equipment slots to game data slots. EquipSlotNone is
@@ -460,6 +464,10 @@ func (m message) command(id world.PlayerID) world.Command {
 		if m.ground != 0 {
 			return grounditems.PickUpCommand{Player: id, ID: grounditems.ID(m.ground)}
 		}
+	case protocol.MessageHouseClaim:
+		return housing.ClaimCommand{Player: id, House: housing.HouseID(m.houseID)}
+	case protocol.MessageRentPay:
+		return housing.PayRentCommand{Player: id, House: housing.HouseID(m.houseID), Months: int(m.months)}
 	case protocol.MessageCardTableSit:
 		return cardroom.SitCommand{Player: id, TableID: cardroom.TableID(m.tableID)}
 	case protocol.MessageCardTableLeave:
@@ -563,6 +571,14 @@ func decode(buf []byte) (m message, err error) {
 		var bw protocol.BankWithdraw
 		bw.Init(tbl.Bytes, tbl.Pos)
 		m.itemID, m.quantity = bw.ItemId(), bw.Amount()
+	case protocol.MessageHouseClaim:
+		var hc protocol.HouseClaim
+		hc.Init(tbl.Bytes, tbl.Pos)
+		m.houseID = hc.HouseId()
+	case protocol.MessageRentPay:
+		var rp protocol.RentPay
+		rp.Init(tbl.Bytes, tbl.Pos)
+		m.houseID, m.months = rp.HouseId(), rp.Months()
 	case protocol.MessageSkillAction:
 		var sa protocol.SkillAction
 		sa.Init(tbl.Bytes, tbl.Pos)
@@ -854,4 +870,56 @@ func encodeShedHand(b *flatbuffers.Builder, id cardroom.TableID, hand []shed.Car
 	protocol.ShedHandAddTableId(b, clampU16(int(id)))
 	protocol.ShedHandAddCards(b, cards)
 	return finish(b, protocol.MessageShedHand, protocol.ShedHandEnd(b))
+}
+
+// encodeHousingState builds a HousingState of houses for the player viewer:
+// mine is set only on their own house. A lapsed house is still owned until its
+// lapse is saved, so it shows as Warning. A house with no recorded area gets 0.
+func encodeHousingState(b *flatbuffers.Builder, houses []housing.Info, viewer world.PlayerID, areaOf map[housing.HouseID]uint8, r gamedata.Rules) []byte {
+	b.Reset()
+	offs := make([]flatbuffers.UOffsetT, len(houses))
+	for i, h := range houses {
+		var name flatbuffers.UOffsetT
+		if h.Owner != 0 {
+			name = b.CreateString(fmt.Sprintf("Guest %d", h.Owner)) // PLACEHOLDER: players have no names yet
+		}
+		state := protocol.HouseStateEmpty
+		var paid int64
+		if h.Owner != 0 {
+			paid = h.PaidUntil.Unix()
+			state = protocol.HouseStateOwned
+		}
+		switch h.State {
+		case housing.Warning, housing.Lapsed:
+			state = protocol.HouseStateWarning
+		case housing.InAuction:
+			state = protocol.HouseStateAuction
+		}
+		protocol.HouseInfoStart(b)
+		protocol.HouseInfoAddId(b, uint16(min(uint32(h.ID), math.MaxUint16)))
+		protocol.HouseInfoAddAreaId(b, areaOf[h.ID])
+		if h.Owner != 0 {
+			protocol.HouseInfoAddOwnerName(b, name)
+		}
+		protocol.HouseInfoAddMine(b, h.Owner != 0 && h.Owner == viewer)
+		protocol.HouseInfoAddPaidUntil(b, paid)
+		protocol.HouseInfoAddState(b, state)
+		protocol.HouseInfoAddTopBid(b, clampU32(h.TopBid))
+		if !h.AuctionEnd.IsZero() {
+			protocol.HouseInfoAddAuctionEnd(b, h.AuctionEnd.Unix())
+		}
+		protocol.HouseInfoAddMyBid(b, clampU32(h.MyBid))
+		offs[i] = protocol.HouseInfoEnd(b)
+	}
+	protocol.HousingStateStartHousesVector(b, len(offs))
+	for i := len(offs) - 1; i >= 0; i-- {
+		b.PrependUOffsetT(offs[i])
+	}
+	vec := b.EndVector(len(offs))
+	protocol.HousingStateStart(b)
+	protocol.HousingStateAddHouses(b, vec)
+	protocol.HousingStateAddRentPerMonth(b, clampU32(r.HouseRentPerMonth))
+	protocol.HousingStateAddClaimMonths(b, clampU8(r.HouseClaimMonths))
+	protocol.HousingStateAddMaxPrepaidMonths(b, clampU8(r.HouseMaxPrepaidMonths))
+	return finish(b, protocol.MessageHousingState, protocol.HousingStateEnd(b))
 }

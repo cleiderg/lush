@@ -1,5 +1,5 @@
 import type { HomeView, HouseInfoState, PlacedItemState } from '../net/codec';
-import { HouseState, HousingResultCode } from '../protocol';
+import { HomeResultCode, HouseState, HousingResultCode } from '../protocol';
 
 /** Rent terms the server sends with HousingState. */
 export interface RentTerms {
@@ -34,6 +34,7 @@ export type { HomeView, HouseInfoState, PlacedItemState };
 export class HousingStore {
   houses: HouseInfoState[] = [];
   home: HomeView | null = null;
+  private leaving = false;
   /** Rent terms from HousingState (server data, rules.json); 0 until the first HousingState. */
   rentPerMonth = 0;
   claimMonths = 0;
@@ -67,6 +68,36 @@ export class HousingStore {
     this.notify();
   }
 
+  /** True when the player is inside a home. */
+  inHome(): boolean {
+    return this.home !== null;
+  }
+
+  /** True when the home the player is inside is their own house. */
+  inOwnHome(): boolean {
+    const mine = this.myHouse();
+    return this.home !== null && mine !== null && mine.id === this.home.houseId;
+  }
+
+  /** Call when HomeLeave is sent; the next Ok HomeResult then drops the home. */
+  beginLeave(): void {
+    this.leaving = true;
+  }
+
+  /**
+   * Applies a HomeResult; a successful leave forgets the home. The server only
+   * answers HomeLeave with Ok or NotInHome, so any other code is the reply to an
+   * edit sent before the leave, and the leave is still pending.
+   */
+  applyHomeResult(code: HomeResultCode): void {
+    if (!this.leaving || (code !== HomeResultCode.Ok && code !== HomeResultCode.NotInHome)) return;
+    this.leaving = false;
+    if (this.home) {
+      this.home = null;
+      this.notify();
+    }
+  }
+
   /** The house with this id, or null. */
   house(id: number): HouseInfoState | null {
     return this.houses.find((h) => h.id === id) ?? null;
@@ -93,6 +124,7 @@ export class HousingStore {
     if (this.houses.length === 0 && !this.home) return;
     this.houses = [];
     this.home = null;
+    this.leaving = false;
     this.notify();
   }
 }
@@ -108,6 +140,32 @@ export function housingResultText(code: HousingResultCode): string | null {
     case HousingResultCode.TooManyMonths: return "You can't prepay that far ahead";
     case HousingResultCode.NotOwner: return "You don't own that house";
     case HousingResultCode.SaveFailed: return 'The house could not save. Try again';
+    default: return 'Something went wrong';
+  }
+}
+
+/** Chat line for a HomeResult code; null for Ok. */
+export function homeResultText(code: HomeResultCode): string | null {
+  switch (code) {
+    case HomeResultCode.Ok: return null;
+    case HomeResultCode.OutOfBounds: return "That won't fit inside the room";
+    case HomeResultCode.Overlap: return 'Something is already in the way there';
+    case HomeResultCode.BadRotation: return "It can't be turned that way";
+    case HomeResultCode.BadLayer: return "That can't go there";
+    case HomeResultCode.NotSurfaceItem: return "That's too big to sit on a surface";
+    case HomeResultCode.NoSurface: return 'There is nothing there to put it on';
+    case HomeResultCode.SurfaceFull: return 'There is no room left on that surface';
+    case HomeResultCode.HasItems: return 'Clear everything off it first';
+    case HomeResultCode.NotFound: return "You can't find that item";
+    case HomeResultCode.NotOwner: return 'Only the owner can do that';
+    case HomeResultCode.Locked: return 'The door is locked';
+    case HomeResultCode.Full: return 'The house is full of guests';
+    case HomeResultCode.TooFar: return 'You need to be closer to the door';
+    case HomeResultCode.NotInInventory: return "You don't have that item with you";
+    case HomeResultCode.InventoryFull: return 'Your pack is too full to hold that';
+    case HomeResultCode.NotInHome: return "You aren't inside a house";
+    case HomeResultCode.RateLimited: return 'Slow down; you are redecorating too fast';
+    case HomeResultCode.SaveFailed: return 'The change could not be saved. Try again';
     default: return 'Something went wrong';
   }
 }
