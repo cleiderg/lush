@@ -1,6 +1,11 @@
 package session_test
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"maps"
+	"math"
 	"testing"
 	"time"
 
@@ -99,44 +104,133 @@ func TestSkillActionGrillStartAndStopResults(t *testing.T) {
 	}
 }
 
+// AC2: starting in combat, moving and combat starting are each a Cooking
+// SkillResult Stopped (running out of raw fish is in the AC3 test).
+func TestSkillActionGrillCombatAndMoveStop(t *testing.T) {
+	cooking := protocol.Skill(world.Cooking)
+	// stopped reads results until the first that is not a cooked or burnt fish.
+	stopped := func(t *testing.T, c *cookRig) {
+		t.Helper()
+		for {
+			r := c.result(c.main)
+			if r.code == protocol.SkillResultCodeSuccess || r.code == protocol.SkillResultCodeBurnt {
+				continue
+			}
+			if r.skill != cooking || r.code != protocol.SkillResultCodeStopped {
+				t.Fatalf("result %+v, want Cooking Stopped", r)
+			}
+			if c.cook.Cooking(c.p.ID) {
+				t.Fatal("still cooking after Stopped")
+			}
+			return
+		}
+	}
+	start := func(t *testing.T) *cookRig {
+		t.Helper()
+		c := newCookRig(t)
+		for i := 0; i < 5; i++ {
+			c.give("raw_shrimp")
+		}
+		c.main.send(skillAction(protocol.SkillTargetGrill, 0))
+		if r := c.result(c.main); r.skill != cooking || r.code != protocol.SkillResultCodeStarted {
+			t.Fatalf("start: %+v", r)
+		}
+		return c
+	}
+	t.Run("start in combat", func(t *testing.T) {
+		c := newCookRig(t)
+		c.give("raw_shrimp")
+		c.p.LastCombat = c.clock.Now()
+		c.main.send(skillAction(protocol.SkillTargetGrill, 0))
+		stopped(t, c)
+	})
+	t.Run("moved", func(t *testing.T) {
+		c := start(t)
+		c.main.send(input(1, 1, 0))
+		stopped(t, c)
+	})
+	t.Run("combat started", func(t *testing.T) {
+		c := start(t)
+		c.p.LastCombat = c.clock.Now().Add(time.Second)
+		stopped(t, c)
+	})
+}
+
 // AC3: a burnt fish sends Burnt with the burnt item and a cooked fish sends
-// Success with the cooked item; both reach the store with audit entries and
-// only the cooked one gives Cooking XP.
+// Success with the cooked item; both reach the store through the economy
+// outbox with audit entries, and only the cooked one raises Cooking XP in
+// SkillStats.
 func TestCookedAndBurntFishResultsAndSave(t *testing.T) {
 	c := newCookRig(t)
 	c.rnd.vals = []float64{0, 0.99} // first burns, second cooks
 	c.give("raw_shrimp")
 	c.give("raw_shrimp")
-	audit0 := len(c.mem.AuditEntries())
-	xp0 := c.p.SkillXP[world.Cooking]
+	shrimp := c.recipe("raw_shrimp")
 
+	// Read SkillResults and SkillStats in order; xpAt[i] is the Cooking XP the
+	// client was last told when the i-th SkillResult arrived.
+	var results []skillResult
+	var xpAt []uint32
+	var xp uint32
 	c.main.send(skillAction(protocol.SkillTargetGrill, 0))
-	if r := c.result(c.main); r.code != protocol.SkillResultCodeStarted {
-		t.Fatalf("start: %+v", r)
-	}
-	burnt := c.result(c.main)
-	if burnt.code != protocol.SkillResultCodeBurnt || burnt.item != uint16(c.recipe("raw_shrimp").Burnt) {
-		t.Fatalf("burnt: %+v", burnt)
-	}
-	if c.p.SkillXP[world.Cooking] != xp0 {
-		t.Fatal("a burnt fish gave XP")
-	}
-	cooked := c.result(c.main)
-	if cooked.code != protocol.SkillResultCodeSuccess || cooked.item != uint16(c.recipe("raw_shrimp").Cooked) {
-		t.Fatalf("cooked: %+v", cooked)
-	}
-	if c.p.SkillXP[world.Cooking] <= xp0 {
-		t.Fatal("a cooked fish gave no XP")
-	}
-	if r := c.result(c.main); r.code != protocol.SkillResultCodeStopped {
-		t.Fatalf("out of fish: %+v", r)
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for len(c.mem.AuditEntries()) < audit0+2 {
-		if time.Now().After(deadline) {
-			t.Fatalf("%d audit entries, want %d", len(c.mem.AuditEntries()), audit0+2)
+	for i := 0; len(results) < 4; i++ {
+		if i > 5000 {
+			t.Fatalf("results %+v", results)
 		}
-		time.Sleep(5 * time.Millisecond)
+		typ, tbl := c.next(c.main)
+		switch typ {
+		case protocol.MessageSkillStats:
+			xp = decodeSkillStats(tbl).cXP
+		case protocol.MessageSkillResult:
+			var r protocol.SkillResult
+			r.Init(tbl.Bytes, tbl.Pos)
+			results = append(results, skillResult{r.Skill(), r.Code(), r.ItemId(), r.Level()})
+			xpAt = append(xpAt, xp)
+		}
+	}
+	// SkillStats for a tick follows that tick's results: read on to the next one.
+	xp = decodeSkillStats(c.waitFor(c.main, protocol.MessageSkillStats)).cXP
+
+	cooking := protocol.Skill(world.Cooking)
+	want := []skillResult{
+		{skill: cooking, code: protocol.SkillResultCodeStarted},
+		{skill: cooking, code: protocol.SkillResultCodeBurnt, item: uint16(shrimp.Burnt)},
+		{skill: cooking, code: protocol.SkillResultCodeSuccess, item: uint16(shrimp.Cooked)},
+		{skill: cooking, code: protocol.SkillResultCodeStopped},
+	}
+	for i := range want {
+		if results[i] != want[i] {
+			t.Fatalf("result %d = %+v, want %+v", i, results[i], want[i])
+		}
+	}
+	if xpAt[2] != 0 {
+		t.Fatalf("SkillStats Cooking XP %d before the cooked fish: the burnt one gave XP", xpAt[2])
+	}
+	if wantXP := uint32(math.Round(shrimp.XP * world.SkillXPScale)); xp != wantXP {
+		t.Fatalf("SkillStats Cooking XP %d after the cooked fish, want %d", xp, wantXP)
+	}
+
+	if err := c.sess.SaveAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	count := map[string]int{}
+	for _, e := range c.mem.AuditEntries() {
+		b, _ := json.Marshal(e.Payload)
+		var p struct {
+			Reason string
+			Item   int
+		}
+		if err := json.Unmarshal(b, &p); err == nil && p.Reason == cook.ReasonCook {
+			count[fmt.Sprintf("%s %d", e.Kind, p.Item)]++
+		}
+	}
+	wantAudit := map[string]int{
+		fmt.Sprintf("item_remove %d", shrimp.Raw): 2,
+		fmt.Sprintf("item_add %d", shrimp.Burnt):  1,
+		fmt.Sprintf("item_add %d", shrimp.Cooked): 1,
+	}
+	if !maps.Equal(count, wantAudit) {
+		t.Fatalf("cook audit entries %v, want %v", count, wantAudit)
 	}
 }
 
