@@ -63,6 +63,22 @@ func encodeItemAction(b *flatbuffers.Builder, a itemAction) []byte {
 	return finish(b, protocol.MessageItemAction, protocol.ItemActionEnd(b))
 }
 
+func encodeShopBuy(b *flatbuffers.Builder, item uint16) []byte {
+	b.Reset()
+	protocol.ShopBuyStart(b)
+	protocol.ShopBuyAddItemId(b, item)
+	protocol.ShopBuyAddQuantity(b, 1)
+	return finish(b, protocol.MessageShopBuy, protocol.ShopBuyEnd(b))
+}
+
+func encodeSkillAction(b *flatbuffers.Builder, a skillAction) []byte {
+	b.Reset()
+	protocol.SkillActionStart(b)
+	protocol.SkillActionAddTarget(b, a.target)
+	protocol.SkillActionAddTargetId(b, a.id)
+	return finish(b, protocol.MessageSkillAction, protocol.SkillActionEnd(b))
+}
+
 // inbound is a decoded server message; only the fields for typ are set.
 type inbound struct {
 	typ          protocol.Message
@@ -70,9 +86,11 @@ type inbound struct {
 	spawn        [2]float64 // Welcome, metres
 	token        uint32
 	text         string
-	hasSelf      bool      // Snapshot contains the entity self
-	selfX, selfZ int16     // its position in decimetres
-	inv          inventory // InventoryState
+	hasSelf      bool                     // Snapshot contains the entity self
+	selfX, selfZ int16                    // its position in decimetres
+	inv          inventory                // InventoryState
+	res          resources                // ResourceState
+	skillCode    protocol.SkillResultCode // SkillResult
 }
 
 // decode parses a server frame; self is this bot's player id, looked up in
@@ -118,6 +136,23 @@ func decode(buf []byte, self uint16) (m inbound, ok bool) {
 				m.inv.slots[i] = sl.ItemId()
 			}
 		}
+	case protocol.MessageResourceState:
+		var rs protocol.ResourceState
+		rs.Init(tbl.Bytes, tbl.Pos)
+		m.res = resources{known: true, felled: map[uint16]bool{}}
+		for i := 0; i < rs.FelledTreesLength(); i++ {
+			m.res.felled[rs.FelledTrees(i)] = true
+		}
+		var sp protocol.FishingSpotState
+		for i := 0; i < rs.FishingSpotsLength(); i++ {
+			if rs.FishingSpots(&sp, i) {
+				m.res.spots = append(m.res.spots, spotState{sp.Id(), sp.Candidate()})
+			}
+		}
+	case protocol.MessageSkillResult:
+		var sr protocol.SkillResult
+		sr.Init(tbl.Bytes, tbl.Pos)
+		m.skillCode = sr.Code()
 	case protocol.MessagePong:
 		var p protocol.Pong
 		p.Init(tbl.Bytes, tbl.Pos)
