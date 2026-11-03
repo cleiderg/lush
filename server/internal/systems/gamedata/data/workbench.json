@@ -1,0 +1,15 @@
+[
+  {"output": "wooden_chair", "inputs": [{"item": "logs", "quantity": 4}], "gold": 10},
+  {"output": "stool", "inputs": [{"item": "logs", "quantity": 2}], "gold": 5},
+  {"output": "wooden_table", "inputs": [{"item": "logs", "quantity": 8}], "gold": 20},
+  {"output": "oak_dining_table", "inputs": [{"item": "oak_logs", "quantity": 6}], "gold": 60},
+  {"output": "desk", "inputs": [{"item": "oak_logs", "quantity": 4}], "gold": 30},
+  {"output": "bookshelf", "inputs": [{"item": "oak_logs", "quantity": 5}], "gold": 30},
+  {"output": "single_bed", "inputs": [{"item": "logs", "quantity": 10}], "gold": 50},
+  {"output": "double_bed", "inputs": [{"item": "oak_logs", "quantity": 8}], "gold": 100},
+  {"output": "eucalyptus_wardrobe", "inputs": [{"item": "eucalyptus_logs", "quantity": 6}], "gold": 150},
+  {"output": "eucalyptus_cabinet", "inputs": [{"item": "eucalyptus_logs", "quantity": 4}], "gold": 100},
+  {"output": "tv_stand", "inputs": [{"item": "logs", "quantity": 6}], "gold": 40},
+  {"output": "trophy_shelf", "inputs": [{"item": "oak_logs", "quantity": 3}], "gold": 30},
+  {"output": "mounted_coyote_pelt", "inputs": [{"item": "coyote_pelt", "quantity": 3}], "gold": 50}
+]
