@@ -64,12 +64,17 @@ func TestItemsMatchSpec(t *testing.T) {
 		{"Trout", gamedata.KindFood, gamedata.SlotNone, 0, 0, 0, 0, 1, 10, none, 7, false},
 		{"Burnt fish", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 0, none, 0, false},
 	}
-	if len(d.Items) != len(tests) {
-		t.Fatalf("got %d items, spec has %d", len(d.Items), len(tests))
-	}
+	// Housing items are checked in housing_test.go.
 	byName := map[string]gamedata.Item{}
 	for _, it := range d.Items {
+		switch it.Kind {
+		case gamedata.KindFurniture, gamedata.KindWallpaper, gamedata.KindFloorCovering:
+			continue
+		}
 		byName[it.Name] = it
+	}
+	if len(byName) != len(tests) {
+		t.Fatalf("got %d items, spec has %d", len(byName), len(tests))
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
