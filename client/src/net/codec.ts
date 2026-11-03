@@ -8,6 +8,7 @@ import {
   FishingSpotState, LevelUp, SkillCatalog, FishingSpotKindDef, TreeKindDef, ToolSkill, ResourceState, Skill, SkillAction, SkillResult, SkillResultCode, SkillStats, SkillTarget, ShopResult, ShopResultCode, ShopSell, Snapshot, TradeAccept,
   TradeCancel, TradeItem, TradeOffer, TradeRemove, TradeRequest, TradeRequestNotice, TradeResult, TradeResultCode,
   TradeSetGold, TradeState, Vec2, Welcome,
+  HomeState, HouseClaim, HouseInfo, HouseState, HousingResult, HousingResultCode, HousingState, PlacedItem, RentPay,
 } from '../protocol';
 
 export interface EntityState {
@@ -142,6 +143,38 @@ export interface TradeView {
   partnerAccepted: boolean;
 }
 
+/** One house from HousingState. */
+export interface HouseInfoState {
+  id: number;
+  areaId: number;
+  ownerName: string;
+  mine: boolean;
+  /** Unix seconds; 0 when unowned. */
+  paidUntil: number;
+  state: HouseState;
+  open: boolean;
+}
+
+/** One placed item in a home. */
+export interface PlacedItemState {
+  placedId: number;
+  itemId: number;
+  x: number;
+  y: number;
+  rotation: number;
+  layer: number;
+  parentPlacedId: number;
+}
+
+/** One home's room. */
+export interface HomeView {
+  houseId: number;
+  ownerName: string;
+  wallpaperItemId: number;
+  floorItemId: number;
+  items: PlacedItemState[];
+}
+
 /** Public seat and turn state of one card table. */
 export interface CardTableView {
   tableId: number;
@@ -243,6 +276,9 @@ export type ServerMessage =
   | { type: 'shopResult'; code: ShopResultCode }
   | { type: 'combatHit'; tick: number; hits: HitEvent[] }
   | { type: 'npcCatalog'; npcs: NpcInfo[] }
+  | { type: 'housingState'; houses: HouseInfoState[] }
+  | { type: 'housingResult'; code: HousingResultCode }
+  | ({ type: 'homeState' } & HomeView)
   | { type: 'tradeRequestNotice'; fromId: number }
   | ({ type: 'tradeState' } & TradeView)
   | { type: 'tradeResult'; code: TradeResultCode }
@@ -319,6 +355,18 @@ export function encodePickUp(groundItemId: number): Uint8Array {
 export function encodeAttackTarget(targetId: number): Uint8Array {
   const b = new flatbuffers.Builder(16);
   return wrap(b, Message.AttackTarget, AttackTarget.createAttackTarget(b, targetId));
+}
+
+/** Claim an empty house. */
+export function encodeHouseClaim(houseId: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.HouseClaim, HouseClaim.createHouseClaim(b, houseId));
+}
+
+/** Prepay months of rent on the player's own house. */
+export function encodeRentPay(houseId: number, months: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.RentPay, RentPay.createRentPay(b, houseId, months));
 }
 
 /** Ask targetId to trade, or accept their pending request. */
@@ -583,6 +631,39 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
         npcs.push({ id: d.id(), name: d.name() ?? '', combatLevel: d.combatLevel() });
       }
       return { type: 'npcCatalog', npcs };
+    }
+    case Message.HousingState: {
+      const m = env.msg(new HousingState()) as HousingState;
+      const houses: HouseInfoState[] = [];
+      const h = new HouseInfo();
+      for (let i = 0; i < m.housesLength(); i++) {
+        const o = m.houses(i, h);
+        if (!o) continue;
+        houses.push({
+          id: o.id(), areaId: o.areaId(), ownerName: o.ownerName() ?? '', mine: o.mine(),
+          paidUntil: Number(o.paidUntil()), state: o.state(), open: o.open(),
+        });
+      }
+      return { type: 'housingState', houses };
+    }
+    case Message.HousingResult:
+      return { type: 'housingResult', code: (env.msg(new HousingResult()) as HousingResult).code() };
+    case Message.HomeState: {
+      const m = env.msg(new HomeState()) as HomeState;
+      const items: PlacedItemState[] = [];
+      const p = new PlacedItem();
+      for (let i = 0; i < m.itemsLength(); i++) {
+        const o = m.items(i, p);
+        if (!o) continue;
+        items.push({
+          placedId: o.placedId(), itemId: o.itemId(), x: o.x(), y: o.y(),
+          rotation: o.rotation(), layer: o.layer(), parentPlacedId: o.parentPlacedId(),
+        });
+      }
+      return {
+        type: 'homeState', houseId: m.houseId(), ownerName: m.ownerName() ?? '',
+        wallpaperItemId: m.wallpaperItemId(), floorItemId: m.floorItemId(), items,
+      };
     }
     case Message.TradeRequestNotice:
       return { type: 'tradeRequestNotice', fromId: (env.msg(new TradeRequestNotice()) as TradeRequestNotice).fromId() };
