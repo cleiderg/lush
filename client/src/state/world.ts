@@ -12,6 +12,7 @@ import { type PendingInput, Prediction, RUN_SPEED, WALK_SPEED } from './predicti
 import { SkillState } from './skills';
 import { bankResultText, levelUpText, skillResultText } from './skillMessages';
 import { HousingStore, housingResultText } from './housing';
+import { GatheringState } from './gathering';
 import { TradeStore } from './trade';
 
 export interface PlayerView {
@@ -57,6 +58,8 @@ export class GameState {
   readonly chat = new ChatStore();
   /** Skill levels and XP, felled trees, fishing spot positions, and LevelUp and SkillResult events to drain. */
   readonly skills = new SkillState();
+  /** The resource the local player is gathering from and the attempt progress. */
+  readonly gathering = new GatheringState();
   /** The server's clock (UTC ms), kept as an offset from the local one; drives the sun. */
   readonly clock = new SharedClock();
 
@@ -87,6 +90,7 @@ export class GameState {
       this.cardTables.clear();
       this.chat.clearOverheads();
       this.skills.reset();
+      this.gathering.clear();
     } else if (msg.type === 'restartCountdown') {
       this.restartSeconds = msg.seconds;
     } else if (msg.type === 'snapshot') {
@@ -156,6 +160,7 @@ export class GameState {
       if (msg.entityId === this.playerId) this.chat.system(levelUpText(msg));
     } else if (msg.type === 'skillResult') {
       this.skills.results.push({ skill: msg.skill, code: msg.code, itemId: msg.itemId, level: msg.level });
+      this.gathering.onResult(msg.code, now, (id) => this.skills.fishingSpotCandidate(id));
       this.chat.system(skillResultText(msg, (id) => this.items.item(id)?.name));
     } else if (msg.type === 'chat') {
       this.chat.push(msg.speakerId, msg.text, now);
@@ -164,6 +169,7 @@ export class GameState {
 
   /** Predicts one local input at the walk or run speed; the caller sends it with the matching Run flag. */
   applyMove(moveX: number, moveZ: number, dt: number, running: boolean): PendingInput {
+    if (moveX !== 0 || moveZ !== 0) this.gathering.clear();
     return this.prediction.applyInput(moveX, moveZ, dt, running ? this.runSpeed : this.walkSpeed);
   }
 

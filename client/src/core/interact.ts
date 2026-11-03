@@ -26,14 +26,19 @@ export function interactTarget(game: GameState, now: number, stall: Point): Inte
   });
 }
 
+function skillAction(game: GameState, actions: InteractActions, target: SkillTarget, targetId: number): void {
+  game.gathering.noteAction(target, targetId);
+  actions.sendSkillAction(target, targetId);
+}
+
 /** Runs the Interact button: opens the shop, the bank or a card table's panel, picks up a ground item, attacks, or sends a trade request; nothing without a target. */
 export function interact(game: GameState, now: number, stall: Point, actions: InteractActions): InteractTarget | null {
   const target = interactTarget(game, now, stall);
   if (target?.type === 'shop') actions.openShop();
   else if (target?.type === 'bank') actions.openBank();
-  else if (target?.type === 'grill') actions.sendSkillAction(SkillTarget.Grill, 0);
-  else if (target?.type === 'tree') actions.sendSkillAction(SkillTarget.Tree, target.id);
-  else if (target?.type === 'fishingSpot') actions.sendSkillAction(SkillTarget.FishingSpot, target.id);
+  else if (target?.type === 'grill') skillAction(game, actions, SkillTarget.Grill, 0);
+  else if (target?.type === 'tree') skillAction(game, actions, SkillTarget.Tree, target.id);
+  else if (target?.type === 'fishingSpot') skillAction(game, actions, SkillTarget.FishingSpot, target.id);
   else if (target?.type === 'cardTable') actions.openCardTable(target.id);
   else if (target?.type === 'pickUp') actions.sendPickUp(target.id);
   else if (target?.type === 'attack') actions.sendAttackTarget(target.id);
