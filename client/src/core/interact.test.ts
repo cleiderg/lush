@@ -67,6 +67,7 @@ function setup(
       openShop: () => shop?.tryOpen(),
       openBank: () => {},
       openCardTable: (id) => cardTable?.open(id),
+      sendSkillAction: (t, id) => session.sendSkillAction(t, id),
       sendPickUp: (id) => session.sendPickUp(id),
       sendAttackTarget: (id) => session.sendAttackTarget(id),
       sendTradeRequest: (id) => session.sendTradeRequest(id),

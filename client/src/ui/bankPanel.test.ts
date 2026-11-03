@@ -15,7 +15,7 @@ import { SHOP_STALL } from './shopPanel';
 function item(id: number, name: string): ItemInfo {
   return {
     id, name, kind: ItemKind.Loot, equipSlot: EquipSlot.None, levelToEquip: 1, accuracy: 0, strength: 0, defence: 0, attackSpeed: 0,
-    heal: 0, shopBuysFor: 1, shopSells: false, shopSellsFor: 0,
+    heal: 0, shopBuysFor: 1, shopSells: false, shopSellsFor: 0, toolSkill: 0, toolLevel: 0, cookingLevel: 0,
   };
 }
 
@@ -101,9 +101,9 @@ describe('bank panel (#467 AC2)', () => {
 
   it('Interact at the booth sends BankOpen', () => {
     const s = setup();
-    const game = { prediction: { pos: BANK_BOOTH }, remotes: () => [], items: { entityInfo: () => undefined, groundItems: [] } } as never;
+    const game = { prediction: { pos: BANK_BOOTH }, remotes: () => [], items: { entityInfo: () => undefined, groundItems: [], inventory: { slots: [], equipment: { weapon: 0 } } }, skills: { fishingSpots: () => [], level: () => 1, treeKind: () => undefined, isFelled: () => false } } as never;
     const target = interact(game, 0, SHOP_STALL, {
-      openShop: vi.fn(), openBank: () => s.panel.open(), openCardTable: vi.fn(), sendPickUp: vi.fn(), sendAttackTarget: vi.fn(), sendTradeRequest: vi.fn(),
+      openShop: vi.fn(), openBank: () => s.panel.open(), openCardTable: vi.fn(), sendPickUp: vi.fn(), sendAttackTarget: vi.fn(), sendTradeRequest: vi.fn(), sendSkillAction: vi.fn(),
     });
     expect(target).toEqual({ type: 'bank' });
     expect(s.t.sent.map((b) => env(b).msgType())).toEqual([Message.BankOpen]);

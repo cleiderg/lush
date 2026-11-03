@@ -57,6 +57,7 @@ const controls = new Controls({
       openShop: () => shop.tryOpen(),
       openBank: () => bank.open(),
       openCardTable: (id) => cardTable.open(id),
+      sendSkillAction: (target, id) => session.sendSkillAction(target, id),
       sendPickUp: (id) => session.sendPickUp(id),
       sendAttackTarget: (id) => session.sendAttackTarget(id),
       sendTradeRequest: (id) => session.sendTradeRequest(id),

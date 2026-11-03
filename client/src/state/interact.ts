@@ -2,6 +2,7 @@ import areas from '../../../shared/map/areas.json';
 import { EntityKind } from '../protocol';
 import { BANK_BOOTH, nearBank } from './bank';
 import { CARD_TABLE_POSITIONS, inCardTableReach, type CardTablePosition } from './cardTables';
+import { GRILL, type SkillInteractInput, type SkillResource } from './skillTargets';
 import { nearShop, TILE_METRES, type Point } from './shop';
 
 /**
@@ -78,12 +79,19 @@ export interface InteractInput {
   groundItems?: readonly InteractGroundItem[];
   /** Card table centres in metres; CARD_TABLE_POSITIONS when omitted. */
   cardTables?: readonly CardTablePosition[];
+  /** Raw fish and the trees and fishing spots the player may work; none when omitted. */
+  skill?: SkillInteractInput;
+  /** The cooking grill in metres; GRILL when omitted. */
+  grill?: Point;
   pvpZones?: readonly Polygon[];
 }
 
 export type InteractTarget =
   | { type: 'shop' }
   | { type: 'bank' }
+  | { type: 'grill' }
+  | { type: 'tree'; id: number; kind: string }
+  | { type: 'fishingSpot'; id: number; kind: string }
   | { type: 'cardTable'; id: number }
   | { type: 'pickUp'; id: number }
   | { type: 'attack'; id: number }
@@ -119,6 +127,24 @@ function nearest<T extends { id: number; x: number; z: number }>(pos: Point, lis
   return best;
 }
 
+/** Reach in tiles, diagonals included, for the grill, trees and fishing spots (skills spec, Interact button). */
+export const SKILL_RANGE_TILES = 1;
+
+/** The nearest resource within SKILL_RANGE_TILES of pos (trees before spots, then the lower id on a tie); null if none. */
+function nearestResource(pos: Point, list: readonly SkillResource[]): SkillResource | null {
+  let best: SkillResource | null = null;
+  let bestD = Infinity;
+  for (const r of list) {
+    if (tileDistance(pos, r) > SKILL_RANGE_TILES) continue;
+    const d = (r.x - pos.x) ** 2 + (r.z - pos.z) ** 2;
+    if (d < bestD) {
+      best = r;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
 /** The nearest card table within reach of pos, ties to the lower id; null if none. */
 export function nearestCardTable(
   pos: Point,
@@ -129,13 +155,16 @@ export function nearestCardTable(
 
 /**
  * What the Interact button does (gameplay spec, Interact button): the shop stall within shop
- * distance; else the bank booth within 2 tiles (open the bank); else the nearest card table within reach (open its panel); else the nearest ground item within pick-up range (pick up); else the nearest NPC within attack range (attack); else the nearest player within
+ * distance; else the bank booth within 2 tiles (open the bank); else the grill within 1 tile while carrying raw fish (cook); else the nearest usable tree or fishing spot within 1 tile (chop, fish); else the nearest card table within reach (open its panel); else the nearest ground item within pick-up range (pick up); else the nearest NPC within attack range (attack); else the nearest player within
  * trade distance (a trade request outside the PvP zone, an attack inside it). Null: nothing.
  */
 export function pickInteractTarget(input: InteractInput): InteractTarget | null {
   const { pos } = input;
   if (nearShop(pos, input.stall)) return { type: 'shop' };
   if (nearBank(pos, input.bank ?? BANK_BOOTH)) return { type: 'bank' };
+  if (input.skill?.hasRawFish && tileDistance(pos, input.grill ?? GRILL) <= SKILL_RANGE_TILES) return { type: 'grill' };
+  const res = nearestResource(pos, input.skill?.resources ?? []);
+  if (res) return { type: res.type, id: res.id, kind: res.kind };
   const table = nearestCardTable(pos, input.cardTables);
   if (table) return { type: 'cardTable', id: table.id };
   const item = nearestPickUp(pos, input.groundItems ?? []);
