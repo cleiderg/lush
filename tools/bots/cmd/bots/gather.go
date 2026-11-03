@@ -23,6 +23,9 @@ const (
 	shopReach = 1.5
 	// retryEvery spaces repeated ShopBuys and SkillActions that got no answer.
 	retryEvery = 5 * time.Second
+	// posSlack is how far the server's position can be from the Snapshot's,
+	// which is rounded to the decimetre.
+	posSlack = 0.05
 )
 
 // place is a tree or a candidate fishing spot, in world metres.
@@ -158,9 +161,14 @@ func headTo(x, z, px, pz float64) (dx, dz, d float64) {
 // inReach is the server's range check for gathering: the bot's tile is within
 // 1 tile of the target's, diagonals included (skills range_tiles 1 and
 // range_diagonal; a tile is 1 m). A distance check isn't enough: trees and
-// spots needn't sit at a tile centre, so 1.4 m can be 2 tiles away.
+// spots needn't sit at a tile centre, so 1.4 m can be 2 tiles away. Snapshot
+// positions are rounded to the decimetre, so the bot's own position counts as
+// in reach only if it is wherever within that rounding the server has it.
 func inReach(x, z float64, p place) bool {
-	return math.Abs(math.Floor(x)-math.Floor(p.x)) <= 1 && math.Abs(math.Floor(z)-math.Floor(p.z)) <= 1
+	near := func(a, t float64) bool {
+		return math.Floor(a-posSlack) >= math.Floor(t)-1 && math.Floor(a+posSlack) <= math.Floor(t)+1
+	}
+	return near(x, p.x) && near(z, p.z)
 }
 
 // pick chooses the nearest standing tree or active net spot to (x, z). Only

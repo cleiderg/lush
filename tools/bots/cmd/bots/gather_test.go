@@ -135,6 +135,11 @@ func TestGathererTileReach(t *testing.T) {
 	if s := g.step(now, -84.3, -17.7, inv, res); s.act != nil || s.moveX <= 0 {
 		t.Errorf("1.4 m but 2 tiles away: %+v", s)
 	}
+	// a Snapshot z of -19.0 can be -19.04 on the server, tile -20: 2 tiles
+	// from the spot's -18, so the bot walks on (seen on the real pond)
+	if s := g.step(now, -81.8, -19.0, inv, res); s.act != nil || s.moveZ <= 0 {
+		t.Errorf("on a tile edge, maybe 2 tiles away: %+v", s)
+	}
 	s := g.step(now, -83.5, -17.7, inv, res)
 	if s.act == nil || s.act.id != 0 {
 		t.Fatalf("1 tile away: %+v", s)
