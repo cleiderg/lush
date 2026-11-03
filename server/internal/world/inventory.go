@@ -305,6 +305,28 @@ func (inv *Inventory) RemoveAt(index int) ([]Change, error) {
 	return []Change{{Kind: ChangeRemove, Item: item, Qty: 1}}, nil
 }
 
+// ReplaceAt swaps the single item in inventory slot index for item, keeping
+// its slot. It fails, changing nothing, if there is no such slot, it is empty
+// or holds more than one item. The changes are the removal and the addition.
+func (inv *Inventory) ReplaceAt(index int, item gamedata.ItemID) ([]Change, error) {
+	if inv.locked {
+		return nil, fmt.Errorf("replace slot %d: %w", index, ErrInventoryLocked)
+	}
+	if index < 0 || index >= len(inv.Slots) {
+		return nil, fmt.Errorf("replace slot %d: %w", index, ErrBadSlot)
+	}
+	s := &inv.Slots[index]
+	if s.Empty() {
+		return nil, fmt.Errorf("replace slot %d: %w", index, ErrEmptySlot)
+	}
+	if s.Qty != 1 || item == 0 {
+		return nil, fmt.Errorf("replace slot %d: %w", index, ErrBadQuantity)
+	}
+	old := s.Item
+	s.Item = item
+	return []Change{{Kind: ChangeRemove, Item: old, Qty: 1}, {Kind: ChangeAdd, Item: item, Qty: 1}}, nil
+}
+
 // RemoveFromSlot takes qty items out of inventory slot index. It fails,
 // changing nothing, if there is no such slot, it is empty, qty is not positive
 // or the slot holds fewer than qty.
