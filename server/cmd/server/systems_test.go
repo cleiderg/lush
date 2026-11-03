@@ -33,13 +33,14 @@ func realSystems(t *testing.T) (*world.World, []scheduled, *areas.Lookup, *gamed
 	}
 	clock := world.NewFakeClock(time.Unix(0, 0))
 	w := world.New(world.DefaultConfig())
-	sess := session.New(session.Config{Data: data}, w, clock, store.NewMemory(), nil)
+	players := store.NewMemory()
+	sess := session.New(session.Config{Data: data}, w, clock, players, nil)
 	t.Cleanup(sess.Close)
 	lookup, err := areas.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	systems, err := gameSystems(mover, data, lookup, grid, 5, w.TickInterval(), clock, sess)
+	systems, err := gameSystems(mover, data, lookup, grid, 5, w.TickInterval(), clock, sess, players)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +70,7 @@ func TestGameSystemsRegisterItemsShopTradeRegenBeforeSession(t *testing.T) {
 			t.Errorf("%s every %d ticks, want %d", s.sys.Name(), s.every, want)
 		}
 	}
-	want := []string{"movement", "gather", "cook", "npc", "emote", "chat", "items", "shop", "trade", "bank", "cardroom", "grounditems",
+	want := []string{"movement", "gather", "cook", "npc", "emote", "chat", "items", "shop", "trade", "bank", "cardroom", "housing", "grounditems",
 		"pvp_combat", "pve_combat", "spawner", "regen", "session"}
 	if !slices.Equal(names, want) {
 		t.Fatalf("systems = %v, want %v", names, want)

@@ -35,6 +35,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/emote"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/grounditems"
+	"github.com/cleiderg/lush/server/internal/systems/housing"
 	"github.com/cleiderg/lush/server/internal/systems/pvp"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
 	"github.com/cleiderg/lush/server/internal/systems/trade"
@@ -190,7 +191,8 @@ type Server struct {
 	mu     sync.Mutex
 	guests map[int64]*guest // by store id; session ids for known players
 	nextID uint32
-	idle   *list.List // offline guests, longest offline first
+	keep   map[int64]world.PlayerID // owners of houses: their session ids are never reused
+	idle   *list.List               // offline guests, longest offline first
 	ops    []op
 	conns  map[transport.Conn]struct{}
 
@@ -200,17 +202,21 @@ type Server struct {
 	pots  map[cardroom.CommitID]*potRef // open pots by game; saver goroutine
 
 	// Tick-goroutine only.
-	trades   *trade.System       // set by SetTrades; nil without trading
-	cards    *cardroom.System    // set by SetCardRoom; nil without the card room
-	bank     *bank.System        // set by SetBank; nil without the bank
-	gather   *skills             // set by SetGather; nil without gathering
-	cook     *cook.System        // set by SetCook; nil without cooking
-	pvp      *pvp.Combat         // set by SetPvP; nil without PvP
-	pve      *combat.System      // set by SetPvE; nil without PvE
-	ground   *grounditems.System // set by SetGroundItems; where PvP drops spawn
-	tickHits []hit               // this tick's PvP and PvE swings, sent as CombatHit
-	levelUps []levelUp           // this tick's skill level-ups, sent as LevelUp
-	seen     []hit               // reused: the hits one player can see
+	trades   *trade.System    // set by SetTrades; nil without trading
+	cards    *cardroom.System // set by SetCardRoom; nil without the card room
+	bank     *bank.System     // set by SetBank; nil without the bank
+	housing  *housing.System  // set by SetHousing; nil without housing
+	homes    store.Housing    // set by SetHousing
+	areaOf   map[housing.HouseID]uint8
+	lapseLog map[housing.HouseID]bool // houses whose unwired lapse has been logged
+	gather   *skills                  // set by SetGather; nil without gathering
+	cook     *cook.System             // set by SetCook; nil without cooking
+	pvp      *pvp.Combat              // set by SetPvP; nil without PvP
+	pve      *combat.System           // set by SetPvE; nil without PvE
+	ground   *grounditems.System      // set by SetGroundItems; where PvP drops spawn
+	tickHits []hit                    // this tick's PvP and PvE swings, sent as CombatHit
+	levelUps []levelUp                // this tick's skill level-ups, sent as LevelUp
+	seen     []hit                    // reused: the hits one player can see
 	live     map[world.PlayerID]*guest
 	gone     map[world.PlayerID]*guest // live players with no connection, waiting out the logout lock
 	nextSave time.Time
@@ -264,7 +270,7 @@ func New(cfg Config, w *world.World, clock world.Clock, players store.Players, l
 	banks, _ := players.(store.Bank)
 	return &Server{saver: newSaver(players, log), banks: banks, cfg: cfg, w: w, log: log, clock: clock, store: players,
 		data: data, catalog: encodeItemCatalog(data), npcCat: encodeNpcCatalog(data), cardCat: encodeCardTableCatalog(data), newToken: newToken,
-		pots: map[cardroom.CommitID]*potRef{}, guests: map[int64]*guest{}, idle: list.New(), conns: map[transport.Conn]struct{}{},
+		pots: map[cardroom.CommitID]*potRef{}, keep: map[int64]world.PlayerID{}, lapseLog: map[housing.HouseID]bool{}, guests: map[int64]*guest{}, idle: list.New(), conns: map[transport.Conn]struct{}{},
 		live: map[world.PlayerID]*guest{}, gone: map[world.PlayerID]*guest{}, grid: interest.NewGrid(), npcsIn: map[world.PlayerID]uint64{}, bld: flatbuffers.NewBuilder(1024)}
 }
 
@@ -355,7 +361,7 @@ func (s *Server) ServeConn(c transport.Conn) {
 			protocol.MessageCardTableReady, protocol.MessageShedPlay, protocol.MessageShedDraw,
 			protocol.MessageBankOpen, protocol.MessageBankClose, protocol.MessageBankDeposit,
 			protocol.MessageBankWithdraw, protocol.MessageBankDepositInventory, protocol.MessageBankDepositEquipment,
-			protocol.MessageSkillAction:
+			protocol.MessageSkillAction, protocol.MessageHouseClaim, protocol.MessageRentPay:
 			if cmd := m.command(g.id); cmd != nil {
 				s.w.Enqueue(cmd)
 			}
@@ -495,10 +501,12 @@ func (s *Server) guestLocked(sp store.Player, fresh bool) (*guest, error) {
 		return nil, fmt.Errorf("load player %d: %w", sp.ID, err)
 	}
 	var id world.PlayerID
-	if int(s.nextID) < s.cfg.MaxGuests {
+	if kept, ok := s.keep[sp.ID]; ok {
+		id = kept
+	} else if int(s.nextID) < s.cfg.MaxGuests {
 		s.nextID++
 		id = world.PlayerID(s.nextID)
-	} else if e := s.idle.Front(); e != nil {
+	} else if e := s.evictable(); e != nil {
 		old := s.idle.Remove(e).(*guest)
 		old.idle = nil
 		delete(s.guests, old.storeID)
@@ -518,6 +526,18 @@ func (s *Server) guestLocked(sp store.Player, fresh bool) (*guest, error) {
 	g := &guest{id: id, storeID: sp.ID, ver: sp.Version, pos: pos, xp: int(sp.XP), skills: skillsFromStore(sp.Skills), inv: inv}
 	s.guests[sp.ID] = g
 	return g, nil
+}
+
+// evictable returns the offline guest, longest offline first, whose session
+// id may be reused: house owners keep theirs, since a house names its owner by
+// session id. Caller holds s.mu.
+func (s *Server) evictable() *list.Element {
+	for e := s.idle.Front(); e != nil; e = e.Next() {
+		if _, owner := s.keep[e.Value.(*guest).storeID]; !owner {
+			return e
+		}
+	}
+	return nil
 }
 
 // skillsToStore converts the world's skill XP to the store's.
@@ -678,6 +698,9 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		}
 		if p != nil && s.cards != nil && s.cards.Committing(id) {
 			continue // so must a card room stake, payout or refund
+		}
+		if p != nil && s.housing != nil && p.Inv.Locked() {
+			continue // and a house claim or rent payment's (it locks the inventory)
 		}
 		s.remove(g)
 	}
@@ -985,6 +1008,9 @@ func (s *Server) sendInitial(g *guest, p *world.Player) {
 	g.sentSkills = p.SkillXP
 	g.conn.Send(encodeSkillStats(s.bld, &p.SkillXP))
 	s.sendInitialSkills(g)
+	if s.housing != nil {
+		g.conn.Send(s.housingState(g, s.housing.List()))
+	}
 }
 
 // sendChanged sends PlayerStats, InventoryState and SkillStats if they
@@ -1086,6 +1112,9 @@ func (s *Server) appendEconomy(dst []econReq, g *guest, p *world.Player) []econR
 		}
 		if ev.Reason == bank.ReasonDeposit || ev.Reason == bank.ReasonWithdraw {
 			continue // saved by the transfer's own transaction (CommitBank)
+		}
+		if ev.Reason == housing.ReasonClaim || ev.Reason == housing.ReasonRent {
+			continue // saved by the house's own transaction (CommitHousing)
 		}
 		if isCardRoom(ev.Reason) {
 			continue // saved by the card room's own transaction (CommitCardRoom)
