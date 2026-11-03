@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 16
+  Current = 17
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -807,8 +807,10 @@ table PlacedItem {
   x: ubyte;
   y: ubyte;
   rotation: ubyte;       // 0..3, in quarter turns
-  layer: ubyte;          // 0 floor, 1 surface, 2 wall
+  layer: ubyte;          // room.go Layer bit values: 1 floor, 2 rug, 4 surface, 8 wall
   parent_placed_id: uint32; // 0 unless stacked on a surface piece
+  slot: ubyte;           // surface slot index on the parent (surface items)
+  side: ubyte;           // wall items: 0 North, 1 East, 2 South, 3 West; x is the position along the wall
 }
 
 // Server -> client: one home's room.
@@ -818,6 +820,104 @@ table HomeState {
   wallpaper_item_id: ushort;  // EmptyItem.Id when none
   floor_item_id: ushort;      // EmptyItem.Id when none
   items: [PlacedItem];
+}
+
+// Wall side for wall items (room.go Side). For a wall item, x is the position
+// along the wall: west to east on North and South, north to south on East and
+// West, and y is unused.
+enum WallSide : ubyte {
+  North = 0,
+  East = 1,
+  South = 2,
+  West = 3
+}
+
+// Client -> server: enter a home. The server replies with HomeState, or
+// HomeResult on refusal.
+table HomeEnter {
+  house_id: ushort;
+}
+
+// Client -> server: leave the home the player is in.
+table HomeLeave {}
+
+// Client -> server: place an inventory item in the room. rotation is in
+// quarter turns. parent_placed_id and slot are for surface items; side (a
+// WallSide) is for wall items, with x the position along the wall.
+// The server replies with HomeResult.
+table HomePlace {
+  inventory_slot: ubyte;
+  x: ubyte;
+  y: ubyte;
+  rotation: ubyte;
+  parent_placed_id: uint32;
+  slot: ubyte;
+  side: ubyte;
+}
+
+// Client -> server: move a placed item (same placement fields as HomePlace).
+table HomeMove {
+  placed_id: uint32;
+  x: ubyte;
+  y: ubyte;
+  rotation: ubyte;
+  parent_placed_id: uint32;
+  slot: ubyte;
+  side: ubyte;
+}
+
+// Client -> server: rotate a placed item in place, in quarter turns.
+table HomeRotate {
+  placed_id: uint32;
+  rotation: ubyte;
+}
+
+// Client -> server: pick a placed item back up into the inventory.
+table HomeRemove {
+  placed_id: uint32;
+}
+
+// Client -> server: apply a wallpaper item from the inventory.
+table HomeSetWallpaper {
+  inventory_slot: ubyte;
+}
+
+// Client -> server: apply a flooring item from the inventory.
+table HomeSetFloor {
+  inventory_slot: ubyte;
+}
+
+// Client -> server: set whether visitors may enter (owner only).
+table HomeSetOpen {
+  open: bool;
+}
+
+// Outcome of a home operation. The first block mirrors room.go's Result.
+enum HomeResultCode : ubyte {
+  Ok = 0,
+  OutOfBounds,    // the placement is outside the room grid
+  Overlap,        // it overlaps another item on the same layer
+  BadRotation,    // the rotation is not a quarter turn in range
+  BadLayer,       // the item can't go where the placement asks
+  NotSurfaceItem, // the item can't sit on a surface
+  NoSurface,      // the parent is missing or has no surface slots
+  SurfaceFull,    // no free surface slot, or the requested slot is taken
+  HasItems,       // the surface item still holds items; remove them first
+  NotFound,       // no such placed item
+  NotOwner,       // only the owner may do this
+  Locked,         // the home is locked to visitors
+  Full,           // the home already has the maximum number of players
+  TooFar,         // the player is not close enough to the house door
+  NotInInventory, // the inventory slot is empty or holds the wrong item
+  InventoryFull,  // no room in the inventory for the removed item
+  NotInHome,      // the player is not inside a home
+  RateLimited,    // too many edits too quickly
+  SaveFailed      // the change could not be saved; nothing changed
+}
+
+// Server -> client: result of a home operation.
+table HomeResult {
+  code: HomeResultCode;
 }
 
 union Message {
@@ -883,7 +983,17 @@ union Message {
   HouseClaim,
   RentPay,
   HousingResult,
-  HomeState
+  HomeState,
+  HomeEnter,
+  HomeLeave,
+  HomePlace,
+  HomeMove,
+  HomeRotate,
+  HomeRemove,
+  HomeSetWallpaper,
+  HomeSetFloor,
+  HomeSetOpen,
+  HomeResult
 }
 
 table Envelope {

@@ -1,7 +1,7 @@
 import * as flatbuffers from 'flatbuffers';
 import { describe, expect, it } from 'vitest';
 import {
-  Envelope, HomeState, HouseClaim, HouseInfo, HouseState, HousingResult, HousingResultCode, HousingState,
+  Envelope, HomePlace, HomeResult, HomeResultCode, HomeState, WallSide, HouseClaim, HouseInfo, HouseState, HousingResult, HousingResultCode, HousingState,
   ItemCatalog, ItemDef, Message, PlacedItem, PlacementKind, RentPay,
 } from './index.js';
 
@@ -89,5 +89,16 @@ describe('housing protocol', () => {
     expect([a.footprintW(), a.footprintD(), a.placement(), a.surfaceSlots()]).toEqual([2, 1, PlacementKind.FloorOrSurface, 4]);
     const n = m.items(1)!;
     expect([n.footprintW(), n.footprintD(), n.placement(), n.surfaceSlots()]).toEqual([0, 0, PlacementKind.None, 0]);
+  });
+
+  it('round-trips HomePlace and HomeResult', () => {
+    let b = new flatbuffers.Builder(64);
+    let buf = finish(b, Message.HomePlace, HomePlace.createHomePlace(b, 5, 3, 4, 2, 77, 1, WallSide.West));
+    const p = open(buf, Message.HomePlace, new HomePlace());
+    expect([p.inventorySlot(), p.x(), p.y(), p.rotation(), p.parentPlacedId(), p.slot(), p.side()])
+      .toEqual([5, 3, 4, 2, 77, 1, WallSide.West]);
+    b = new flatbuffers.Builder(32);
+    buf = finish(b, Message.HomeResult, HomeResult.createHomeResult(b, HomeResultCode.SurfaceFull));
+    expect(open(buf, Message.HomeResult, new HomeResult()).code()).toBe(HomeResultCode.SurfaceFull);
   });
 });

@@ -167,3 +167,34 @@ func TestItemDefFurnitureFields(t *testing.T) {
 		t.Fatal("defaults should mean not furniture")
 	}
 }
+
+func TestRoundTripHomePlaceResult(t *testing.T) {
+	b := flatbuffers.NewBuilder(64)
+	HomePlaceStart(b)
+	HomePlaceAddInventorySlot(b, 5)
+	HomePlaceAddX(b, 3)
+	HomePlaceAddY(b, 4)
+	HomePlaceAddRotation(b, 2)
+	HomePlaceAddParentPlacedId(b, 77)
+	HomePlaceAddSlot(b, 1)
+	HomePlaceAddSide(b, uint8(WallSideWest))
+	buf := finish(b, MessageHomePlace, HomePlaceEnd(b))
+	var p HomePlace
+	tbl := open(t, buf, MessageHomePlace)
+	p.Init(tbl.Bytes, tbl.Pos)
+	if p.InventorySlot() != 5 || p.X() != 3 || p.Y() != 4 || p.Rotation() != 2 ||
+		p.ParentPlacedId() != 77 || p.Slot() != 1 || p.Side() != uint8(WallSideWest) {
+		t.Fatalf("home place mismatch")
+	}
+
+	b = flatbuffers.NewBuilder(32)
+	HomeResultStart(b)
+	HomeResultAddCode(b, HomeResultCodeSurfaceFull)
+	buf = finish(b, MessageHomeResult, HomeResultEnd(b))
+	var r HomeResult
+	tbl = open(t, buf, MessageHomeResult)
+	r.Init(tbl.Bytes, tbl.Pos)
+	if r.Code() != HomeResultCodeSurfaceFull {
+		t.Fatalf("code = %v", r.Code())
+	}
+}
