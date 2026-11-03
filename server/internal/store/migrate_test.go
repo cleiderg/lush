@@ -14,7 +14,7 @@ import (
 )
 
 // latestMigration is the version of the newest file in db/migrations.
-const latestMigration = 7
+const latestMigration = 8
 
 // progressMigration is the version of 00003_player_progress.sql.
 const progressMigration = 3
@@ -460,5 +460,72 @@ func TestMigrateHousingDownUp(t *testing.T) {
 		if _, err := pool.Exec(ctx, tc.sql, tc.args...); err == nil {
 			t.Errorf("%s: accepted, want rejected", tc.name)
 		}
+	}
+}
+
+// homeRoomsMigration is the version of 00008_home_rooms.sql.
+const homeRoomsMigration = 8
+
+// TestMigrateHomeRoomsDownUp rolls the home rooms migration back, applies it
+// again and checks the new columns and the rug layer.
+func TestMigrateHomeRoomsDownUp(t *testing.T) {
+	url := os.Getenv("LUSH_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("LUSH_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatalf("up: %v", err)
+	}
+	db := stdlib.OpenDBFromPool(pool)
+	defer db.Close()
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const countCols = `SELECT count(*) FROM information_schema.columns
+		WHERE (table_name = 'placed_items' AND column_name IN ('slot', 'side')) OR (table_name = 'homes' AND column_name = 'locked')`
+	if _, err := provider.DownTo(ctx, homeRoomsMigration-1); err != nil {
+		t.Fatalf("down: %v", err)
+	}
+	var n int
+	if err := pool.QueryRow(ctx, countCols).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("columns after down = %d, err %v; want 0", n, err)
+	}
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+	if err := pool.QueryRow(ctx, countCols).Scan(&n); err != nil || n != 3 {
+		t.Fatalf("columns after up = %d, err %v; want 3", n, err)
+	}
+
+	var p int64
+	if err := pool.QueryRow(ctx, "INSERT INTO players (token_hash) VALUES ('h') RETURNING id").Scan(&p); err != nil {
+		t.Fatal(err)
+	}
+	for _, sql := range []string{
+		"INSERT INTO housing_areas (area_id, name, x, z) VALUES (1, 'a', 0, 0)",
+		"INSERT INTO house_plots (plot_id, area_id, x, z) VALUES (1, 1, 0, 0)",
+		"INSERT INTO homes (plot_id, owner_id) VALUES (1, " + "(SELECT id FROM players LIMIT 1))",
+		"INSERT INTO placed_items (home_id, item_id, x, y, layer, slot, side) SELECT home_id, 5, 1, 1, 'rug', 1, 3 FROM homes",
+	} {
+		if _, err := pool.Exec(ctx, sql); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	var locked bool
+	if err := pool.QueryRow(ctx, "SELECT locked FROM homes").Scan(&locked); err != nil || locked {
+		t.Fatalf("locked default = %v, err %v; want false", locked, err)
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO placed_items (home_id, item_id, x, y, layer, side) SELECT home_id, 5, 1, 1, 'wall', 4 FROM homes"); err == nil {
+		t.Error("side 4 accepted, want rejected")
 	}
 }

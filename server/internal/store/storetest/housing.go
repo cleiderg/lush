@@ -279,4 +279,157 @@ func RunHousing(t *testing.T, factory func(t *testing.T) (HousingStore, func() [
 			t.Errorf("audit has %d entries, want 1", n)
 		}
 	})
+
+	t.Run("home rooms", func(t *testing.T) {
+		s, audit, ps := newRig(t, 500, 100)
+		if _, err := s.ClaimPlot(ctx, claim(ps[0], 1, 100)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.ClaimPlot(ctx, claim(ps[1], 2, 100)); err != nil {
+			t.Fatal(err)
+		}
+		homes, err := s.LoadHomes(ctx)
+		if err != nil || len(homes) != 2 {
+			t.Fatalf("LoadHomes = %+v, %v", homes, err)
+		}
+		h0, h1 := homes[0], homes[1]
+		if h0.PlotID != 1 || h0.OwnerID != ps[0].ID || h0.Locked || len(h0.Items) != 0 || h1.PlotID != 2 {
+			t.Fatalf("homes = %+v", homes)
+		}
+
+		var hold store.Holdings
+		hold.Gold = 400
+		hold.Inventory[0] = store.Stack{Item: 9, Qty: 2}
+		table := store.PlacedItem{Item: 7, X: 2, Y: 3, Rotation: 1, Layer: store.LayerFloor}
+		got, err := s.ApplyHomeEdit(ctx, store.HomeEdit{HomeID: h0.ID, OwnerID: ps[0].ID, Holdings: &hold,
+			Items: []store.PlacedItem{table}, WallpaperItem: 30, FlooringItem: 31},
+			[]store.Entry{{Kind: "home_place", Actor: ps[0].ID, Payload: map[string]any{"item": 7}}})
+		if err != nil || len(got) != 1 || got[0].ID == 0 {
+			t.Fatalf("place = %+v, %v", got, err)
+		}
+		table.ID = got[0].ID
+		cup := store.PlacedItem{Item: 8, Layer: store.LayerSurface, ParentID: table.ID, Slot: 1}
+		clock := store.PlacedItem{Item: 10, X: 4, Layer: store.LayerWall, Side: 2}
+		rug := store.PlacedItem{Item: 11, X: 1, Y: 1, Layer: store.LayerRug}
+		got, err = s.ApplyHomeEdit(ctx, store.HomeEdit{HomeID: h0.ID, OwnerID: ps[0].ID,
+			Items: []store.PlacedItem{table, cup, clock, rug}, WallpaperItem: 30, FlooringItem: 31}, nil)
+		if err != nil || len(got) != 4 {
+			t.Fatalf("add = %+v, %v", got, err)
+		}
+		if l, _ := s.LoadByTokenHash(ctx, ps[0].TokenHash); l.Gold != 400 || l.Inventory[0] != (store.Stack{Item: 9, Qty: 2}) {
+			t.Errorf("holdings changed by edit without holdings: %+v", l.Holdings)
+		}
+		if n := len(audit()); n != 3 {
+			t.Errorf("audit has %d entries, want 3 (two claims, place)", n)
+		}
+
+		// A move and a rotate: no holdings, no audit.
+		table.X, table.Rotation = 5, 3
+		if _, err := s.ApplyHomeEdit(ctx, store.HomeEdit{HomeID: h0.ID, OwnerID: ps[0].ID,
+			Items: append([]store.PlacedItem{table}, got[1:]...), WallpaperItem: 30}, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SetHomeLocked(ctx, h0.ID, true); err != nil {
+			t.Fatal(err)
+		}
+		homes, err = s.LoadHomes(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := homes[0]
+		if !r.Locked || r.WallpaperItem != 30 || r.FlooringItem != 0 || len(r.Items) != 4 || homes[1].Locked {
+			t.Fatalf("room = %+v", r)
+		}
+		if r.Items[0] != table {
+			t.Errorf("table = %+v, want %+v", r.Items[0], table)
+		}
+		for _, it := range r.Items {
+			switch it.Item {
+			case 8:
+				if it.ParentID != table.ID || it.Slot != 1 || it.Layer != store.LayerSurface {
+					t.Errorf("cup = %+v", it)
+				}
+			case 10:
+				if it.Side != 2 || it.X != 4 || it.Layer != store.LayerWall {
+					t.Errorf("clock = %+v", it)
+				}
+			case 11:
+				if it.Layer != store.LayerRug {
+					t.Errorf("rug = %+v", it)
+				}
+			}
+		}
+		if hm, err := s.LoadHome(ctx, ps[0].ID); err != nil || !hm.Locked {
+			t.Errorf("LoadHome = %+v, %v", hm, err)
+		}
+		if n := len(audit()); n != 3 {
+			t.Errorf("audit has %d entries after move, want 3", n)
+		}
+
+		// Removing the table removes the cup with it when the edit drops both.
+		hold.Inventory[1] = store.Stack{Item: 7, Qty: 1}
+		if _, err := s.ApplyHomeEdit(ctx, store.HomeEdit{HomeID: h0.ID, OwnerID: ps[0].ID, Holdings: &hold,
+			Items: []store.PlacedItem{got[2], got[3]}}, nil); err != nil {
+			t.Fatal(err)
+		}
+		homes, _ = s.LoadHomes(ctx)
+		if len(homes[0].Items) != 2 || homes[0].WallpaperItem != 0 {
+			t.Errorf("after remove = %+v", homes[0])
+		}
+		if err := s.SetHomeLocked(ctx, 999, true); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("unknown home lock: %v", err)
+		}
+	})
+
+	t.Run("ApplyHomeEdit failures change nothing", func(t *testing.T) {
+		s, audit, ps := newRig(t, 500, 100)
+		if _, err := s.ClaimPlot(ctx, claim(ps[0], 1, 100)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.ClaimPlot(ctx, claim(ps[1], 2, 50)); err != nil {
+			t.Fatal(err)
+		}
+		homes, _ := s.LoadHomes(ctx)
+		own, other := homes[0], homes[1]
+		first, err := s.ApplyHomeEdit(ctx, store.HomeEdit{HomeID: other.ID, OwnerID: ps[1].ID,
+			Items: []store.PlacedItem{{Item: 7, Layer: store.LayerFloor}}}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bad := store.Holdings{Gold: -1}
+		good := store.Holdings{Gold: 1}
+		item := []store.PlacedItem{{Item: 7, Layer: store.LayerFloor}}
+		for _, tc := range []struct {
+			name string
+			e    store.HomeEdit
+			en   []store.Entry
+			want error
+		}{
+			{"unknown home", store.HomeEdit{HomeID: 999, OwnerID: ps[0].ID, Items: item}, nil, store.ErrNotFound},
+			{"owner mismatch", store.HomeEdit{HomeID: own.ID, OwnerID: ps[1].ID, Holdings: &good, Items: item}, nil, store.ErrInvalid},
+			{"invalid holdings", store.HomeEdit{HomeID: own.ID, OwnerID: ps[0].ID, Holdings: &bad, Items: item}, nil, store.ErrInvalid},
+			{"unknown audit actor", store.HomeEdit{HomeID: own.ID, OwnerID: ps[0].ID, Holdings: &good, Items: item},
+				[]store.Entry{{Kind: "home_place", Actor: 999}}, store.ErrNotFound},
+			{"item of another home", store.HomeEdit{HomeID: own.ID, OwnerID: ps[0].ID, Holdings: &good,
+				Items: []store.PlacedItem{{ID: first[0].ID, Item: 7, Layer: store.LayerFloor}}}, nil, store.ErrInvalid},
+			{"bad layer", store.HomeEdit{HomeID: own.ID, OwnerID: ps[0].ID, Holdings: &good,
+				Items: []store.PlacedItem{{Item: 7, Layer: 3}}}, nil, store.ErrInvalid},
+			{"missing parent", store.HomeEdit{HomeID: own.ID, OwnerID: ps[0].ID, Holdings: &good,
+				Items: []store.PlacedItem{{Item: 7, Layer: store.LayerSurface, ParentID: 77}}}, nil, store.ErrInvalid},
+		} {
+			if _, err := s.ApplyHomeEdit(ctx, tc.e, tc.en); !errors.Is(err, tc.want) {
+				t.Errorf("%s: err %v, want %v", tc.name, err, tc.want)
+			}
+		}
+		if g := gold(t, s, ps[0]); g != 400 {
+			t.Errorf("gold = %d, want 400", g)
+		}
+		homes, _ = s.LoadHomes(ctx)
+		if len(homes[0].Items) != 0 || len(homes[1].Items) != 1 || homes[1].Items[0].ID != first[0].ID {
+			t.Errorf("rooms changed: %+v", homes)
+		}
+		if n := len(audit()); n != 2 {
+			t.Errorf("audit has %d entries, want 2", n)
+		}
+	})
 }
