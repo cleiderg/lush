@@ -9,6 +9,7 @@ import {
   TradeCancel, TradeItem, TradeOffer, TradeRemove, TradeRequest, TradeRequestNotice, TradeResult, TradeResultCode,
   TradeSetGold, TradeState, Vec2, Welcome,
   HomeEnter, HomeLeave, HomeMove, HomePlace, HomeRemove, HomeResult, HomeResultCode, HomeRotate, HomeSetFloor, HomeSetOpen,
+  AuctionBid, AuctionResult, AuctionResultCode,
   HomeSetWallpaper, HomeState, HouseClaim, HouseInfo, HouseState, HousingResult, HousingResultCode, HousingState, PlacedItem, RentPay,
 } from '../protocol';
 
@@ -154,6 +155,12 @@ export interface HouseInfoState {
   paidUntil: number;
   state: HouseState;
   open: boolean;
+  /** Highest bid while in auction; 0 otherwise or with no bids. */
+  topBid: number;
+  /** Unix seconds the auction closes; 0 when not in auction. */
+  auctionEnd: number;
+  /** This player's own held bid on the house; 0 if none. */
+  myBid: number;
 }
 
 /** One placed item in a home. */
@@ -283,6 +290,7 @@ export type ServerMessage =
   | { type: 'npcCatalog'; npcs: NpcInfo[] }
   | { type: 'housingState'; houses: HouseInfoState[]; rentPerMonth: number; claimMonths: number; maxPrepaidMonths: number }
   | { type: 'housingResult'; code: HousingResultCode }
+  | { type: 'auctionResult'; code: AuctionResultCode }
   | ({ type: 'homeState' } & HomeView)
   | { type: 'homeResult'; code: HomeResultCode }
   | { type: 'tradeRequestNotice'; fromId: number }
@@ -373,6 +381,12 @@ export function encodeHouseClaim(houseId: number): Uint8Array {
 export function encodeRentPay(houseId: number, months: number): Uint8Array {
   const b = new flatbuffers.Builder(32);
   return wrap(b, Message.RentPay, RentPay.createRentPay(b, houseId, months));
+}
+
+/** Bid gold on a house in auction. */
+export function encodeAuctionBid(houseId: number, amount: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.AuctionBid, AuctionBid.createAuctionBid(b, houseId, amount));
 }
 
 /** Where a placed item goes; surface items use parentPlacedId and slot, wall items use side. */
@@ -715,6 +729,7 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
         houses.push({
           id: o.id(), areaId: o.areaId(), ownerName: o.ownerName() ?? '', mine: o.mine(),
           paidUntil: Number(o.paidUntil()), state: o.state(), open: o.open(),
+          topBid: o.topBid(), auctionEnd: Number(o.auctionEnd()), myBid: o.myBid(),
         });
       }
       return {
@@ -724,6 +739,8 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
     }
     case Message.HousingResult:
       return { type: 'housingResult', code: (env.msg(new HousingResult()) as HousingResult).code() };
+    case Message.AuctionResult:
+      return { type: 'auctionResult', code: (env.msg(new AuctionResult()) as AuctionResult).code() };
     case Message.HomeState: {
       const m = env.msg(new HomeState()) as HomeState;
       const items: PlacedItemState[] = [];

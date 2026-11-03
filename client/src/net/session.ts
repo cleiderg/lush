@@ -3,7 +3,7 @@ import {
   decode, encodeAttackTarget, encodeBankClose, encodeBankDeposit, encodeBankDepositEquipment, encodeBankDepositInventory,
   encodeBankOpen, encodeBankWithdraw, encodeCardTableLeave, encodeCardTableReady, encodeCardTableSit, encodeChat, encodeHello, encodeItemAction, encodePickUp, encodeShedDraw, encodeShedPlay,
   encodeHomeEnter, encodeHomeLeave, encodeHomeMove, encodeHomePlace, encodeHomeRemove, encodeHomeRotate, encodeHomeSetFloor,
-  encodeHomeSetOpen, encodeHomeSetWallpaper, type HomePlacement, encodeHouseClaim, encodeRentPay, encodeShopBuy, encodeShopSell, encodeSkillAction, encodeTradeAccept, encodeTradeCancel, encodeTradeOffer, encodeTradeRemove, encodeTradeRequest, encodeTradeSetGold,
+  encodeHomeSetOpen, encodeHomeSetWallpaper, type HomePlacement, encodeAuctionBid, encodeHouseClaim, encodeRentPay, encodeShopBuy, encodeShopSell, encodeSkillAction, encodeTradeAccept, encodeTradeCancel, encodeTradeOffer, encodeTradeRemove, encodeTradeRequest, encodeTradeSetGold,
   type ServerMessage, type ShedCardValue,
 } from './codec';
 import type { Transport, TransportFactory } from './transport';
@@ -114,6 +114,11 @@ export class Session {
   /** Prepay months of rent on your own house. */
   sendRentPay(houseId: number, months: number): void {
     this.send(encodeRentPay(houseId, months));
+  }
+
+  /** Bid gold on a house in auction. */
+  sendAuctionBid(houseId: number, amount: number): void {
+    this.send(encodeAuctionBid(houseId, amount));
   }
 
   /** Enter a home. */
