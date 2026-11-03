@@ -190,13 +190,14 @@ type Server struct {
 	cardCat  []byte                 // encoded CardTableCatalog, shared by every connection
 	newToken func() (string, error) // replaced by tests
 
-	mu     sync.Mutex
-	guests map[int64]*guest // by store id; session ids for known players
-	nextID uint32
-	keep   map[int64]world.PlayerID // owners of houses: their session ids are never reused
-	idle   *list.List               // offline guests, longest offline first
-	ops    []op
-	conns  map[transport.Conn]struct{}
+	mu       sync.Mutex
+	guests   map[int64]*guest // by store id; session ids for known players
+	nextID   uint32
+	auctions store.Auctions           // nil if the player store keeps no auctions
+	keep     map[int64]world.PlayerID // owners of houses: their session ids are never reused
+	idle     *list.List               // offline guests, longest offline first
+	ops      []op
+	conns    map[transport.Conn]struct{}
 
 	saver *saver
 
@@ -366,7 +367,7 @@ func (s *Server) ServeConn(c transport.Conn) {
 			protocol.MessageCardTableReady, protocol.MessageShedPlay, protocol.MessageShedDraw,
 			protocol.MessageBankOpen, protocol.MessageBankClose, protocol.MessageBankDeposit,
 			protocol.MessageBankWithdraw, protocol.MessageBankDepositInventory, protocol.MessageBankDepositEquipment,
-			protocol.MessageSkillAction, protocol.MessageWorkbenchCraft, protocol.MessageHouseClaim, protocol.MessageRentPay,
+			protocol.MessageSkillAction, protocol.MessageWorkbenchCraft, protocol.MessageHouseClaim, protocol.MessageRentPay, protocol.MessageAuctionBid,
 			protocol.MessageHomeEnter, protocol.MessageHomeLeave, protocol.MessageHomeSetOpen, protocol.MessageHomePlace,
 			protocol.MessageHomeMove, protocol.MessageHomeRotate, protocol.MessageHomeRemove,
 			protocol.MessageHomeSetWallpaper, protocol.MessageHomeSetFloor:
@@ -1034,7 +1035,7 @@ func (s *Server) sendInitial(g *guest, p *world.Player) {
 	g.conn.Send(encodeSkillStats(s.bld, &p.SkillXP))
 	s.sendInitialSkills(g)
 	if s.housing != nil {
-		g.conn.Send(s.housingState(g, s.housing.List()))
+		g.conn.Send(s.housingState(g, s.housing.ListFor(g.id)))
 	}
 }
 
@@ -1140,6 +1141,9 @@ func (s *Server) appendEconomy(dst []econReq, g *guest, p *world.Player) []econR
 		}
 		if ev.Reason == housing.ReasonClaim || ev.Reason == housing.ReasonRent {
 			continue // saved by the house's own transaction (CommitHousing)
+		}
+		if isAuction(ev.Reason) {
+			continue // saved by the auction's own transaction (CommitHousing)
 		}
 		if isCardRoom(ev.Reason) {
 			continue // saved by the card room's own transaction (CommitCardRoom)

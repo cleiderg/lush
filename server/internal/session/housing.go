@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"fmt"
 
 	flatbuffers "github.com/google/flatbuffers/go"
 
@@ -17,6 +18,7 @@ import (
 // area. Call it before the world starts ticking.
 func (s *Server) SetHousing(h *housing.System, homes store.Housing, plots []store.Plot) {
 	s.housing, s.homes = h, homes
+	s.auctions, _ = homes.(store.Auctions)
 	s.areaOf = make(map[housing.HouseID]uint8, len(plots))
 	for _, p := range plots {
 		s.areaOf[housing.HouseID(p.ID)] = clampU8(int(p.AreaID))
@@ -98,10 +100,14 @@ func (s *Server) CommitHousing(req housing.CommitRequest) {
 			s.housing.Resolve(req.ID, ok)
 		}
 	}
-	if req.Kind == housing.CommitLapse || req.Kind == housing.CommitBid || req.Kind == housing.CommitResolve {
+	if req.Kind == housing.CommitBid || req.Kind == housing.CommitResolve {
+		s.commitAuction(req)
+		return
+	}
+	if req.Kind == housing.CommitLapse {
 		if !s.lapseLog[req.House] {
 			s.lapseLog[req.House] = true
-			s.log.Error("commit housing: lapse is not wired, house stays owned", "kind", req.Kind, "house", req.House, "owner", req.Player)
+			s.log.Error("commit housing: lapse is not wired, house stays owned", "house", req.House, "owner", req.Player)
 		}
 		if p := s.w.Player(req.Player); p != nil {
 			// The system locked the online owner's inventory for the lapse
@@ -157,6 +163,160 @@ func (s *Server) CommitHousing(req housing.CommitRequest) {
 		write:   write,
 		done:    resolve,
 	})...)
+}
+
+func isAuction(reason string) bool {
+	switch reason {
+	case housing.ReasonAuctionHold, housing.ReasonAuctionRefund, housing.ReasonAuctionWin:
+		return true
+	}
+	return false
+}
+
+// storeIDOf is the stored player id of the session player id, who may be
+// offline: house owners and bidders keep their ids. Tick goroutine.
+func (s *Server) storeIDOf(id world.PlayerID) (int64, bool) {
+	if g := s.live[id]; g != nil {
+		return g.storeID, true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for sid, kept := range s.keep {
+		if kept == id {
+			return sid, true
+		}
+	}
+	return 0, false
+}
+
+// AuctionOf is the housing system's auction for a stored one. Every bidder
+// and the previous owner are given their session ids first, as for owners
+// (ReserveOwner). Call it before the world starts ticking.
+func (s *Server) AuctionOf(a store.Auction) (*housing.Auction, error) {
+	out := &housing.Auction{EndsAt: a.EndsAt}
+	reserve := func(storeID int64) (world.PlayerID, error) {
+		id, ok := s.ReserveOwner(storeID)
+		if !ok {
+			return 0, fmt.Errorf("no session id left for a player in the auction of plot %d", a.PlotID)
+		}
+		return id, nil
+	}
+	var err error
+	if a.PreviousOwner != 0 {
+		if out.PreviousOwner, err = reserve(a.PreviousOwner); err != nil {
+			return nil, err
+		}
+	}
+	for _, b := range a.Bids {
+		id, err := reserve(b.Player)
+		if err != nil {
+			return nil, err
+		}
+		out.Bids = append(out.Bids, housing.Bid{Player: id, Amount: int(b.Amount), Held: int(b.Held)})
+	}
+	return out, nil
+}
+
+// commitAuction saves a bid (store PlaceAuctionBid) or an ended auction
+// (store FinishAuction) as one transaction, queued after the earlier economy
+// writes of every player in it. Called on the tick goroutine; never blocks.
+func (s *Server) commitAuction(req housing.CommitRequest) {
+	resolve := func(ok bool) {
+		if s.housing != nil {
+			s.housing.Resolve(req.ID, ok)
+		}
+	}
+	if s.auctions == nil {
+		s.log.Error("commit housing: no auction store", "house", req.House)
+		resolve(false)
+		return
+	}
+	// The players in the commit: the bidder and the outbid for a bid, every
+	// bidder for a resolution.
+	var who []world.PlayerID
+	if req.Kind == housing.CommitBid {
+		who = append(who, req.Player)
+		for _, r := range req.Refunds {
+			who = append(who, r.Player)
+		}
+	} else {
+		for _, b := range req.Bids {
+			who = append(who, b.Player)
+		}
+	}
+	stored := make(map[world.PlayerID]int64, len(who))
+	for _, id := range who {
+		sid, ok := s.storeIDOf(id)
+		if !ok {
+			s.log.Error("commit housing: unknown auction player", "player", id, "house", req.House)
+			resolve(false)
+			return
+		}
+		stored[id] = sid
+	}
+	var earlier []econReq
+	var names []store.EconomyChange
+	for _, id := range who {
+		names = append(names, store.EconomyChange{PlayerID: stored[id]})
+		if g, p := s.live[id], s.w.Player(id); g != nil && p != nil {
+			earlier = s.appendEconomy(earlier, g, p)
+		}
+	}
+	plot := int32(req.House)
+	r := econReq{changes: names}
+	if req.Kind == housing.CommitBid {
+		g := s.live[req.Player]
+		if g == nil {
+			s.log.Error("commit housing: bidder not live", "player", req.Player)
+			resolve(false)
+			return
+		}
+		s.mu.Lock()
+		s.keep[g.storeID] = g.id // the auction names them from now on
+		s.mu.Unlock()
+		b := store.PlaceAuctionBid{PlotID: plot, Player: g.storeID, Amount: int64(req.Amount)}
+		r.write = func(ctx context.Context) error { _, err := s.auctions.PlaceAuctionBid(ctx, b); return err }
+		r.done = resolve
+	} else {
+		now := s.clock.Now()
+		f := store.FinishAuction{PlotID: plot, RentCost: int64(req.Rent), Rent: req.PaidUntil.Sub(now), Now: now}
+		var res store.AuctionResult
+		r.write = func(ctx context.Context) error {
+			var err error
+			if res, err = s.auctions.FinishAuction(ctx, f); err != nil {
+				return err
+			}
+			if res.Winner != 0 {
+				// Committed; a failure to read the new home back only delays it until restart.
+				for id, sid := range stored {
+					if sid == res.Winner {
+						if err := s.homeCreated(ctx, sid, id, plot); err != nil {
+							s.log.Error("won home", "plot", plot, "err", err)
+						}
+					}
+				}
+			}
+			return nil
+		}
+		r.done = func(ok bool) {
+			if !ok || s.housing == nil {
+				resolve(false)
+				return
+			}
+			var winner world.PlayerID
+			for id, sid := range stored {
+				if res.Winner != 0 && sid == res.Winner {
+					winner = id
+				}
+			}
+			if res.Winner != 0 && winner == 0 {
+				resolve(false)
+				return
+			}
+			s.housing.ResolveAuction(req.ID, winner)
+		}
+	}
+	s.saver.submitEconomy(append(earlier, r)...)
 }
 
 // housingState encodes the house list for the client of g.
