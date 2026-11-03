@@ -85,6 +85,7 @@ export class SkyRig {
   private readonly dir = new THREE.Vector3();
   private lastElevation = NaN;
   private lastAzimuth = NaN;
+  private shadowSize = SHADOW_MAP_SIZE;
 
   constructor() {
     this.sun.name = 'sun';
@@ -103,6 +104,23 @@ export class SkyRig {
     s.bias = -0.0005;
     s.normalBias = 0.04;
     s.radius = 3;
+  }
+
+  /**
+   * Set the sun's shadow map size (texels per side); 0 turns the sun's shadow off. The old shadow map
+   * render targets are disposed when the size changes or shadows go off; three makes new ones on demand.
+   */
+  setShadowMapSize(size: number): void {
+    const s = this.sun.shadow;
+    this.sun.castShadow = size > 0;
+    if (size > 0 && size !== this.shadowSize) s.mapSize.set(size, size);
+    if (size !== this.shadowSize || size === 0) {
+      s.map?.dispose();
+      s.mapPass?.dispose();
+      s.map = null;
+      s.mapPass = null;
+    }
+    if (size > 0) this.shadowSize = size;
   }
 
   /** Add the lights (and the sun's target) to `scene` and hand it the sky colour and fog. */
@@ -132,7 +150,7 @@ export class SkyRig {
       else skyDirection(Math.max(MOON_MIN_ELEVATION, -elevation), azimuth + Math.PI, this.dir);
     }
     // Snap to whole shadow texels so shadow edges don't crawl as the player walks.
-    const texel = (2 * SHADOW_EXTENT) / SHADOW_MAP_SIZE;
+    const texel = (2 * SHADOW_EXTENT) / this.shadowSize;
     const tx = Math.round(x / texel) * texel;
     const tz = Math.round(z / texel) * texel;
     this.sun.target.position.set(tx, 0, tz);
