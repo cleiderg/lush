@@ -214,6 +214,7 @@ type Server struct {
 	gather    *skills                  // set by SetGather; nil without gathering
 	cook      *cook.System             // set by SetCook; nil without cooking
 	furn      *furniture.System        // set by SetFurniture; nil without furniture
+	rooms     *homeRooms               // set by SetHomeRooms; nil without home rooms
 	furnCraft bool                     // the furniture command being handled is a craft
 	pvp       *pvp.Combat              // set by SetPvP; nil without PvP
 	pve       *combat.System           // set by SetPvE; nil without PvE
@@ -365,7 +366,10 @@ func (s *Server) ServeConn(c transport.Conn) {
 			protocol.MessageCardTableReady, protocol.MessageShedPlay, protocol.MessageShedDraw,
 			protocol.MessageBankOpen, protocol.MessageBankClose, protocol.MessageBankDeposit,
 			protocol.MessageBankWithdraw, protocol.MessageBankDepositInventory, protocol.MessageBankDepositEquipment,
-			protocol.MessageSkillAction, protocol.MessageWorkbenchCraft, protocol.MessageHouseClaim, protocol.MessageRentPay:
+			protocol.MessageSkillAction, protocol.MessageWorkbenchCraft, protocol.MessageHouseClaim, protocol.MessageRentPay,
+			protocol.MessageHomeEnter, protocol.MessageHomeLeave, protocol.MessageHomeSetOpen, protocol.MessageHomePlace,
+			protocol.MessageHomeMove, protocol.MessageHomeRotate, protocol.MessageHomeRemove,
+			protocol.MessageHomeSetWallpaper, protocol.MessageHomeSetFloor:
 			if cmd := m.command(g.id); cmd != nil {
 				s.w.Enqueue(cmd)
 			}
@@ -625,6 +629,9 @@ func (s *Server) Handle(cmd world.Command, p *world.Player) {
 	case SkillActionCommand:
 		s.handleSkillAction(a, p)
 		return
+	case HomeCommand:
+		s.handleHome(a.homeCommand(s), p)
+		return
 	case CraftCommand:
 		s.handleFurniture(a.CraftCommand, true, p)
 		return
@@ -717,6 +724,8 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		}
 		s.remove(g)
 	}
+
+	s.addClaimedHomes()
 
 	s.econ = s.econ[:0]
 	for id, g := range s.live {

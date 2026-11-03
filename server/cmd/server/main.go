@@ -29,6 +29,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/gather"
 	"github.com/cleiderg/lush/server/internal/systems/grounditems"
+	"github.com/cleiderg/lush/server/internal/systems/homeroom"
 	"github.com/cleiderg/lush/server/internal/systems/housing"
 	"github.com/cleiderg/lush/server/internal/systems/items"
 	"github.com/cleiderg/lush/server/internal/systems/npc"
@@ -267,6 +268,10 @@ func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, 
 	if err != nil {
 		return nil, err
 	}
+	rooms, err := homeRoomSystem(data, tileSize, clock, sess, players)
+	if err != nil {
+		return nil, err
+	}
 	ground := grounditems.New(data, clock, tileSize)
 	sess.SetGroundItems(ground)
 	fights, err := pvp.NewCombat(data, lookup, tileSize, clock, rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())), sess, sess)
@@ -291,7 +296,7 @@ func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, 
 	sess.SetCook(cooking)
 	out := []scheduled{}
 	for _, s := range []world.System{mover, gathering, cooking, npcs, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess),
-		items.New(data), shop.New(data, lookup, tileSize, sess), trades, banks, cards, homes, ground} {
+		items.New(data), shop.New(data, lookup, tileSize, sess), trades, banks, cards, homes, rooms, ground} {
 		out = append(out, scheduled{s, 1})
 	}
 	return append(out, scheduled{fights, combatEvery}, scheduled{pve, combatEvery}, scheduled{spawns, 1},
@@ -332,6 +337,43 @@ func housingSystem(data *gamedata.Data, tileSize float64, clock world.Clock, ses
 	}
 	sess.SetHousing(h, homes, stored)
 	return h, nil
+}
+
+// homeRoomSystem builds the home room system from the stored homes and
+// connects it to the session. A home's id is its plot's id and its door is the
+// plot's position; each owner keeps their session id, as in housingSystem. A
+// store with no housing has no homes, and a claim adds one later.
+func homeRoomSystem(data *gamedata.Data, tileSize float64, clock world.Clock, sess *session.Server, players store.Players) (*homeroom.System, error) {
+	homes, _ := players.(store.Housing)
+	cfg := homeroom.Config{Doors: map[homeroom.HomeID]world.Vec2{}, Clock: clock,
+		Reach: float64(housing.DefaultConfig().DoorReachTiles) * tileSize}
+	var rooms []store.HomeRoom
+	if homes != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), dbStartTimeout)
+		defer cancel()
+		plots, err := homes.LoadPlots(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load plots: %w", err)
+		}
+		for _, p := range plots {
+			cfg.Doors[homeroom.HomeID(p.ID)] = world.Vec2{X: p.X, Y: p.Z}
+		}
+		if rooms, err = homes.LoadHomes(ctx); err != nil {
+			return nil, fmt.Errorf("load homes: %w", err)
+		}
+	}
+	sys := homeroom.New(data, cfg, sess)
+	for _, r := range rooms {
+		owner, ok := sess.ReserveOwner(r.OwnerID)
+		if !ok {
+			return nil, fmt.Errorf("no session id left for the owner of home %d", r.ID)
+		}
+		if err := sys.AddHome(session.HomeSpec(r, owner)); err != nil {
+			return nil, fmt.Errorf("add home %d: %w", r.ID, err)
+		}
+	}
+	sess.SetHomeRooms(sys, homes, rooms)
+	return sys, nil
 }
 
 // openDatabase connects a pool and applies pending migrations. The returned

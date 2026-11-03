@@ -15,6 +15,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/session"
 	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/homeroom"
 	"github.com/cleiderg/lush/server/internal/systems/housing"
 	"github.com/cleiderg/lush/server/internal/world"
 )
@@ -47,10 +48,11 @@ func (s *housingStore) PayRent(ctx context.Context, r store.PayRent) (store.Plot
 
 type housingRig struct {
 	*rig
-	d    *gamedata.Data
-	st   *housingStore
-	sys  *housing.System
-	logs *syncBuf
+	d      *gamedata.Data
+	st     *housingStore
+	sys    *housing.System
+	logs   *syncBuf
+	before []protocol.Message // see homeCode
 }
 
 // month is the length of a rent month.
@@ -121,7 +123,23 @@ func newHousingRig(t *testing.T, owned map[int32]ownedPlot, golds map[string]int
 		}
 		s.SetHousing(sys, h.st, stored)
 		h.sys = sys
-		return []world.System{sys}
+		doors := map[homeroom.HomeID]world.Vec2{}
+		for _, sp := range stored {
+			doors[homeroom.HomeID(sp.ID)] = world.Vec2{X: sp.X, Y: sp.Z}
+		}
+		rooms := homeroom.New(d, homeroom.Config{Doors: doors, Reach: 3, Clock: rigClock{&rg}}, s)
+		stored, err := h.st.LoadHomes(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, hr := range stored {
+			owner, _ := s.ReserveOwner(hr.OwnerID)
+			if err := rooms.AddHome(session.HomeSpec(hr, owner)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		s.SetHomeRooms(rooms, h.st, stored)
+		return []world.System{sys, rooms}
 	}, housingStart)
 	h.rig = rg
 	return h
