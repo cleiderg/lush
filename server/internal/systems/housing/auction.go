@@ -50,6 +50,11 @@ type Wallet struct {
 	OwnsHouse bool
 }
 
+// ClaimPaidUntil is the paid-until of a house claimed or won at now.
+func (r Rules) ClaimPaidUntil(now time.Time) time.Time {
+	return now.Add(time.Duration(r.r.HouseClaimMonths) * r.month())
+}
+
 // StartAuction opens the auction for a house whose rent lapsed.
 func (r Rules) StartAuction(previous world.PlayerID, now time.Time) Auction {
 	return Auction{PreviousOwner: previous, EndsAt: now.Add(r.AuctionDuration())}
@@ -146,7 +151,7 @@ func (r Rules) Resolve(a Auction, wallet func(world.PlayerID) Wallet, now time.T
 			continue
 		}
 		res.Winner, res.Bid, res.Rent, res.Take = b.Player, b.Amount, rent, total-b.Held
-		res.House = House{Owner: b.Player, PaidUntil: now.Add(time.Duration(r.r.HouseClaimMonths) * r.month())}
+		res.House = House{Owner: b.Player, PaidUntil: r.ClaimPaidUntil(now)}
 		for _, rest := range bids[i+1:] {
 			if rest.Held > 0 {
 				res.Refunds = append(res.Refunds, Refund{rest.Player, rest.Held})
