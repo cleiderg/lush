@@ -1,3 +1,5 @@
+import type { RoomDescription } from './roomView';
+
 /** Read-only snapshot of what the renderer needs. src/state provides it; render never mutates it. */
 export interface PlayerView {
   readonly id: number;
@@ -109,4 +111,6 @@ export interface WorldView {
   readonly activeResource?: string;
   /** Progress of the current attempt, 0 to 1, shown by the indicator over `activeResource`. */
   readonly resourceProgress?: number;
+  /** A home room to draw instead of the campus, framed by the camera; missing draws the campus. Update it in place between frames. */
+  readonly home?: RoomDescription;
 }
