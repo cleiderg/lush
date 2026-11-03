@@ -41,7 +41,7 @@ func walk(g *gatherer, res resources, secs int) (x, z float64, bought []uint16, 
 
 func TestGathererChops(t *testing.T) {
 	res := resources{known: true, felled: map[uint16]bool{1: true}}
-	// starts 30 m from the shop, tree 1 is felled so the nearest standing is 2
+	// tree 1 is felled and 2 is an oak (level 15), so the one to chop is 0
 	g := newGatherer(testMap(), false)
 	x, z, bought, acts := walk(g, res, 0)
 	_ = x
@@ -67,11 +67,11 @@ func TestGathererChops(t *testing.T) {
 		t.Fatal("never chopped")
 	}
 	for _, a := range acts {
-		if a.target != protocol.SkillTargetTree || a.id != 2 {
-			t.Errorf("action %+v, want tree 2", a)
+		if a.target != protocol.SkillTargetTree || a.id != 0 {
+			t.Errorf("action %+v, want tree 0", a)
 		}
 	}
-	if !inReach(x, z, place{"oak", -5, 0}) {
+	if !inReach(x, z, place{"tree", 40, 0}) {
 		t.Errorf("acted at %.2f, %.2f, not within 1 tile of the tree", x, z)
 	}
 }
@@ -109,14 +109,15 @@ func TestGathererWaitsAndMoves(t *testing.T) {
 	if s := g.step(now, 5, 0, inv, res); s.act != nil || s.moveX <= 0 {
 		t.Errorf("should head to the tree at x=10: %+v", s)
 	}
-	// the chosen tree is felled: moves on to the next one
+	// the chosen tree is felled: moves on to the next plain one, past the
+	// nearer oak at x=-5
 	res.felled[1] = true
-	if s := g.step(now.Add(time.Second), 5, 0, inv, res); s.act != nil || s.moveX >= 0 {
-		t.Errorf("tree felled, next is at x=-5: %+v", s)
+	if s := g.step(now.Add(time.Second), 5, 0, inv, res); s.act != nil || s.moveX <= 0 || g.target != 0 {
+		t.Errorf("tree felled, next is at x=40: %+v", s)
 	}
 	// a full inventory ends it
 	g.noteResult(protocol.SkillResultCodeInventoryFull)
-	if s := g.step(now, -4.5, 0, inv, res); s != (gatherStep{}) {
+	if s := g.step(now, 39.5, 0, inv, res); s != (gatherStep{}) {
 		t.Errorf("inventory full: %+v", s)
 	}
 }
@@ -142,8 +143,19 @@ func TestGathererTileReach(t *testing.T) {
 	if s := g.step(now.Add(inputEvery), -83.5, -17.7, inv, res); s.act != nil {
 		t.Errorf("resent at once after OutOfRange: %+v", s)
 	}
-	if s := g.step(now.Add(retryEvery), -83.5, -17.7, inv, res); s.act == nil {
+	now = now.Add(retryEvery)
+	if s := g.step(now, -83.5, -17.7, inv, res); s.act == nil {
 		t.Errorf("no retry after %v: %+v", retryEvery, s)
+	}
+	// once gathering, it stands still and sends nothing more until stopped
+	g.noteResult(protocol.SkillResultCodeStarted)
+	g.noteResult(protocol.SkillResultCodeSuccess)
+	if s := g.step(now.Add(2*retryEvery), -83.5, -17.7, inv, res); s != (gatherStep{}) {
+		t.Errorf("resent while gathering: %+v", s)
+	}
+	g.noteResult(protocol.SkillResultCodeStopped)
+	if s := g.step(now.Add(2*retryEvery), -83.5, -17.7, inv, res); s.act == nil {
+		t.Errorf("no SkillAction after Stopped: %+v", s)
 	}
 }
 

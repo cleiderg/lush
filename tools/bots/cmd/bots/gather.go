@@ -120,6 +120,7 @@ type gatherer struct {
 	buyAt     time.Time
 	full      bool // the inventory filled up; nothing more to do
 	hasTarget bool
+	gathering bool // the server said Started or Success and nothing has stopped it
 }
 
 func newGatherer(m *gatherMap, fishing bool) *gatherer {
@@ -162,7 +163,9 @@ func inReach(x, z float64, p place) bool {
 	return math.Abs(math.Floor(x)-math.Floor(p.x)) <= 1 && math.Abs(math.Floor(z)-math.Floor(p.z)) <= 1
 }
 
-// pick chooses the nearest standing tree or active net spot to (x, z).
+// pick chooses the nearest standing tree or active net spot to (x, z). Only
+// the level 1 kinds count (plain trees, net spots): a new bot gets NeedLevel
+// at an oak or eucalyptus, and NeedTool at a rod spot.
 func (g *gatherer) pick(x, z float64, res resources) (id int, p place, ok bool) {
 	best := math.MaxFloat64
 	consider := func(i int, c place) {
@@ -179,7 +182,7 @@ func (g *gatherer) pick(x, z float64, res resources) (id int, p place, ok bool) 
 		return
 	}
 	for i, t := range g.m.trees {
-		if !res.felled[uint16(i)] {
+		if t.kind == "tree" && !res.felled[uint16(i)] {
 			consider(i, t)
 		}
 	}
@@ -209,6 +212,7 @@ func (g *gatherer) current(res resources) (place, bool) {
 func (g *gatherer) noteResult(code protocol.SkillResultCode) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	g.gathering = code == protocol.SkillResultCodeStarted || code == protocol.SkillResultCodeSuccess
 	switch code {
 	case protocol.SkillResultCodeInventoryFull:
 		g.full = true
@@ -247,6 +251,7 @@ func (g *gatherer) step(now time.Time, x, z float64, inv inventory, res resource
 		}
 		if id != g.target {
 			g.lastSent = time.Time{} // a new target: act at once, a repeat waits
+			g.gathering = false
 		}
 		g.target, g.hasTarget = id, true
 	}
@@ -254,7 +259,8 @@ func (g *gatherer) step(now time.Time, x, z float64, inv inventory, res resource
 		dx, dz, _ := headTo(x, z, p.x, p.z)
 		return gatherStep{moveX: dx, moveZ: dz}
 	}
-	if now.Sub(g.lastSent) < retryEvery {
+	// A SkillAction while gathering would restart it (Stopped, then Started).
+	if g.gathering || now.Sub(g.lastSent) < retryEvery {
 		return gatherStep{}
 	}
 	g.lastSent = now
