@@ -15,6 +15,8 @@ export interface HudLayout {
   toggle: Rect;
   /** The Retro look toggle (Q2), left of the inventory toggle in the top bar. */
   retro: Rect;
+  /** The Quality control (Auto, Low, Medium, High), left of the Retro toggle in the top bar. */
+  quality: Rect;
   panel: Rect;
   /** The shop panel; it takes the inventory panel's place (only one is open at a time). */
   shop: Rect;
@@ -58,12 +60,16 @@ export const TRAY_SHARE = 0.35;
 
 const MARGIN = 8;
 const HUD_W = 150;
+/** The HUD's narrowest size: room for "Combat 126" and "Gold 12,345" (its lines clip without an ellipsis). */
+export const HUD_MIN_W = 92;
 /** Height of the top band: the location panel, the HUD and the toggles. */
 const HUD_H = 76;
 /** The location panel's widest size, and its share of the top band when narrower. */
 const LOCATION_W = 200;
 const LOCATION_SHARE = 0.6;
 const TOGGLE = 52;
+/** The top-bar buttons are a little narrower than tall, so three fit beside the location panel and HUD on a phone. */
+const TOGGLE_W = 48;
 const PROMPT_H = 88;
 const PVP_H = 36;
 const CHAT_H = 120;
@@ -83,14 +89,16 @@ export function hudLayout(width: number, height: number): HudLayout {
   const trayTop = height - trayH;
   const controls = { x: left, y: trayTop, w: appW, h: trayH };
 
-  const toggle = { x: left + appW - MARGIN - TOGGLE, y: MARGIN, w: TOGGLE, h: TOGGLE };
-  const retro = { ...toggle, x: toggle.x - MARGIN - TOGGLE };
-  // The top band left of the toggles holds the location panel, then the HUD.
-  const band = retro.x - MARGIN - (left + MARGIN);
-  const locationW = Math.min(LOCATION_W, Math.round((band - MARGIN) * LOCATION_SHARE));
+  const toggle = { x: left + appW - MARGIN - TOGGLE_W, y: MARGIN, w: TOGGLE_W, h: TOGGLE };
+  const retro = { ...toggle, x: toggle.x - MARGIN - TOGGLE_W };
+  const quality = { ...toggle, x: retro.x - MARGIN - TOGGLE_W };
+  // The top band left of the toggles holds the location panel, then the HUD. The HUD keeps HUD_MIN_W so its numbers
+  // stay whole; the location panel gives way, since its name ends in an ellipsis when cut.
+  const band = quality.x - MARGIN - (left + MARGIN);
+  const locationW = Math.max(0, Math.min(LOCATION_W, Math.round((band - MARGIN) * LOCATION_SHARE), band - MARGIN - HUD_MIN_W));
   const location = { x: left + MARGIN, y: MARGIN, w: locationW, h: HUD_H };
   const hudX = location.x + location.w + MARGIN;
-  const hud = { x: hudX, y: MARGIN, w: Math.min(HUD_W, retro.x - MARGIN - hudX), h: HUD_H };
+  const hud = { x: hudX, y: MARGIN, w: Math.min(HUD_W, quality.x - MARGIN - hudX), h: HUD_H };
   const panelTop = MARGIN + HUD_H + MARGIN;
   // The PvP strip sits just above the tray and the panels end above it, so it never hides panel content.
   const pvp = { x: left + MARGIN, y: trayTop - MARGIN - PVP_H, w: appW - 2 * MARGIN, h: PVP_H };
@@ -111,7 +119,7 @@ export function hudLayout(width: number, height: number): HudLayout {
   const portrait = { x: portraitX, y: portraitY, w: PORTRAIT, h: PORTRAIT };
   const minimap = { x: left + appW - MARGIN - MINIMAP, y: interact.y + interact.h + MARGIN, w: MINIMAP, h: MINIMAP };
   return {
-    controls, location, hud, toggle, retro, panel, shop: { ...panel }, bank: { ...panel }, skills: { ...panel }, trade: { ...panel }, cardTable: { ...panel }, tradePrompt, pvp,
+    controls, location, hud, toggle, retro, quality, panel, shop: { ...panel }, bank: { ...panel }, skills: { ...panel }, trade: { ...panel }, cardTable: { ...panel }, tradePrompt, pvp,
     chat, interact, portrait, minimap, map: { ...panel },
   };
 }
