@@ -342,3 +342,26 @@ func TestLapseCommitNotSaved(t *testing.T) {
 		t.Fatal("world lost the owner")
 	}
 }
+
+// A lapse while the owner is online must not leave their inventory locked:
+// the unanswered lapse is not retried, so the owner can still use it, and the
+// house stays owned in world and store.
+func TestLapseLeavesOnlineOwnerInventoryUnlocked(t *testing.T) {
+	h := newHousingRig(t, map[int32]ownedPlot{1: {"a", 10 * 24 * time.Hour}}, map[string]int64{"a": 1000})
+	_, id, _ := h.join("a")
+	for range 30 {
+		h.w.Tick()
+		if h.w.Player(id).Inv.Locked() {
+			t.Fatal("owner's inventory locked by the unsaved lapse")
+		}
+	}
+	if n := strings.Count(h.logs.String(), "lapse is not wired"); n != 1 {
+		t.Fatalf("logged %d times, want once:\n%s", n, h.logs.String())
+	}
+	if h.storedPlot(1).OwnerID != h.storeID("a") {
+		t.Fatal("store lost the owner")
+	}
+	if hi := h.sys.List()[0]; hi.Owner != id {
+		t.Fatal("world lost the owner")
+	}
+}

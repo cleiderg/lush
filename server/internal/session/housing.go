@@ -82,8 +82,8 @@ func (s *Server) HouseLapsedEvent(housing.HouseID, world.PlayerID) {}
 // one transaction. The saver writes it after every earlier write of the
 // player, and the result goes back to the housing system through Resolve.
 // Lapses are not wired yet: they are logged once per house and answered as
-// not saved, so the house stays owned. Called on the tick goroutine; never
-// blocks.
+// not saved (left unanswered while the owner is online), so the house stays
+// owned. Called on the tick goroutine; never blocks.
 func (s *Server) CommitHousing(req housing.CommitRequest) {
 	resolve := func(ok bool) {
 		if s.housing != nil {
@@ -94,6 +94,15 @@ func (s *Server) CommitHousing(req housing.CommitRequest) {
 		if !s.lapseLog[req.House] {
 			s.lapseLog[req.House] = true
 			s.log.Error("commit housing: lapse is not wired, house stays owned", "house", req.House, "owner", req.Player)
+		}
+		if p := s.w.Player(req.Player); p != nil {
+			// The system locked the online owner's inventory for the lapse
+			// and, answered, would retry and lock it again every tick, so
+			// the owner could never use it. A lapse moves no gold or items:
+			// unlock it and leave this lapse unanswered, so the house stays
+			// pending and owned and Resolve never clears a later lock.
+			p.Inv.SetLocked(false)
+			return
 		}
 		resolve(false)
 		return
