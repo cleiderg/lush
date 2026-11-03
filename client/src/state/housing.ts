@@ -19,9 +19,13 @@ export function prepaidMonths(paidUntil: number, now: number): number {
   return Math.max(0, Math.floor((paidUntil - now) / RENT_MONTH_SECONDS));
 }
 
-/** Most months the owner can still add without going past `maxPrepaid` in total. */
+/**
+ * Most whole months the owner can still add without paid-until passing `now` plus `maxPrepaid` months,
+ * the server's PayRent check (a part month already prepaid counts against the room left).
+ */
 export function maxRentMonths(paidUntil: number, now: number, maxPrepaid: number): number {
-  return Math.max(0, maxPrepaid - prepaidMonths(paidUntil, now));
+  const left = Math.max(0, paidUntil - now);
+  return Math.max(0, Math.floor((maxPrepaid * RENT_MONTH_SECONDS - left) / RENT_MONTH_SECONDS));
 }
 
 export type { HomeView, HouseInfoState, PlacedItemState };

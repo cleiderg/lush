@@ -51,18 +51,25 @@ describe('HousePanel', () => {
   });
 
   it('the owner sees paid-until and Rent cannot go past max_prepaid_months in total', () => {
-    // 2 months and a bit prepaid: 4 more allowed.
+    // 2 months and a bit prepaid: 3 more allowed, since 4 would put paid-until past now + 6 months.
     const { send, panel } = setup([{ id: 7, mine: true, state: HouseState.Owned, paidUntil: NOW + 2 * MONTH + 100 }]);
     panel.open(7);
     expect(q(panel, '.lush-house-paid')!.textContent).toMatch(/^Paid until \w{3} \d+, \d{4}$/);
     for (let i = 0; i < 10; i++) q<HTMLButtonElement>(panel, '.lush-house-plus')!.click();
-    expect(q(panel, '.lush-house-months')!.textContent).toBe('4 months');
+    expect(q(panel, '.lush-house-months')!.textContent).toBe('3 months');
     expect(q<HTMLButtonElement>(panel, '.lush-house-plus')!.disabled).toBe(true);
     q<HTMLButtonElement>(panel, '.lush-house-rent-pay')!.click();
     const env = Envelope.getRootAsEnvelope(new flatbuffers.ByteBuffer(send.mock.calls[0][0]));
     expect(env.msgType()).toBe(Message.RentPay);
     const m = env.msg(new RentPay()) as RentPay;
-    expect([m.houseId(), m.months()]).toEqual([7, 4]);
+    expect([m.houseId(), m.months()]).toEqual([7, 3]);
+  });
+
+  it('exactly 2 months prepaid leaves room for 4', () => {
+    const { panel } = setup([{ id: 7, mine: true, state: HouseState.Owned, paidUntil: NOW + 2 * MONTH }]);
+    panel.open(7);
+    for (let i = 0; i < 10; i++) q<HTMLButtonElement>(panel, '.lush-house-plus')!.click();
+    expect(q(panel, '.lush-house-months')!.textContent).toBe('4 months');
   });
 
   it('a fully prepaid house cannot be paid further', () => {
