@@ -4,6 +4,7 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 
 	"github.com/cleiderg/lush/server/internal/protocol"
+	"github.com/cleiderg/lush/server/internal/systems/cook"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/gather"
 	"github.com/cleiderg/lush/server/internal/world"
@@ -11,8 +12,8 @@ import (
 
 // SkillActionCommand is a client SkillAction. Handle turns a Tree or
 // FishingSpot target into a gather.StartCommand for the map id the gathering
-// system numbers ID with, or answers ResourceGone if there is none. The Grill
-// target (cooking) is not handled here.
+// system numbers ID with, or answers ResourceGone if there is none. A Grill
+// target becomes a cook.StartCommand; its ID is ignored.
 type SkillActionCommand struct {
 	Player world.PlayerID
 	Kind   protocol.SkillTarget
@@ -64,6 +65,13 @@ func lowestTool(d *gamedata.Data, sk gamedata.Skill) gamedata.ItemID {
 
 // handleSkillAction starts gathering for p, or tells them the target is gone.
 func (s *Server) handleSkillAction(a SkillActionCommand, p *world.Player) {
+	if a.Kind == protocol.SkillTargetGrill {
+		// target_id is ignored: there is one grill.
+		if s.cook != nil {
+			s.cook.Handle(cook.StartCommand{Player: p.ID}, p)
+		}
+		return
+	}
 	k := s.gather
 	if k == nil {
 		return
@@ -310,4 +318,45 @@ func encodeSkillCatalog(d *gamedata.Data, l gather.Layout) []byte {
 	protocol.SkillCatalogAddTrees(b, tv)
 	protocol.SkillCatalogAddFishingSpots(b, sv)
 	return finish(b, protocol.MessageSkillCatalog, protocol.SkillCatalogEnd(b))
+}
+
+// SetCook connects the cooking system: SkillAction with target Grill starts
+// it, and its results go out as SkillResult. The system must have been
+// created with CookSink as its Sink. Call it before the world starts ticking.
+func (s *Server) SetCook(sys *cook.System) { s.cook = sys }
+
+// CookSink is the cook.Sink that sends the player each cooking result. It is
+// separate from the Server because gather.Sink already uses these names.
+func (s *Server) CookSink() cook.Sink { return cookSink{s} }
+
+type cookSink struct{ s *Server }
+
+var cookStartCodes = map[cook.Result]protocol.SkillResultCode{
+	cook.Started:       protocol.SkillResultCodeStarted,
+	cook.TooFar:        protocol.SkillResultCodeOutOfRange,
+	cook.NothingToCook: protocol.SkillResultCodeNothingToCook,
+	cook.LevelTooLow:   protocol.SkillResultCodeNeedLevel,
+	cook.InCombat:      protocol.SkillResultCodeStopped,
+}
+
+// StartResult implements cook.Sink.
+func (c cookSink) StartResult(to world.PlayerID, r cook.Result, level int) {
+	if code, ok := cookStartCodes[r]; ok {
+		c.s.sendSkillResult(to, world.Cooking, code, 0, level)
+	}
+}
+
+// Stopped implements cook.Sink: every way cooking ends is Stopped.
+func (c cookSink) Stopped(to world.PlayerID, _ cook.StopReason) {
+	c.s.sendSkillResult(to, world.Cooking, protocol.SkillResultCodeStopped, 0, 0)
+}
+
+// Cooked implements cook.Sink: Success with the cooked item, or Burnt with
+// the burnt fish. XP and level-ups reach the client from the player's state.
+func (c cookSink) Cooked(to world.PlayerID, item gamedata.ItemID, burnt bool, _ int, _ bool, _ int) {
+	code := protocol.SkillResultCodeSuccess
+	if burnt {
+		code = protocol.SkillResultCodeBurnt
+	}
+	c.s.sendSkillResult(to, world.Cooking, code, item, 0)
 }
