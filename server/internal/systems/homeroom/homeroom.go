@@ -368,7 +368,9 @@ func (s *System) Handle(cmd world.Command, p *world.Player) {
 	case RemoveCommand:
 		r = s.edit(p, func(h *home) Result { return s.remove(h, p, c.Placed) })
 	case SetWallpaperCommand:
-		r = s.edit(p, func(h *home) Result { return s.cover(h, p, c.Slot, gamedata.KindWallpaper, &h.wallpaper, ReasonWallpaper) })
+		r = s.edit(p, func(h *home) Result {
+			return s.cover(h, p, c.Slot, gamedata.KindWallpaper, &h.wallpaper, ReasonWallpaper)
+		})
 	case SetFloorCommand:
 		r = s.edit(p, func(h *home) Result { return s.cover(h, p, c.Slot, gamedata.KindFloorCovering, &h.floor, ReasonFloor) })
 	default:

@@ -24,10 +24,14 @@ type rec struct {
 	left    []world.PlayerID
 }
 
-func (s *rec) HomeResult(to world.PlayerID, r homeroom.Result) { s.results = append(s.results, res{to, r}) }
-func (s *rec) HomeState(to world.PlayerID, st homeroom.State)  { s.states[to] = append(s.states[to], st) }
-func (s *rec) HomeLeft(to world.PlayerID, _ homeroom.HomeID)   { s.left = append(s.left, to) }
-func (s *rec) last() homeroom.Result                           { return s.results[len(s.results)-1].r }
+func (s *rec) HomeResult(to world.PlayerID, r homeroom.Result) {
+	s.results = append(s.results, res{to, r})
+}
+func (s *rec) HomeState(to world.PlayerID, st homeroom.State) {
+	s.states[to] = append(s.states[to], st)
+}
+func (s *rec) HomeLeft(to world.PlayerID, _ homeroom.HomeID) { s.left = append(s.left, to) }
+func (s *rec) last() homeroom.Result                         { return s.results[len(s.results)-1].r }
 
 type fixture struct {
 	t    *testing.T
