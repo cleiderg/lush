@@ -5,7 +5,7 @@ import { interact } from '../core/interact';
 import { Session } from '../net/session';
 import type { Transport } from '../net/transport';
 import {
-  BankAmount, BankDeposit, BankResultCode, BankWithdraw, Envelope, EquipSlot, ItemKind, Message, ToolSkill, Vec2, Welcome,
+  BankAmount, BankDeposit, BankResultCode, BankWithdraw, Envelope, EquipSlot, ItemKind, Message, Vec2, Welcome,
 } from '../protocol';
 import { BANK_BOOTH, BankStore } from '../state/bank';
 import { ItemState, type ItemInfo } from '../state/items';
@@ -16,7 +16,7 @@ function item(id: number, name: string): ItemInfo {
   return {
     id, name, kind: ItemKind.Loot, equipSlot: EquipSlot.None, levelToEquip: 1, accuracy: 0, strength: 0, defence: 0, attackSpeed: 0,
     heal: 0, shopBuysFor: 1, shopSells: false, shopSellsFor: 0,
-    toolSkill: ToolSkill.None, toolLevel: 0, cookingLevel: 0,
+    toolSkill: 0, toolLevel: 0, cookingLevel: 0,
   };
 }
 
