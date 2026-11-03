@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 16
+  Current = 17
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -245,6 +245,8 @@ table ItemDef {
   footprint_d: ubyte;      // furniture depth in tiles; 0 when not furniture
   placement: PlacementKind; // where it can go in a home; None if not furniture
   surface_slots: ubyte;    // small items a surface piece holds; 0 if none
+  thrift_sells_for: uint32; // gold the Campus Thrift stall charges; 0 when it doesn't sell the item
+  thrift_buys_for: uint32;  // gold the Campus Thrift stall pays; 0 when it doesn't buy the item
 }
 
 // Server -> client: every item definition, so the client doesn't hard-code
@@ -301,16 +303,24 @@ table PickUp {
   ground_item_id: ushort; // GroundItem.id
 }
 
+// Which shop a ShopBuy or ShopSell talks to.
+enum ShopKind : ubyte {
+  Market = 0,   // the Campus Market; the default, so older messages keep their meaning
+  Thrift = 1    // the Campus Thrift stall
+}
+
 // Client -> server: buy from the NPC shop.
 table ShopBuy {
   item_id: ushort;   // ItemDef.id
   quantity: uint32;
+  shop: ShopKind;    // Market when absent
 }
 
 // Client -> server: sell from an inventory slot to the NPC shop.
 table ShopSell {
   slot: ubyte;       // inventory slot index, 0-based
   quantity: uint32;
+  shop: ShopKind;    // Market when absent
 }
 
 // ShopResult.code values.
@@ -763,11 +773,17 @@ table HouseInfo {
   paid_until: int64;    // Unix seconds; 0 when unowned
   state: HouseState;
   open: bool;           // true: anyone may visit; false: locked
+  top_bid: uint32;      // highest bid while state is Auction; 0 otherwise or when no bids
+  auction_end: int64;   // Unix seconds the auction closes; 0 when not in auction
+  my_bid: uint32;       // the receiving player's own held bid on this house; 0 if none
 }
 
 // Server -> client: every house. Sent on login and whenever one changes.
 table HousingState {
   houses: [HouseInfo];
+  rent_per_month: uint32;     // gold per month of rent
+  claim_months: ubyte;        // months of rent paid up front to claim
+  max_prepaid_months: ubyte;  // most months that can be prepaid
 }
 
 // Client -> server: claim an empty house (pays two months' rent up front).
@@ -818,6 +834,65 @@ table HomeState {
   wallpaper_item_id: ushort;  // EmptyItem.Id when none
   floor_item_id: ushort;      // EmptyItem.Id when none
   items: [PlacedItem];
+}
+
+// Client -> server: bid on a house in auction. The server replies with
+// AuctionResult.
+table AuctionBid {
+  house_id: ushort;
+  amount: uint32;   // gold
+}
+
+// AuctionResult.code values.
+enum AuctionResultCode : ubyte {
+  Ok = 0,
+  NotAuction = 1,     // the house isn't in auction
+  TooFar = 2,         // the player isn't close enough to the house
+  PreviousOwner = 3,  // the previous owner can't bid on their own lapsed house
+  BidTooLow = 4,      // not above the top bid or the minimum
+  NotEnoughGold = 5,
+  OwnsAnother = 6,    // the player already owns a house
+  SaveFailed = 7      // couldn't be saved and nothing changed
+}
+
+// Server -> client: the outcome of an AuctionBid.
+table AuctionResult {
+  code: AuctionResultCode;
+}
+
+// One workbench recipe.
+table WorkbenchRecipe {
+  output_item_id: ushort;       // ItemDef.id
+  input_item_ids: [ushort];     // ItemDef.id, parallel to input_quantities
+  input_quantities: [uint32];
+  gold: uint32;                 // gold the craft costs
+}
+
+// Server -> client: every workbench recipe. Sent on login.
+table WorkbenchCatalog {
+  recipes: [WorkbenchRecipe];
+}
+
+// Client -> server: craft one of an item at the workbench. The server
+// replies with CraftResult.
+table WorkbenchCraft {
+  output_item_id: ushort;   // WorkbenchRecipe.output_item_id
+}
+
+// CraftResult.code values.
+enum CraftResultCode : ubyte {
+  Ok = 0,
+  TooFar = 1,         // the player isn't close enough to a workbench
+  UnknownRecipe = 2,
+  MissingInputs = 3,
+  NotEnoughGold = 4,
+  InventoryFull = 5,
+  SaveFailed = 6      // couldn't be saved and nothing changed
+}
+
+// Server -> client: the outcome of a WorkbenchCraft.
+table CraftResult {
+  code: CraftResultCode;
 }
 
 union Message {
@@ -883,7 +958,12 @@ union Message {
   HouseClaim,
   RentPay,
   HousingResult,
-  HomeState
+  HomeState,
+  AuctionBid,
+  AuctionResult,
+  WorkbenchCatalog,
+  WorkbenchCraft,
+  CraftResult
 }
 
 table Envelope {

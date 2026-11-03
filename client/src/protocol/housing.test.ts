@@ -1,7 +1,7 @@
 import * as flatbuffers from 'flatbuffers';
 import { describe, expect, it } from 'vitest';
 import {
-  Envelope, HomeState, HouseClaim, HouseInfo, HouseState, HousingResult, HousingResultCode, HousingState,
+  AuctionBid, ShopBuy, ShopKind, WorkbenchCraft, Envelope, HomeState, HouseClaim, HouseInfo, HouseState, HousingResult, HousingResultCode, HousingState,
   ItemCatalog, ItemDef, Message, PlacedItem, PlacementKind, RentPay,
 } from './index.js';
 
@@ -89,5 +89,41 @@ describe('housing protocol', () => {
     expect([a.footprintW(), a.footprintD(), a.placement(), a.surfaceSlots()]).toEqual([2, 1, PlacementKind.FloorOrSurface, 4]);
     const n = m.items(1)!;
     expect([n.footprintW(), n.footprintD(), n.placement(), n.surfaceSlots()]).toEqual([0, 0, PlacementKind.None, 0]);
+  });
+});
+
+describe('auction, rent terms, workbench and thrift protocol', () => {
+  it('round-trips AuctionBid', () => {
+    const b = new flatbuffers.Builder(64);
+    const buf = finish(b, Message.AuctionBid, AuctionBid.createAuctionBid(b, 7, 1500));
+    const m = open(buf, Message.AuctionBid, new AuctionBid());
+    expect([m.houseId(), m.amount()]).toEqual([7, 1500]);
+  });
+
+  it('round-trips HousingState with rent terms and auction fields', () => {
+    const b = new flatbuffers.Builder(256);
+    const h = HouseInfo.createHouseInfo(b, 2, 0, 0, false, 0n, HouseState.Auction, false, 900, 1795000000n, 800);
+    const buf = finish(b, Message.HousingState,
+      HousingState.createHousingState(b, HousingState.createHousesVector(b, [h]), 500, 2, 6));
+    const m = open(buf, Message.HousingState, new HousingState());
+    expect([m.rentPerMonth(), m.claimMonths(), m.maxPrepaidMonths()]).toEqual([500, 2, 6]);
+    const a = m.houses(0)!;
+    expect([a.topBid(), a.auctionEnd(), a.myBid()]).toEqual([900, 1795000000n, 800]);
+  });
+
+  it('round-trips WorkbenchCraft', () => {
+    const b = new flatbuffers.Builder(64);
+    const buf = finish(b, Message.WorkbenchCraft, WorkbenchCraft.createWorkbenchCraft(b, 321));
+    expect(open(buf, Message.WorkbenchCraft, new WorkbenchCraft()).outputItemId()).toBe(321);
+  });
+
+  it('round-trips ShopBuy with the thrift shop and defaults to the market', () => {
+    const b = new flatbuffers.Builder(64);
+    const buf = finish(b, Message.ShopBuy, ShopBuy.createShopBuy(b, 12, 3, ShopKind.Thrift));
+    const m = open(buf, Message.ShopBuy, new ShopBuy());
+    expect([m.itemId(), m.quantity(), m.shop()]).toEqual([12, 3, ShopKind.Thrift]);
+    const b2 = new flatbuffers.Builder(64);
+    const buf2 = finish(b2, Message.ShopBuy, ShopBuy.createShopBuy(b2, 12, 3));
+    expect(open(buf2, Message.ShopBuy, new ShopBuy()).shop()).toBe(ShopKind.Market);
   });
 });

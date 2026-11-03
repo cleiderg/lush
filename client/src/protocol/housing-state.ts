@@ -35,8 +35,23 @@ housesLength():number {
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
+rentPerMonth():number {
+  const offset = this.bb!.__offset(this.bb_pos, 6);
+  return offset ? this.bb!.readUint32(this.bb_pos + offset) : 0;
+}
+
+claimMonths():number {
+  const offset = this.bb!.__offset(this.bb_pos, 8);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
+}
+
+maxPrepaidMonths():number {
+  const offset = this.bb!.__offset(this.bb_pos, 10);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
+}
+
 static startHousingState(builder:flatbuffers.Builder) {
-  builder.startObject(1);
+  builder.startObject(4);
 }
 
 static addHouses(builder:flatbuffers.Builder, housesOffset:flatbuffers.Offset) {
@@ -55,14 +70,29 @@ static startHousesVector(builder:flatbuffers.Builder, numElems:number) {
   builder.startVector(4, numElems, 4);
 }
 
+static addRentPerMonth(builder:flatbuffers.Builder, rentPerMonth:number) {
+  builder.addFieldInt32(1, rentPerMonth, 0);
+}
+
+static addClaimMonths(builder:flatbuffers.Builder, claimMonths:number) {
+  builder.addFieldInt8(2, claimMonths, 0);
+}
+
+static addMaxPrepaidMonths(builder:flatbuffers.Builder, maxPrepaidMonths:number) {
+  builder.addFieldInt8(3, maxPrepaidMonths, 0);
+}
+
 static endHousingState(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createHousingState(builder:flatbuffers.Builder, housesOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
+static createHousingState(builder:flatbuffers.Builder, housesOffset:flatbuffers.Offset = 0, rentPerMonth:number = 0, claimMonths:number = 0, maxPrepaidMonths:number = 0):flatbuffers.Offset {
   HousingState.startHousingState(builder);
   HousingState.addHouses(builder, housesOffset);
+  HousingState.addRentPerMonth(builder, rentPerMonth);
+  HousingState.addClaimMonths(builder, claimMonths);
+  HousingState.addMaxPrepaidMonths(builder, maxPrepaidMonths);
   return HousingState.endHousingState(builder);
 }
 }

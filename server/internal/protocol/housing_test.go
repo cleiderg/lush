@@ -167,3 +167,84 @@ func TestItemDefFurnitureFields(t *testing.T) {
 		t.Fatal("defaults should mean not furniture")
 	}
 }
+
+func TestRoundTripAuctionBid(t *testing.T) {
+	b := flatbuffers.NewBuilder(64)
+	AuctionBidStart(b)
+	AuctionBidAddHouseId(b, 7)
+	AuctionBidAddAmount(b, 1500)
+	buf := finish(b, MessageAuctionBid, AuctionBidEnd(b))
+	var m AuctionBid
+	tbl := open(t, buf, MessageAuctionBid)
+	m.Init(tbl.Bytes, tbl.Pos)
+	if m.HouseId() != 7 || m.Amount() != 1500 {
+		t.Fatalf("got %d %d", m.HouseId(), m.Amount())
+	}
+}
+
+func TestRoundTripHousingStateRentTerms(t *testing.T) {
+	b := flatbuffers.NewBuilder(128)
+	HouseInfoStart(b)
+	HouseInfoAddId(b, 2)
+	HouseInfoAddState(b, HouseStateAuction)
+	HouseInfoAddTopBid(b, 900)
+	HouseInfoAddAuctionEnd(b, 1795000000)
+	HouseInfoAddMyBid(b, 800)
+	h := HouseInfoEnd(b)
+	HousingStateStartHousesVector(b, 1)
+	b.PrependUOffsetT(h)
+	hv := b.EndVector(1)
+	HousingStateStart(b)
+	HousingStateAddHouses(b, hv)
+	HousingStateAddRentPerMonth(b, 500)
+	HousingStateAddClaimMonths(b, 2)
+	HousingStateAddMaxPrepaidMonths(b, 6)
+	buf := finish(b, MessageHousingState, HousingStateEnd(b))
+	var m HousingState
+	tbl := open(t, buf, MessageHousingState)
+	m.Init(tbl.Bytes, tbl.Pos)
+	if m.RentPerMonth() != 500 || m.ClaimMonths() != 2 || m.MaxPrepaidMonths() != 6 {
+		t.Fatalf("terms %d %d %d", m.RentPerMonth(), m.ClaimMonths(), m.MaxPrepaidMonths())
+	}
+	var hi HouseInfo
+	m.Houses(&hi, 0)
+	if hi.TopBid() != 900 || hi.AuctionEnd() != 1795000000 || hi.MyBid() != 800 {
+		t.Fatalf("auction %d %d %d", hi.TopBid(), hi.AuctionEnd(), hi.MyBid())
+	}
+}
+
+func TestRoundTripWorkbenchCraft(t *testing.T) {
+	b := flatbuffers.NewBuilder(64)
+	WorkbenchCraftStart(b)
+	WorkbenchCraftAddOutputItemId(b, 321)
+	buf := finish(b, MessageWorkbenchCraft, WorkbenchCraftEnd(b))
+	var m WorkbenchCraft
+	tbl := open(t, buf, MessageWorkbenchCraft)
+	m.Init(tbl.Bytes, tbl.Pos)
+	if m.OutputItemId() != 321 {
+		t.Fatalf("got %d", m.OutputItemId())
+	}
+}
+
+func TestRoundTripShopBuyThrift(t *testing.T) {
+	b := flatbuffers.NewBuilder(64)
+	ShopBuyStart(b)
+	ShopBuyAddItemId(b, 12)
+	ShopBuyAddQuantity(b, 3)
+	ShopBuyAddShop(b, ShopKindThrift)
+	buf := finish(b, MessageShopBuy, ShopBuyEnd(b))
+	var m ShopBuy
+	tbl := open(t, buf, MessageShopBuy)
+	m.Init(tbl.Bytes, tbl.Pos)
+	if m.ItemId() != 12 || m.Quantity() != 3 || m.Shop() != ShopKindThrift {
+		t.Fatalf("got %d %d %d", m.ItemId(), m.Quantity(), m.Shop())
+	}
+	b = flatbuffers.NewBuilder(64)
+	ShopBuyStart(b)
+	buf = finish(b, MessageShopBuy, ShopBuyEnd(b))
+	tbl = open(t, buf, MessageShopBuy)
+	m.Init(tbl.Bytes, tbl.Pos)
+	if m.Shop() != ShopKindMarket {
+		t.Fatal("default shop is not Market")
+	}
+}

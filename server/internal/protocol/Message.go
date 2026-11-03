@@ -71,6 +71,11 @@ const (
 	MessageRentPay              Message = 61
 	MessageHousingResult        Message = 62
 	MessageHomeState            Message = 63
+	MessageAuctionBid           Message = 64
+	MessageAuctionResult        Message = 65
+	MessageWorkbenchCatalog     Message = 66
+	MessageWorkbenchCraft       Message = 67
+	MessageCraftResult          Message = 68
 )
 
 var EnumNamesMessage = map[Message]string{
@@ -138,6 +143,11 @@ var EnumNamesMessage = map[Message]string{
 	MessageRentPay:              "RentPay",
 	MessageHousingResult:        "HousingResult",
 	MessageHomeState:            "HomeState",
+	MessageAuctionBid:           "AuctionBid",
+	MessageAuctionResult:        "AuctionResult",
+	MessageWorkbenchCatalog:     "WorkbenchCatalog",
+	MessageWorkbenchCraft:       "WorkbenchCraft",
+	MessageCraftResult:          "CraftResult",
 }
 
 var EnumValuesMessage = map[string]Message{
@@ -205,6 +215,11 @@ var EnumValuesMessage = map[string]Message{
 	"RentPay":              MessageRentPay,
 	"HousingResult":        MessageHousingResult,
 	"HomeState":            MessageHomeState,
+	"AuctionBid":           MessageAuctionBid,
+	"AuctionResult":        MessageAuctionResult,
+	"WorkbenchCatalog":     MessageWorkbenchCatalog,
+	"WorkbenchCraft":       MessageWorkbenchCraft,
+	"CraftResult":          MessageCraftResult,
 }
 
 func (v Message) String() string {

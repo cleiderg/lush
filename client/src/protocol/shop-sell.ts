@@ -4,6 +4,9 @@
 
 import * as flatbuffers from 'flatbuffers';
 
+import { ShopKind } from '../protocol/shop-kind';
+
+
 export class ShopSell {
   bb: flatbuffers.ByteBuffer|null = null;
   bb_pos = 0;
@@ -32,8 +35,13 @@ quantity():number {
   return offset ? this.bb!.readUint32(this.bb_pos + offset) : 0;
 }
 
+shop():ShopKind {
+  const offset = this.bb!.__offset(this.bb_pos, 8);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : ShopKind.Market;
+}
+
 static startShopSell(builder:flatbuffers.Builder) {
-  builder.startObject(2);
+  builder.startObject(3);
 }
 
 static addSlot(builder:flatbuffers.Builder, slot:number) {
@@ -44,15 +52,20 @@ static addQuantity(builder:flatbuffers.Builder, quantity:number) {
   builder.addFieldInt32(1, quantity, 0);
 }
 
+static addShop(builder:flatbuffers.Builder, shop:ShopKind) {
+  builder.addFieldInt8(2, shop, ShopKind.Market);
+}
+
 static endShopSell(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createShopSell(builder:flatbuffers.Builder, slot:number = 0, quantity:number = 0):flatbuffers.Offset {
+static createShopSell(builder:flatbuffers.Builder, slot:number = 0, quantity:number = 0, shop:ShopKind = ShopKind.Market):flatbuffers.Offset {
   ShopSell.startShopSell(builder);
   ShopSell.addSlot(builder, slot);
   ShopSell.addQuantity(builder, quantity);
+  ShopSell.addShop(builder, shop);
   return ShopSell.endShopSell(builder);
 }
 }
