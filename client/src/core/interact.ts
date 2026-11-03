@@ -1,4 +1,5 @@
-import { EntityKind } from '../protocol';
+import { EntityKind, SkillTarget } from '../protocol';
+import { hasRawFish, usableResources } from '../state/skillTargets';
 import { pickInteractTarget, type InteractTarget } from '../state/interact';
 import type { Point } from '../state/shop';
 import type { GameState } from '../state/world';
@@ -10,6 +11,8 @@ export interface InteractActions {
   openBank: () => void;
   /** Opens the card table panel for that table (CardTablePanel.open). */
   openCardTable: (tableId: number) => void;
+  /** Sends SkillAction (Session.sendSkillAction) for a tree, a fishing spot or the grill. */
+  sendSkillAction: (target: SkillTarget, targetId: number) => void;
   sendPickUp: (groundItemId: number) => void;
   sendAttackTarget: (targetId: number) => void;
   sendTradeRequest: (targetId: number) => void;
@@ -18,7 +21,9 @@ export interface InteractActions {
 /** The Interact target for the predicted local player and the interpolated entities at `now`. */
 export function interactTarget(game: GameState, now: number, stall: Point): InteractTarget | null {
   const entities = game.remotes(now).map((r) => ({ id: r.id, x: r.x, z: r.z, kind: game.items.entityInfo(r.id)?.kind }));
-  return pickInteractTarget({ pos: game.prediction.pos, stall, entities, groundItems: game.items.groundItems });
+  return pickInteractTarget({ pos: game.prediction.pos, stall, entities, groundItems: game.items.groundItems,
+    skill: { hasRawFish: hasRawFish(game.items), resources: usableResources(game.items, game.skills) },
+  });
 }
 
 /** Runs the Interact button: opens the shop, the bank or a card table's panel, picks up a ground item, attacks, or sends a trade request; nothing without a target. */
@@ -26,6 +31,9 @@ export function interact(game: GameState, now: number, stall: Point, actions: In
   const target = interactTarget(game, now, stall);
   if (target?.type === 'shop') actions.openShop();
   else if (target?.type === 'bank') actions.openBank();
+  else if (target?.type === 'grill') actions.sendSkillAction(SkillTarget.Grill, 0);
+  else if (target?.type === 'tree') actions.sendSkillAction(SkillTarget.Tree, target.id);
+  else if (target?.type === 'fishingSpot') actions.sendSkillAction(SkillTarget.FishingSpot, target.id);
   else if (target?.type === 'cardTable') actions.openCardTable(target.id);
   else if (target?.type === 'pickUp') actions.sendPickUp(target.id);
   else if (target?.type === 'attack') actions.sendAttackTarget(target.id);
@@ -54,6 +62,12 @@ export function interactPromptText(game: GameState, target: InteractTarget | nul
       return { verb: 'Open', name: SHOP_NAME };
     case 'bank':
       return { verb: 'Open', name: BANK_NAME };
+    case 'grill':
+      return { verb: 'Cook' };
+    case 'tree':
+      return { verb: 'Chop', name: target.kind.charAt(0).toUpperCase() + target.kind.slice(1) };
+    case 'fishingSpot':
+      return { verb: 'Fish' };
     case 'cardTable':
       return { verb: 'Open card table' };
     case 'pickUp': {
