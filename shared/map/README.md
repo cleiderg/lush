@@ -5,12 +5,14 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 | File | What |
 |---|---|
 | `source/osm-central.json` | Committed OSM snapshot (`node shared/map/fetch.mjs` refreshes it; needs network) |
-| `build.mjs` | `node shared/map/build.mjs [outDir] [--no-nature]` writes `campus.json`, `collision.bin`, `areas.json`, `cardtables.json`, `props.json`, `skills.json` and `parknature.json` (skipped with `--no-nature`). Offline and deterministic |
+| `build.mjs` | `node shared/map/build.mjs [outDir] [--no-nature]` writes `campus.json`, `collision.bin`, `areas.json`, `cardtables.json`, `fountain.json`, `props.json`, `skills.json` and `parknature.json` (skipped with `--no-nature`). Offline and deterministic |
 | `campus.json` | Compact map for rendering |
 | `collision.bin` | Collision grid for client and server |
 | `areas.mjs` | Gameplay places (spawn, shop, area polygons, card tables) in metres; edit here, then rebuild |
 | `areas.json` | Gameplay areas for client and server |
 | `cardtables.json` | Card table plaza and its 4 tables |
+| `fountain.mjs` | M8 fountain size and clearances; edit here, then rebuild |
+| `fountain.json` | M8 fountain position and size; its basin is blocked in `collision.bin` |
 | `props.mjs` | Prop types, placement seed and busy-area rules; edit here, then rebuild |
 | `props.json` | Campus props (benches, lamp posts, bins, ..., food carts, string lights and table-top cups, plates and pizza boxes), visual only |
 | `skills.mjs` | M9 skill tree counts, pond shape and fishing spot counts, placement seed and clearances; edit here, then rebuild |
@@ -56,7 +58,7 @@ Little-endian. 22-byte header, then bits.
 | 18 | i32 | origin z (north edge) in decimetres |
 | 22 | bytes | `ceil(width*height/8)` bytes, row-major (`index = row*width + col`, row = z, col = x), LSB-first; bit 1 = blocked |
 
-Cell `(col,row)` covers x in `[originX + col*cell, +cell)`, z likewise. A cell is blocked when its centre is inside a building or water, except the floor and door cells of interiors (`interiors` in `areas.json`). Cells outside the file are blocked.
+Cell `(col,row)` covers x in `[originX + col*cell, +cell)`, z likewise. A cell is blocked when its centre is inside a building or water, except the floor and door cells of interiors (`interiors` in `areas.json`), or within the fountain's basin (`fountain.json`). Cells outside the file are blocked.
 
 Go reading sketch: `blocked := data[22+idx>>3]>>(idx&7)&1 == 1`.
 
@@ -89,6 +91,18 @@ The card table area from `docs/specs/map.md` (Gameplay areas): a small plaza abo
 - `tables[]`: `{id, x, z}`. `id` 1 to 4; `x`, `z` the table centre, at least 3 m from every other table.
 
 `build.mjs` snaps each table to the centre of its collision cell and fails if that cell is blocked.
+
+## `fountain.json`
+
+The milestone 8 fountain from `docs/specs/map.md` (Gameplay areas: Fountain). Same units: integer decimetres, x east, z south.
+
+`{version, units, plaza, x, z, r}`
+
+- `version`: 1.
+- `plaza`: OSM way id of the paved plaza (`campus.json` `plazas`) it stands in: the plaza nearest the spawn with room for it.
+- `x`, `z`: the basin centre, on a collision cell centre. `r`: basin radius (20 = 2 m, about 4 m across).
+
+`build.mjs` searches the plazas in order of distance from the spawn (then id) for the point nearest the plaza's centre where the basin plus `FOUNTAIN_PATH_CLEAR` m stays inside the plaza and clear of every path and building, at least `FOUNTAIN_CLEAR` m from the spawn, shop stall, card table plaza, bank booth and grill. Every cell whose centre is within `r` of the centre is blocked in `collision.bin` (water is not walkable) before the props, skill objects and nature are placed. Deterministic, like the rest.
 
 ## `props.json`
 

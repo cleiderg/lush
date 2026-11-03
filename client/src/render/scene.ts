@@ -16,6 +16,7 @@ import { Nature } from './nature';
 import { Props, loadProps } from './propKit';
 import { loadParkNature } from './parkNature';
 import { SkillObjects, loadSkills } from './skillObjects';
+import { Fountain, loadFountain } from './fountain';
 import { DEFAULT_SKY, SkyRig } from './sky';
 import { CafeInterior, cafeLightSources } from './cafeInterior';
 import { LampLights, lampSources } from './lights';
@@ -53,6 +54,8 @@ export class WorldScene {
   readonly props = new Props(loadProps());
   /** Woodcutting trees and stumps, the bank booth, the grill and the pond from skills.json. */
   readonly skills = new SkillObjects(loadSkills());
+  /** The M8 fountain from fountain.json: basin, rippling water and its ring of stones. */
+  readonly fountain = new Fountain(loadFountain());
   /** Sun, ambient, sky colour and fog, following WorldView.sky. */
   readonly sky = new SkyRig();
   /** Warm point lights and glowing heads for lamp posts and lanterns, lit from sunset to sunrise. */
@@ -83,7 +86,7 @@ export class WorldScene {
     this.sky.update(undefined, 0, 0);
     this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.areas.group, this.player.root, this.remotes.group, this.shadows.group, this.healthBars.group);
     // After the players: tests find the remote-player instanced meshes as the first ones in the scene.
-    this.scene.add(this.cardTables.group, this.props.group, this.cafe.group, this.skills.group, this.nature.group, this.lamps.group);
+    this.scene.add(this.cardTables.group, this.props.group, this.cafe.group, this.skills.group, this.fountain.group, this.nature.group, this.lamps.group);
     this.lamps.update(DEFAULT_SKY.elevation, this.rig.camera.position, this.now());
     // Cull again for the camera actually rendering, in case its aspect changed since the last view.
     this.scene.onBeforeRender = (_renderer, _scene, camera) => {
@@ -113,6 +116,7 @@ export class WorldScene {
     this.player.setEquipment(lookup?.entityInfo(local.id)?.equipment, lookup);
     this.remotes.update(view.remotes, lookup, time, this.player, this.combat);
     this.skills.update(view.felledTrees);
+    this.fountain.update(time);
     this.skills.setFishingSpots(view.fishingSpots);
     this.skills.setProgress(view.activeResource, view.resourceProgress);
     if (view.groundItems) {
