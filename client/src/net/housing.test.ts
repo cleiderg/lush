@@ -56,8 +56,8 @@ describe('housing state', () => {
     w.handle(decode(homeBytes(5, [10, 11]))!, 0);
     expect(w.housing.home).toMatchObject({ houseId: 3, ownerName: 'Peter', wallpaperItemId: 5, floorItemId: 8 });
     expect(w.housing.home?.items).toEqual([
-      { placedId: 1, itemId: 10, x: 2, y: 3, rotation: 1, layer: 1, parentPlacedId: 0 },
-      { placedId: 2, itemId: 11, x: 2, y: 3, rotation: 1, layer: 1, parentPlacedId: 0 },
+      { placedId: 1, itemId: 10, x: 2, y: 3, rotation: 1, layer: 1, parentPlacedId: 0, slot: 0, side: 0 },
+      { placedId: 2, itemId: 11, x: 2, y: 3, rotation: 1, layer: 1, parentPlacedId: 0, slot: 0, side: 0 },
     ]);
     w.handle(decode(homeBytes(6, [12]))!, 0);
     expect(w.housing.home?.wallpaperItemId).toBe(6);

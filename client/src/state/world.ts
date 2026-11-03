@@ -11,7 +11,7 @@ import { ItemState } from './items';
 import { type PendingInput, Prediction, RUN_SPEED, WALK_SPEED } from './prediction';
 import { SkillState } from './skills';
 import { bankResultText, levelUpText, skillResultText } from './skillMessages';
-import { HousingStore, housingResultText } from './housing';
+import { HousingStore, homeResultText, housingResultText } from './housing';
 import { GatheringState } from './gathering';
 import { TradeStore } from './trade';
 
@@ -122,6 +122,10 @@ export class GameState {
       this.housing.setHouses(msg.houses);
     } else if (msg.type === 'homeState') {
       this.housing.setHome(msg);
+    } else if (msg.type === 'homeResult') {
+      this.housing.applyHomeResult(msg.code);
+      const text = homeResultText(msg.code);
+      if (text) this.chat.system(text);
     } else if (msg.type === 'housingResult') {
       const text = housingResultText(msg.code);
       if (text) this.chat.system(text);

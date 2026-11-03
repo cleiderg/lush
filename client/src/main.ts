@@ -228,6 +228,7 @@ const session = new Session({
     banner.set(game.restartSeconds);
     if (offline?.panel) openOfflinePanel(offline.panel);
   }),
+  onHomeLeave: () => game.housing.beginLeave(),
   onReload: () => location.reload(),
 });
 session.start();

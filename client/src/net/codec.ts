@@ -8,7 +8,8 @@ import {
   FishingSpotState, LevelUp, SkillCatalog, FishingSpotKindDef, TreeKindDef, ToolSkill, ResourceState, Skill, SkillAction, SkillResult, SkillResultCode, SkillStats, SkillTarget, ShopResult, ShopResultCode, ShopSell, Snapshot, TradeAccept,
   TradeCancel, TradeItem, TradeOffer, TradeRemove, TradeRequest, TradeRequestNotice, TradeResult, TradeResultCode,
   TradeSetGold, TradeState, Vec2, Welcome,
-  HomeState, HouseClaim, HouseInfo, HouseState, HousingResult, HousingResultCode, HousingState, PlacedItem, RentPay,
+  HomeEnter, HomeLeave, HomeMove, HomePlace, HomeRemove, HomeResult, HomeResultCode, HomeRotate, HomeSetFloor, HomeSetOpen,
+  HomeSetWallpaper, HomeState, HouseClaim, HouseInfo, HouseState, HousingResult, HousingResultCode, HousingState, PlacedItem, RentPay,
 } from '../protocol';
 
 export interface EntityState {
@@ -164,6 +165,10 @@ export interface PlacedItemState {
   rotation: number;
   layer: number;
   parentPlacedId: number;
+  /** Surface slot on the parent (surface items). */
+  slot: number;
+  /** WallSide for wall items. */
+  side: number;
 }
 
 /** One home's room. */
@@ -279,6 +284,7 @@ export type ServerMessage =
   | { type: 'housingState'; houses: HouseInfoState[] }
   | { type: 'housingResult'; code: HousingResultCode }
   | ({ type: 'homeState' } & HomeView)
+  | { type: 'homeResult'; code: HomeResultCode }
   | { type: 'tradeRequestNotice'; fromId: number }
   | ({ type: 'tradeState' } & TradeView)
   | { type: 'tradeResult'; code: TradeResultCode }
@@ -367,6 +373,73 @@ export function encodeHouseClaim(houseId: number): Uint8Array {
 export function encodeRentPay(houseId: number, months: number): Uint8Array {
   const b = new flatbuffers.Builder(32);
   return wrap(b, Message.RentPay, RentPay.createRentPay(b, houseId, months));
+}
+
+/** Where a placed item goes; surface items use parentPlacedId and slot, wall items use side. */
+export interface HomePlacement {
+  x: number;
+  y: number;
+  rotation: number;
+  parentPlacedId?: number;
+  slot?: number;
+  side?: number;
+}
+
+/** Enter a home. */
+export function encodeHomeEnter(houseId: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.HomeEnter, HomeEnter.createHomeEnter(b, houseId));
+}
+
+/** Leave the current home. */
+export function encodeHomeLeave(): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  HomeLeave.startHomeLeave(b);
+  return wrap(b, Message.HomeLeave, HomeLeave.endHomeLeave(b));
+}
+
+/** Place an inventory item in the room. */
+export function encodeHomePlace(inventorySlot: number, p: HomePlacement): Uint8Array {
+  const b = new flatbuffers.Builder(48);
+  return wrap(b, Message.HomePlace, HomePlace.createHomePlace(
+    b, inventorySlot, p.x, p.y, p.rotation, p.parentPlacedId ?? 0, p.slot ?? 0, p.side ?? 0));
+}
+
+/** Move a placed item. */
+export function encodeHomeMove(placedId: number, p: HomePlacement): Uint8Array {
+  const b = new flatbuffers.Builder(48);
+  return wrap(b, Message.HomeMove, HomeMove.createHomeMove(
+    b, placedId, p.x, p.y, p.rotation, p.parentPlacedId ?? 0, p.slot ?? 0, p.side ?? 0));
+}
+
+/** Rotate a placed item in place. */
+export function encodeHomeRotate(placedId: number, rotation: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.HomeRotate, HomeRotate.createHomeRotate(b, placedId, rotation));
+}
+
+/** Pick a placed item back up. */
+export function encodeHomeRemove(placedId: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.HomeRemove, HomeRemove.createHomeRemove(b, placedId));
+}
+
+/** Apply a wallpaper item from the inventory. */
+export function encodeHomeSetWallpaper(inventorySlot: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.HomeSetWallpaper, HomeSetWallpaper.createHomeSetWallpaper(b, inventorySlot));
+}
+
+/** Apply a flooring item from the inventory. */
+export function encodeHomeSetFloor(inventorySlot: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.HomeSetFloor, HomeSetFloor.createHomeSetFloor(b, inventorySlot));
+}
+
+/** Lock or unlock the home to visitors (owner only). */
+export function encodeHomeSetOpen(open: boolean): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.HomeSetOpen, HomeSetOpen.createHomeSetOpen(b, open));
 }
 
 /** Ask targetId to trade, or accept their pending request. */
@@ -658,6 +731,7 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
         items.push({
           placedId: o.placedId(), itemId: o.itemId(), x: o.x(), y: o.y(),
           rotation: o.rotation(), layer: o.layer(), parentPlacedId: o.parentPlacedId(),
+          slot: o.slot(), side: o.side(),
         });
       }
       return {
@@ -665,6 +739,8 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
         wallpaperItemId: m.wallpaperItemId(), floorItemId: m.floorItemId(), items,
       };
     }
+    case Message.HomeResult:
+      return { type: 'homeResult', code: (env.msg(new HomeResult()) as HomeResult).code() };
     case Message.TradeRequestNotice:
       return { type: 'tradeRequestNotice', fromId: (env.msg(new TradeRequestNotice()) as TradeRequestNotice).fromId() };
     case Message.TradeState: {
