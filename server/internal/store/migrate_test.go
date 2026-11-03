@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -37,7 +38,7 @@ func TestMigrate(t *testing.T) {
 		t.Skip("LUSH_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := schemaPool(ctx, t, url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +77,7 @@ func TestMigrateProgressDownUp(t *testing.T) {
 		t.Skip("LUSH_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := schemaPool(ctx, t, url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +156,7 @@ func TestMigrateCardPotsDownUp(t *testing.T) {
 		t.Skip("LUSH_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := schemaPool(ctx, t, url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +223,7 @@ func TestMigrateBankDownUp(t *testing.T) {
 		t.Skip("LUSH_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := schemaPool(ctx, t, url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +303,7 @@ func TestMigrateSkillXPDownUp(t *testing.T) {
 		t.Skip("LUSH_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := schemaPool(ctx, t, url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +322,7 @@ func TestMigrateSkillXPDownUp(t *testing.T) {
 	}
 
 	const countColumns = `SELECT count(*) FROM information_schema.columns
-		WHERE table_name = 'players' AND column_name IN ('woodcutting_xp', 'fishing_xp', 'cooking_xp')`
+		WHERE table_schema = current_schema() AND table_name = 'players' AND column_name IN ('woodcutting_xp', 'fishing_xp', 'cooking_xp')`
 	var before int64
 	if err := pool.QueryRow(ctx, "INSERT INTO players (token_hash) VALUES ('before') RETURNING id").Scan(&before); err != nil {
 		t.Fatal(err)
@@ -387,7 +388,7 @@ func TestMigrateHousingDownUp(t *testing.T) {
 		t.Skip("LUSH_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := schemaPool(ctx, t, url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,7 +407,7 @@ func TestMigrateHousingDownUp(t *testing.T) {
 	}
 
 	const countTables = `SELECT count(*) FROM information_schema.tables
-		WHERE table_name IN ('housing_areas', 'house_plots', 'homes', 'placed_items')`
+		WHERE table_schema = current_schema() AND table_name IN ('housing_areas', 'house_plots', 'homes', 'placed_items')`
 	if _, err := provider.DownTo(ctx, housingMigration-1); err != nil {
 		t.Fatalf("down to %d: %v", housingMigration-1, err)
 	}
@@ -474,7 +475,7 @@ func TestMigrateHomeRoomsDownUp(t *testing.T) {
 		t.Skip("LUSH_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := schemaPool(ctx, t, url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -492,7 +493,7 @@ func TestMigrateHomeRoomsDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	const countCols = `SELECT count(*) FROM information_schema.columns
-		WHERE (table_name = 'placed_items' AND column_name IN ('slot', 'side')) OR (table_name = 'homes' AND column_name = 'locked')`
+		WHERE table_schema = current_schema() AND ((table_name = 'placed_items' AND column_name IN ('slot', 'side')) OR (table_name = 'homes' AND column_name = 'locked'))`
 	if _, err := provider.DownTo(ctx, homeRoomsMigration-1); err != nil {
 		t.Fatalf("down: %v", err)
 	}
@@ -541,7 +542,7 @@ func TestMigrateHouseAuctionsDownUp(t *testing.T) {
 		t.Skip("LUSH_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := schemaPool(ctx, t, url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -560,7 +561,7 @@ func TestMigrateHouseAuctionsDownUp(t *testing.T) {
 	}
 
 	const countTables = `SELECT count(*) FROM information_schema.tables
-		WHERE table_name IN ('house_auctions', 'house_bids')`
+		WHERE table_schema = current_schema() AND table_name IN ('house_auctions', 'house_bids')`
 	if _, err := provider.DownTo(ctx, houseAuctionsMigration-1); err != nil {
 		t.Fatalf("down to %d: %v", houseAuctionsMigration-1, err)
 	}
@@ -614,4 +615,34 @@ func TestMigrateHouseAuctionsDownUp(t *testing.T) {
 	if err := pool.QueryRow(ctx, "SELECT count(*) FROM house_bids").Scan(&n); err != nil || n != 0 {
 		t.Errorf("bids after removing the auction = %d, err %v; want 0", n, err)
 	}
+}
+
+// schemaPool returns a pool whose connections use a schema of their own, so
+// tests that drop and re-create tables don't disturb other packages' tests
+// running against the same database.
+func schemaPool(ctx context.Context, t *testing.T, url string) (*pgxpool.Pool, error) {
+	t.Helper()
+	admin, err := pgxpool.New(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	schema := "mig_" + strings.ToLower(t.Name())
+	if _, err := admin.Exec(ctx, "DROP SCHEMA IF EXISTS "+schema+" CASCADE"); err != nil {
+		admin.Close()
+		return nil, err
+	}
+	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		admin.Close()
+		return nil, err
+	}
+	t.Cleanup(func() {
+		_, _ = admin.Exec(context.Background(), "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
+		admin.Close()
+	})
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, err
+	}
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	return pgxpool.NewWithConfig(ctx, cfg)
 }
