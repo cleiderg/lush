@@ -12,7 +12,8 @@ import { ChatText } from './chatText';
 import { FloatTexts } from './floatText';
 import { AreaMarkers, loadAreas } from './gameAreas';
 import { CardTables, loadCardTables } from './cardTables';
-import { Nature } from './nature';
+import { Nature, FLOWERS_PER_M2, GRASS_TUFTS_PER_M2, type NatureOptions } from './nature';
+import { QUALITY_GRASS, QUALITY_SHADOW_MAP, type QualityPreset } from './quality';
 import { Props, loadProps } from './propKit';
 import { loadParkNature } from './parkNature';
 import { SkillObjects, loadSkills } from './skillObjects';
@@ -48,7 +49,8 @@ export class WorldScene {
   readonly areas = new AreaMarkers(loadAreas());
   readonly cardTables = new CardTables(loadCardTables());
   /** Grass tufts and flowers, instanced per map chunk. */
-  readonly nature = new Nature(loadCampus(), { exclude: [loadCardTables().plaza] });
+  nature = new Nature(loadCampus(), this.natureOptions('high'));
+  private preset: QualityPreset = 'high';
   /** Campus props from props.json, merged per chunk. */
   readonly props = new Props(loadProps());
   /** Woodcutting trees and stumps, the bank booth, the grill and the pond from skills.json. */
@@ -99,6 +101,32 @@ export class WorldScene {
     start.follow(0, 0);
     this.nature.cull(start.camera);
     this.skills.cull(start.camera);
+  }
+
+  private natureOptions(preset: QualityPreset): NatureOptions {
+    const f = QUALITY_GRASS[preset];
+    return { exclude: [loadCardTables().plaza], tuftsPerM2: GRASS_TUFTS_PER_M2 * f, flowersPerM2: FLOWERS_PER_M2 * f };
+  }
+
+  /** The current quality preset. */
+  get quality(): QualityPreset {
+    return this.preset;
+  }
+
+  /**
+   * Switch the sun shadow map and the grass and flower density. Replaced geometries and shadow map
+   * render targets are disposed. Props, lamps, sky colours and the nature draw call are unchanged.
+   */
+  setQuality(preset: QualityPreset): void {
+    if (preset === this.preset) return;
+    this.preset = preset;
+    this.sky.setShadowMapSize(QUALITY_SHADOW_MAP[preset]);
+    const old = this.nature;
+    this.nature = new Nature(loadCampus(), this.natureOptions(preset));
+    this.scene.remove(old.group);
+    old.dispose();
+    this.scene.add(this.nature.group);
+    this.nature.cull(this.rig.camera);
   }
 
   update(view: WorldView): void {
