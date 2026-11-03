@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import skillsMap from '../../../shared/map/skills.json';
-import { EntityKind, EquipSlot, ItemKind, Skill, SkillTarget, ToolSkill } from '../protocol';
+import { EntityKind, EquipSlot, ItemKind, Skill, SkillResultCode, SkillTarget, ToolSkill } from '../protocol';
 import type { ItemInfo } from '../net/codec';
 import { BANK_BOOTH } from './bank';
 import { pickInteractTarget } from './interact';
@@ -182,5 +182,23 @@ describe('Interact sends SkillAction and names the action (AC3)', () => {
   it('cooks at the grill', () => {
     const g = game(GRILL, world({ held: [RAW] }));
     expect(run(g)).toEqual({ sent: [[SkillTarget.Grill, 0]], prompt: 'Cook' });
+  });
+
+  it('makes the sent target active once the server answers Started (#508 AC2)', () => {
+    const started = { type: 'skillResult', skill: 0, code: SkillResultCode.Started, itemId: 0, level: 0 } as const;
+    const candidateOf = (id: number) => g.skills.fishingSpotCandidate(id);
+    let g = game(treePos('oak-3'), world({ held: [HATCHET] }));
+    run(g);
+    g.handle(started, 0);
+    expect(g.gathering.activeResource(candidateOf)).toBe('oak-3');
+    const s = skillsMap.pond.spots[0];
+    g = game({ x: dm(s.x), z: dm(s.z) }, world({ held: [NET] }));
+    run(g);
+    g.handle(started, 0);
+    expect(g.gathering.activeResource(candidateOf)).toBe(s.id);
+    g = game(GRILL, world({ held: [RAW] }));
+    run(g);
+    g.handle(started, 0);
+    expect(g.gathering.activeResource(candidateOf)).toBe('grill');
   });
 });

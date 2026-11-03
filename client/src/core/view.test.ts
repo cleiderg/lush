@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { EntityKind } from '../protocol';
+import { EntityKind, SkillResultCode, SkillTarget } from '../protocol';
+import skillsMap from '../../../shared/map/skills.json';
+import { ATTEMPT_MS } from '../state/gathering';
 import { FLOAT_TEXT_MS } from '../render/floatText';
 import { CHAT_FADE_MS, OVERHEAD_CHAT_MS } from '../state/chat';
 import { GameState } from '../state/world';
@@ -275,5 +277,77 @@ describe('buildWorldView sky', () => {
     // The clock may have ticked a millisecond between override and pause, so compare with its frozen time.
     expect(Math.abs(g.clock.now() - night)).toBeLessThan(1000);
     expect(buildWorldView(g, 0).sky).toEqual(sunPosition(g.clock.now()));
+  });
+});
+
+describe('buildWorldView skills', () => {
+  const welcome = (): GameState => {
+    const g = new GameState();
+    g.handle({ type: 'welcome', playerId: 7, tickRate: 20, spawn: { x: 3, z: 4 } } as never, 0);
+    return g;
+  };
+  const result = (code: SkillResultCode) => ({ type: 'skillResult', skill: 0, code, itemId: 0, level: 0 }) as never;
+
+  it('maps felled tree numbers and fishing spot candidates to skills.json ids', () => {
+    const g = welcome();
+    g.handle({ type: 'resourceState', felledTrees: [0, 13], fishingSpots: [{ id: 1, candidate: 3 }, { id: 2, candidate: 0 }] } as never, 0);
+    const v = buildWorldView(g, 0);
+    expect(v.felledTrees).toEqual(new Set([skillsMap.trees[0].id, skillsMap.trees[13].id]));
+    expect(v.fishingSpots).toEqual(new Set([skillsMap.pond.spots[3].id, skillsMap.pond.spots[0].id]));
+  });
+
+  it('activates on Started for a tree, a spot and the grill, with progress over one attempt', () => {
+    const g = welcome();
+    g.handle({ type: 'resourceState', felledTrees: [], fishingSpots: [{ id: 1, candidate: 3 }] } as never, 0);
+    g.gathering.noteAction(SkillTarget.Tree, 13);
+    g.handle(result(SkillResultCode.Started), 1000);
+    expect(buildWorldView(g, 1000).activeResource).toBe(skillsMap.trees[13].id);
+    expect(buildWorldView(g, 1000).resourceProgress).toBe(0);
+    expect(buildWorldView(g, 1000 + ATTEMPT_MS / 2).resourceProgress).toBeCloseTo(0.5);
+    expect(buildWorldView(g, 1000 + ATTEMPT_MS).resourceProgress).toBeCloseTo(0);
+    expect(ATTEMPT_MS).toBe(2400);
+    g.handle(result(SkillResultCode.Success), 1000 + 2000);
+    expect(buildWorldView(g, 3000).resourceProgress).toBe(0);
+    expect(buildWorldView(g, 3000).activeResource).toBe(skillsMap.trees[13].id);
+    g.handle(result(SkillResultCode.Burnt), 3600);
+    expect(buildWorldView(g, 3600 + 1200).resourceProgress).toBeCloseTo(0.5);
+
+    g.gathering.noteAction(SkillTarget.FishingSpot, 1);
+    g.handle(result(SkillResultCode.Started), 5000);
+    expect(buildWorldView(g, 5000).activeResource).toBe(skillsMap.pond.spots[3].id);
+    g.gathering.noteAction(SkillTarget.Grill, 0);
+    g.handle(result(SkillResultCode.Started), 6000);
+    expect(buildWorldView(g, 6000).activeResource).toBe('grill');
+  });
+
+  it.each([
+    SkillResultCode.Stopped, SkillResultCode.InventoryFull, SkillResultCode.ResourceGone, SkillResultCode.NeedTool,
+    SkillResultCode.NeedLevel, SkillResultCode.NothingToCook, SkillResultCode.OutOfRange,
+  ])('clears activeResource on result code %i', (code) => {
+    const g = welcome();
+    g.gathering.noteAction(SkillTarget.Grill, 0);
+    g.handle(result(SkillResultCode.Started), 0);
+    g.handle(result(code), 100);
+    expect(buildWorldView(g, 100).activeResource).toBeUndefined();
+  });
+
+  it('switches to the new target when Stopped for the old one comes just before Started', () => {
+    const g = welcome();
+    g.gathering.noteAction(SkillTarget.Tree, 0);
+    g.handle(result(SkillResultCode.Started), 0);
+    g.gathering.noteAction(SkillTarget.Tree, 13);
+    g.handle(result(SkillResultCode.Stopped), 100);
+    g.handle(result(SkillResultCode.Started), 100);
+    expect(buildWorldView(g, 100).activeResource).toBe(skillsMap.trees[13].id);
+  });
+
+  it('clears activeResource when the local player moves, not when standing still', () => {
+    const g = welcome();
+    g.gathering.noteAction(SkillTarget.Grill, 0);
+    g.handle(result(SkillResultCode.Started), 0);
+    g.applyMove(0, 0, 0.05, false);
+    expect(buildWorldView(g, 50).activeResource).toBe('grill');
+    g.applyMove(1, 0, 0.05, false);
+    expect(buildWorldView(g, 100).activeResource).toBeUndefined();
   });
 });
