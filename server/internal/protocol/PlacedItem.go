@@ -117,8 +117,32 @@ func (rcv *PlacedItem) MutateParentPlacedId(n uint32) bool {
 	return rcv._tab.MutateUint32Slot(16, n)
 }
 
+func (rcv *PlacedItem) Slot() byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(18))
+	if o != 0 {
+		return rcv._tab.GetByte(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *PlacedItem) MutateSlot(n byte) bool {
+	return rcv._tab.MutateByteSlot(18, n)
+}
+
+func (rcv *PlacedItem) Side() byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(20))
+	if o != 0 {
+		return rcv._tab.GetByte(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *PlacedItem) MutateSide(n byte) bool {
+	return rcv._tab.MutateByteSlot(20, n)
+}
+
 func PlacedItemStart(builder *flatbuffers.Builder) {
-	builder.StartObject(7)
+	builder.StartObject(9)
 }
 func PlacedItemAddPlacedId(builder *flatbuffers.Builder, placedId uint32) {
 	builder.PrependUint32Slot(0, placedId, 0)
@@ -140,6 +164,12 @@ func PlacedItemAddLayer(builder *flatbuffers.Builder, layer byte) {
 }
 func PlacedItemAddParentPlacedId(builder *flatbuffers.Builder, parentPlacedId uint32) {
 	builder.PrependUint32Slot(6, parentPlacedId, 0)
+}
+func PlacedItemAddSlot(builder *flatbuffers.Builder, slot byte) {
+	builder.PrependByteSlot(7, slot, 0)
+}
+func PlacedItemAddSide(builder *flatbuffers.Builder, side byte) {
+	builder.PrependByteSlot(8, side, 0)
 }
 func PlacedItemEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

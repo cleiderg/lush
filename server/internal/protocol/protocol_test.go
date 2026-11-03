@@ -44,8 +44,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 16 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 16", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 17 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 17", ProtocolVersionCurrent)
 	}
 }
 
@@ -942,7 +942,7 @@ func TestTradeStateSize(t *testing.T) {
 	small := buildTradeState(tradeState{mine: items[:10]})
 	big := buildTradeState(tradeState{mine: items[:12]})
 	if d := len(big) - len(small); d != 16 {
-		t.Fatalf("two more items add %d bytes, want 16", d)
+		t.Fatalf("two more items add %d bytes, want 17", d)
 	}
 }
 
@@ -1565,8 +1565,8 @@ func TestBankMessageIDs(t *testing.T) {
 			t.Fatalf("%v = %d, want %d", m, m, 50+i)
 		}
 	}
-	if len(EnumNamesMessage) != 64 {
-		t.Fatalf("Message has %d values, want 64 (NONE plus 63 messages)", len(EnumNamesMessage))
+	if len(EnumNamesMessage) != 74 {
+		t.Fatalf("Message has %d values, want 74 (NONE plus 73 messages)", len(EnumNamesMessage))
 	}
 }
 
@@ -1644,7 +1644,7 @@ func TestBankSlotIsSixteenBytes(t *testing.T) {
 	one := buildBankState([]bankSlot{{1, 2}})
 	two := buildBankState([]bankSlot{{1, 2}, {3, 4}})
 	if d := len(two) - len(one); d != 16 {
-		t.Fatalf("one more slot adds %d bytes, want 16", d)
+		t.Fatalf("one more slot adds %d bytes, want 17", d)
 	}
 }
 

@@ -71,6 +71,16 @@ const (
 	MessageRentPay              Message = 61
 	MessageHousingResult        Message = 62
 	MessageHomeState            Message = 63
+	MessageHomeEnter            Message = 64
+	MessageHomeLeave            Message = 65
+	MessageHomePlace            Message = 66
+	MessageHomeMove             Message = 67
+	MessageHomeRotate           Message = 68
+	MessageHomeRemove           Message = 69
+	MessageHomeSetWallpaper     Message = 70
+	MessageHomeSetFloor         Message = 71
+	MessageHomeSetOpen          Message = 72
+	MessageHomeResult           Message = 73
 )
 
 var EnumNamesMessage = map[Message]string{
@@ -138,6 +148,16 @@ var EnumNamesMessage = map[Message]string{
 	MessageRentPay:              "RentPay",
 	MessageHousingResult:        "HousingResult",
 	MessageHomeState:            "HomeState",
+	MessageHomeEnter:            "HomeEnter",
+	MessageHomeLeave:            "HomeLeave",
+	MessageHomePlace:            "HomePlace",
+	MessageHomeMove:             "HomeMove",
+	MessageHomeRotate:           "HomeRotate",
+	MessageHomeRemove:           "HomeRemove",
+	MessageHomeSetWallpaper:     "HomeSetWallpaper",
+	MessageHomeSetFloor:         "HomeSetFloor",
+	MessageHomeSetOpen:          "HomeSetOpen",
+	MessageHomeResult:           "HomeResult",
 }
 
 var EnumValuesMessage = map[string]Message{
@@ -205,6 +225,16 @@ var EnumValuesMessage = map[string]Message{
 	"RentPay":              MessageRentPay,
 	"HousingResult":        MessageHousingResult,
 	"HomeState":            MessageHomeState,
+	"HomeEnter":            MessageHomeEnter,
+	"HomeLeave":            MessageHomeLeave,
+	"HomePlace":            MessageHomePlace,
+	"HomeMove":             MessageHomeMove,
+	"HomeRotate":           MessageHomeRotate,
+	"HomeRemove":           MessageHomeRemove,
+	"HomeSetWallpaper":     MessageHomeSetWallpaper,
+	"HomeSetFloor":         MessageHomeSetFloor,
+	"HomeSetOpen":          MessageHomeSetOpen,
+	"HomeResult":           MessageHomeResult,
 }
 
 func (v Message) String() string {
