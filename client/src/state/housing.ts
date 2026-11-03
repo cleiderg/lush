@@ -1,12 +1,43 @@
 import type { HomeView, HouseInfoState, PlacedItemState } from '../net/codec';
 import { HouseState, HousingResultCode } from '../protocol';
 
+/** Rent terms the server sends with HousingState. */
+export interface RentTerms {
+  rentPerMonth: number;
+  claimMonths: number;
+  maxPrepaidMonths: number;
+}
+
+/** Chat line on login when the player's house is in the rent warning. */
+export const RENT_WARNING_LOGIN = 'Your rent is running low. Pay rent at your house, or it will go to auction';
+
+/** A rent month is 30 real days (docs/specs/housing.md). */
+export const RENT_MONTH_SECONDS = 30 * 24 * 3600;
+
+/** Whole months of rent still prepaid at `now` (unix seconds). */
+export function prepaidMonths(paidUntil: number, now: number): number {
+  return Math.max(0, Math.floor((paidUntil - now) / RENT_MONTH_SECONDS));
+}
+
+/**
+ * Most whole months the owner can still add without paid-until passing `now` plus `maxPrepaid` months,
+ * the server's PayRent check (a part month already prepaid counts against the room left).
+ */
+export function maxRentMonths(paidUntil: number, now: number, maxPrepaid: number): number {
+  const left = Math.max(0, paidUntil - now);
+  return Math.max(0, Math.floor((maxPrepaid * RENT_MONTH_SECONDS - left) / RENT_MONTH_SECONDS));
+}
+
 export type { HomeView, HouseInfoState, PlacedItemState };
 
 /** Houses from HousingState and the current home from HomeState. Subscribers are told after any change. */
 export class HousingStore {
   houses: HouseInfoState[] = [];
   home: HomeView | null = null;
+  /** Rent terms from HousingState (server data, rules.json); 0 until the first HousingState. */
+  rentPerMonth = 0;
+  claimMonths = 0;
+  maxPrepaidMonths = 0;
   private listeners = new Set<() => void>();
 
   /** Calls fn after every change; returns an unsubscribe function. */
@@ -19,9 +50,14 @@ export class HousingStore {
     for (const fn of this.listeners) fn();
   }
 
-  /** Replaces the whole house list. */
-  setHouses(houses: readonly HouseInfoState[]): void {
+  /** Replaces the whole house list and the rent terms. */
+  setHouses(houses: readonly HouseInfoState[], terms?: RentTerms): void {
     this.houses = houses.map((h) => ({ ...h }));
+    if (terms) {
+      this.rentPerMonth = terms.rentPerMonth;
+      this.claimMonths = terms.claimMonths;
+      this.maxPrepaidMonths = terms.maxPrepaidMonths;
+    }
     this.notify();
   }
 
@@ -29,6 +65,16 @@ export class HousingStore {
   setHome(h: HomeView): void {
     this.home = { ...h, items: h.items.map((i) => ({ ...i })) };
     this.notify();
+  }
+
+  /** The house with this id, or null. */
+  house(id: number): HouseInfoState | null {
+    return this.houses.find((h) => h.id === id) ?? null;
+  }
+
+  /** Gold to claim an empty house: claimMonths months of rent. */
+  claimCost(): number {
+    return this.claimMonths * this.rentPerMonth;
   }
 
   /** The house this player owns, or null. */
@@ -43,6 +89,7 @@ export class HousingStore {
 
   /** Forgets everything; used on a new Welcome. */
   clear(): void {
+    this.rentPerMonth = this.claimMonths = this.maxPrepaidMonths = 0;
     if (this.houses.length === 0 && !this.home) return;
     this.houses = [];
     this.home = null;
