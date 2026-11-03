@@ -30,7 +30,8 @@ describe('path surfaces and plazas in the map build (AC1)', () => {
     const src = JSON.parse(readFileSync(join(mapDir, 'source/osm-central.json'), 'utf8')) as {
       ways: { id: number; tags: Record<string, string>; pts: number[][] }[];
     };
-    const tags = new Map(src.ways.map((w) => [w.id, w.tags]));
+    const housing = JSON.parse(readFileSync(join(mapDir, 'source/osm-housing.json'), 'utf8')) as typeof src;
+    const tags = new Map([...housing.ways, ...src.ways].map((w) => [w.id, w.tags]));
     const expected = (h: string) =>
       h === 'path' ? SURFACE_DIRT : ['footway', 'steps', 'cycleway', 'pedestrian'].includes(h) ? SURFACE_STONE : SURFACE_PAVED;
     const seen = new Set<number>();
@@ -46,7 +47,8 @@ describe('path surfaces and plazas in the map build (AC1)', () => {
       .filter((w) => w.pts.length > 3 && w.pts[0].join() === w.pts[w.pts.length - 1].join())
       .map((w) => w.id);
     expect(areaIds.length).toBeGreaterThan(0);
-    expect(campus.plazas.map((p) => p.id).sort()).toEqual(areaIds.sort());
+    const central = new Set(src.ways.map((w) => w.id));
+    expect(campus.plazas.map((p) => p.id).filter((id) => central.has(id)).sort()).toEqual(areaIds.sort());
   });
 
   it('writes every plaza as a closed polygon with at least 3 points', () => {
@@ -68,10 +70,10 @@ describe('path surfaces and plazas in the map build (AC1)', () => {
 
 describe('collision and areas unchanged (AC2)', () => {
   // SHA-256 of the files as committed before path surfaces were added (#379); collision.bin and areas.json
-  // since the Student Center café was opened (#403), and collision.bin since the fountain's basin was blocked (#432).
-  // fountain.test.ts shows collision.bin matches the café-era d200274d... with only the basin cells cleared.
+  // since the Student Center café was opened (#403), and collision.bin since the fountain's basin was blocked (#432)
+  // and the grid grew to the housing areas (#523). fountain.test.ts shows the central-campus cells are unchanged.
   const BEFORE: Record<string, string> = {
-    'collision.bin': '508a67e180de0bd073f9cc9727252eb8388bef21a5188acd5bbe189a70637181',
+    'collision.bin': '899b6bc2a1a9d643f7a5ece45bf75120340f14cab437d718c1cbfdb844aec61c',
     'areas.json': 'e01fb98497195c33d38138fd3a0b7baeb34a79b2bc75ee394deddd40a9ac02e0',
     'cardtables.json': '4b50c37498188920ab254d2bd62389dac46482cc442acd471718c42d88ce2ee9',
   };
