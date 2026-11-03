@@ -31,6 +31,8 @@ type bot struct {
 	x, z  float64    // metres from the spawn point, from the latest Snapshot
 	sentP map[uint32]time.Time
 	inv   inventory // from the latest InventoryState
+	res   resources // from the latest ResourceState
+	gath  *gatherer // nil unless this bot gathers
 }
 
 // setPos records the server's position for this bot (Snapshot decimetres).
@@ -58,6 +60,24 @@ func (b *bot) inventory() inventory {
 	return b.inv
 }
 
+func (b *bot) setResources(r resources) {
+	b.mu.Lock()
+	b.res = r
+	b.mu.Unlock()
+}
+
+func (b *bot) resources() resources {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.res
+}
+
+// isGatherer says whether bot id gathers when frac of the bots do: it spreads
+// the gatherers evenly over the ids.
+func isGatherer(id int, frac float64) bool {
+	return math.Floor(float64(id+1)*frac) > math.Floor(float64(id)*frac)
+}
+
 func (b *bot) notePing(tok uint32, t time.Time) {
 	b.mu.Lock()
 	b.sentP[tok] = t
@@ -73,8 +93,12 @@ func (b *bot) takePing(tok uint32) (time.Time, bool) {
 }
 
 func newBot(id int, cfg config, st *stats) *bot {
-	return &bot{id: id, cfg: cfg, st: st, rng: rand.New(rand.NewSource(cfg.seed + int64(id))),
+	b := &bot{id: id, cfg: cfg, st: st, rng: rand.New(rand.NewSource(cfg.seed + int64(id))),
 		sentP: map[uint32]time.Time{}}
+	if cfg.gmap != nil && isGatherer(id, cfg.gatherers) {
+		b.gath = newGatherer(cfg.gmap, id%2 == 1)
+	}
+	return b
 }
 
 // run connects, plays until ctx ends, and keeps the live/failed counters.
@@ -169,16 +193,33 @@ func (b *bot) play(ctx context.Context, conn *websocket.Conn) error {
 			// Steer back toward the spawn once outside the circle. The
 			// position is the server's, so speed and walls can't make it drift.
 			x, z := b.pos()
-			if now.After(turnAt) || math.Hypot(x, z) > b.cfg.radius {
+			if b.gath == nil && (now.After(turnAt) || math.Hypot(x, z) > b.cfg.radius) {
 				dirX, dirZ = b.pickDir()
 				if n := math.Hypot(x, z); n > b.cfg.radius {
 					dirX, dirZ = -x/n, -z/n
 				}
 				turnAt = now.Add(b.walkTime())
 			}
+			mx, mz := dirX, dirZ
+			var gs gatherStep
+			if b.gath != nil {
+				gs = b.gath.step(now, x+b.spawn[0], z+b.spawn[1], b.inventory(), b.resources())
+				mx, mz = gs.moveX, gs.moveZ // standing still keeps the gathering going
+			}
 			seq++
-			if err := conn.Write(ctx, websocket.MessageBinary, encodeInput(bld, seq, dirX, dirZ)); err != nil {
+			if err := conn.Write(ctx, websocket.MessageBinary, encodeInput(bld, seq, mx, mz)); err != nil {
 				return err
+			}
+			if gs.buy != 0 {
+				if err := conn.Write(ctx, websocket.MessageBinary, encodeShopBuy(bld, gs.buy)); err != nil {
+					return err
+				}
+			}
+			if gs.act != nil {
+				if err := conn.Write(ctx, websocket.MessageBinary, encodeSkillAction(bld, *gs.act)); err != nil {
+					return err
+				}
+				b.st.skillActs.Add(1)
 			}
 			if now.After(nextChat) {
 				nextChat = now.Add(time.Duration(20+b.rng.Intn(21)) * time.Second)
@@ -229,6 +270,13 @@ func (b *bot) handle(data []byte) {
 	case protocol.MessageInventoryState:
 		b.st.invStates.Add(1)
 		b.setInventory(m.inv)
+	case protocol.MessageResourceState:
+		b.setResources(m.res)
+	case protocol.MessageSkillResult:
+		b.st.noteSkillResult(m.skillCode)
+		if b.gath != nil {
+			b.gath.noteResult(m.skillCode)
+		}
 	case protocol.MessagePong:
 		if t, ok := b.takePing(m.token); ok {
 			b.st.addRTT(time.Since(t))
