@@ -70,7 +70,7 @@ func TestGameSystemsRegisterItemsShopTradeRegenBeforeSession(t *testing.T) {
 			t.Errorf("%s every %d ticks, want %d", s.sys.Name(), s.every, want)
 		}
 	}
-	want := []string{"movement", "gather", "cook", "npc", "emote", "chat", "items", "shop", "trade", "bank", "cardroom", "housing", "grounditems",
+	want := []string{"movement", "gather", "cook", "npc", "emote", "chat", "items", "shop", "trade", "bank", "cardroom", "housing", "homeroom", "grounditems",
 		"pvp_combat", "pve_combat", "spawner", "regen", "session"}
 	if !slices.Equal(names, want) {
 		t.Fatalf("systems = %v, want %v", names, want)

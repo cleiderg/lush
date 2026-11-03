@@ -15,11 +15,13 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/furniture"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/grounditems"
+	"github.com/cleiderg/lush/server/internal/systems/homeroom"
 	"github.com/cleiderg/lush/server/internal/systems/housing"
 	"github.com/cleiderg/lush/server/internal/systems/items"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
 	"github.com/cleiderg/lush/server/internal/systems/trade"
 	"github.com/cleiderg/lush/server/internal/world"
+	roomgrid "github.com/cleiderg/lush/server/internal/world/housing"
 )
 
 func finish(b *flatbuffers.Builder, typ protocol.Message, msg flatbuffers.UOffsetT) []byte {
@@ -385,6 +387,11 @@ type message struct {
 	// HouseClaim and RentPay.
 	houseID uint16
 	months  uint8
+	// Home messages; slot is the inventory slot, houseID the home to enter.
+	placed                     uint32 // placed item id
+	hx, hy, hrot, hslot, hside uint8
+	hparent                    uint32
+	open                       bool
 }
 
 // gameSlots maps wire equipment slots to game data slots. EquipSlotNone is
@@ -466,6 +473,25 @@ func (m message) command(id world.PlayerID) world.Command {
 		}
 	case protocol.MessageHouseClaim:
 		return housing.ClaimCommand{Player: id, House: housing.HouseID(m.houseID)}
+	case protocol.MessageHomeEnter:
+		return HomeCommand{homeroom.EnterCommand{Player: id, Home: homeroom.HomeID(m.houseID)}}
+	case protocol.MessageHomeLeave:
+		return HomeCommand{homeroom.LeaveCommand{Player: id}}
+	case protocol.MessageHomeSetOpen:
+		// The home to lock is the one the player is in; Handle fills it in.
+		return HomeCommand{setOpenCommand{Player: id, Locked: !m.open}}
+	case protocol.MessageHomePlace:
+		return HomeCommand{homeroom.PlaceCommand{Player: id, Slot: m.slot, At: m.placement()}}
+	case protocol.MessageHomeMove:
+		return HomeCommand{homeroom.MoveCommand{Player: id, Placed: roomgrid.ID(m.placed), To: m.placement()}}
+	case protocol.MessageHomeRotate:
+		return HomeCommand{homeroom.RotateCommand{Player: id, Placed: roomgrid.ID(m.placed), Rot: roomgrid.Rotation(int(m.hrot) * 90)}}
+	case protocol.MessageHomeRemove:
+		return HomeCommand{homeroom.RemoveCommand{Player: id, Placed: roomgrid.ID(m.placed)}}
+	case protocol.MessageHomeSetWallpaper:
+		return HomeCommand{homeroom.SetWallpaperCommand{Player: id, Slot: m.slot}}
+	case protocol.MessageHomeSetFloor:
+		return HomeCommand{homeroom.SetFloorCommand{Player: id, Slot: m.slot}}
 	case protocol.MessageRentPay:
 		return housing.PayRentCommand{Player: id, House: housing.HouseID(m.houseID), Months: int(m.months)}
 	case protocol.MessageCardTableSit:
@@ -482,6 +508,14 @@ func (m message) command(id world.PlayerID) world.Command {
 		return cardroom.DrawCommand{Player: id}
 	}
 	return nil
+}
+
+// placement is the room placement a HomePlace or HomeMove asks for. The wire
+// has rotation in quarter turns, the room in degrees. A wall item's x is its
+// position along the wall.
+func (m message) placement() roomgrid.Placement {
+	return roomgrid.Placement{X: int(m.hx), Y: int(m.hy), Rot: roomgrid.Rotation(int(m.hrot) * 90),
+		Parent: roomgrid.ID(m.hparent), Slot: int(m.hslot), Side: roomgrid.Side(m.hside), Pos: int(m.hx)}
 }
 
 // decode parses an inbound frame and reads every field it uses, so that all
@@ -575,6 +609,40 @@ func decode(buf []byte) (m message, err error) {
 		var hc protocol.HouseClaim
 		hc.Init(tbl.Bytes, tbl.Pos)
 		m.houseID = hc.HouseId()
+	case protocol.MessageHomeEnter:
+		var he protocol.HomeEnter
+		he.Init(tbl.Bytes, tbl.Pos)
+		m.houseID = he.HouseId()
+	case protocol.MessageHomeSetOpen:
+		var so protocol.HomeSetOpen
+		so.Init(tbl.Bytes, tbl.Pos)
+		m.open = so.Open()
+	case protocol.MessageHomePlace:
+		var hp protocol.HomePlace
+		hp.Init(tbl.Bytes, tbl.Pos)
+		m.slot = int(hp.InventorySlot())
+		m.hx, m.hy, m.hrot, m.hparent, m.hslot, m.hside = hp.X(), hp.Y(), hp.Rotation(), hp.ParentPlacedId(), hp.Slot(), hp.Side()
+	case protocol.MessageHomeMove:
+		var hm protocol.HomeMove
+		hm.Init(tbl.Bytes, tbl.Pos)
+		m.placed = hm.PlacedId()
+		m.hx, m.hy, m.hrot, m.hparent, m.hslot, m.hside = hm.X(), hm.Y(), hm.Rotation(), hm.ParentPlacedId(), hm.Slot(), hm.Side()
+	case protocol.MessageHomeRotate:
+		var hr protocol.HomeRotate
+		hr.Init(tbl.Bytes, tbl.Pos)
+		m.placed, m.hrot = hr.PlacedId(), hr.Rotation()
+	case protocol.MessageHomeRemove:
+		var hr protocol.HomeRemove
+		hr.Init(tbl.Bytes, tbl.Pos)
+		m.placed = hr.PlacedId()
+	case protocol.MessageHomeSetWallpaper:
+		var hw protocol.HomeSetWallpaper
+		hw.Init(tbl.Bytes, tbl.Pos)
+		m.slot = int(hw.InventorySlot())
+	case protocol.MessageHomeSetFloor:
+		var hf protocol.HomeSetFloor
+		hf.Init(tbl.Bytes, tbl.Pos)
+		m.slot = int(hf.InventorySlot())
 	case protocol.MessageRentPay:
 		var rp protocol.RentPay
 		rp.Init(tbl.Bytes, tbl.Pos)
