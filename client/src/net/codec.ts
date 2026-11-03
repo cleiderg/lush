@@ -276,7 +276,7 @@ export type ServerMessage =
   | { type: 'shopResult'; code: ShopResultCode }
   | { type: 'combatHit'; tick: number; hits: HitEvent[] }
   | { type: 'npcCatalog'; npcs: NpcInfo[] }
-  | { type: 'housingState'; houses: HouseInfoState[] }
+  | { type: 'housingState'; houses: HouseInfoState[]; rentPerMonth: number; claimMonths: number; maxPrepaidMonths: number }
   | { type: 'housingResult'; code: HousingResultCode }
   | ({ type: 'homeState' } & HomeView)
   | { type: 'tradeRequestNotice'; fromId: number }
@@ -644,7 +644,10 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
           paidUntil: Number(o.paidUntil()), state: o.state(), open: o.open(),
         });
       }
-      return { type: 'housingState', houses };
+      return {
+        type: 'housingState', houses, rentPerMonth: m.rentPerMonth(), claimMonths: m.claimMonths(),
+        maxPrepaidMonths: m.maxPrepaidMonths(),
+      };
     }
     case Message.HousingResult:
       return { type: 'housingResult', code: (env.msg(new HousingResult()) as HousingResult).code() };

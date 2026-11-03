@@ -11,7 +11,7 @@ import { ItemState } from './items';
 import { type PendingInput, Prediction, RUN_SPEED, WALK_SPEED } from './prediction';
 import { SkillState } from './skills';
 import { bankResultText, levelUpText, skillResultText } from './skillMessages';
-import { HousingStore, housingResultText } from './housing';
+import { HousingStore, housingResultText, RENT_WARNING_LOGIN } from './housing';
 import { TradeStore } from './trade';
 
 export interface PlayerView {
@@ -49,6 +49,8 @@ export class GameState {
   readonly trade = new TradeStore();
   /** Houses, the player's own house and the current home; subscribe for changes. */
   readonly housing = new HousingStore();
+  /** True once a HousingState has arrived since the last Welcome (the first one is the login warning). */
+  private housingSeen = false;
   /** Open bank slots and the last bank result; subscribe for changes. */
   readonly bank = new BankStore();
   /** Card table seat and turn state, the local player's seat and the last result; subscribe for changes. */
@@ -83,6 +85,7 @@ export class GameState {
       this.gains.reset();
       this.trade.clear();
       this.housing.clear();
+      this.housingSeen = false;
       this.bank.clear();
       this.cardTables.clear();
       this.chat.clearOverheads();
@@ -115,7 +118,10 @@ export class GameState {
     } else if (msg.type === 'npcCatalog') {
       this.items.setNpcCatalog(msg.npcs);
     } else if (msg.type === 'housingState') {
-      this.housing.setHouses(msg.houses);
+      const first = !this.housingSeen;
+      this.housingSeen = true;
+      this.housing.setHouses(msg.houses, msg);
+      if (first && this.housing.inWarning()) this.chat.system(RENT_WARNING_LOGIN);
     } else if (msg.type === 'homeState') {
       this.housing.setHome(msg);
     } else if (msg.type === 'housingResult') {

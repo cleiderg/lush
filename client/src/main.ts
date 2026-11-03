@@ -9,7 +9,7 @@ import { sendMove } from './core/move';
 import { buildWorldView, controlYaw } from './core/view';
 import { sendWave } from './core/wave';
 import { memoryTokenStore, OfflineTransport, offlineOptions, type OfflinePanel } from './net/offline';
-import { OFFLINE_TABLE_ID, withOfflinePanels } from './net/offlinePanels';
+import { OFFLINE_HOUSE_ID, OFFLINE_TABLE_ID, withOfflinePanels } from './net/offlinePanels';
 import { localTokenStore, Session } from './net/session';
 import { WebSocketTransport } from './net/transport';
 import { createRenderer } from './render/renderer';
@@ -29,6 +29,7 @@ import { LocationPanel } from './ui/locationPanel';
 import { BigMap, Minimap } from './ui/minimap';
 import { PlayerPortrait } from './ui/playerPortrait';
 import { localRetroStore, RetroToggle } from './ui/retroToggle';
+import { HousePanel } from './ui/housePanel';
 import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
 import { SkillsPanel } from './ui/skillsPanel';
 import { applyTheme, BUTTON_CLASS } from './ui/theme';
@@ -91,6 +92,7 @@ const hud = new Hud({
   onOpen: () => {
     skills.setOpen(false);
     shop.close();
+    house.close();
     cardTable.close();
     bank.close();
     bigMap.close();
@@ -105,6 +107,7 @@ const skills = new SkillsPanel({
   onOpen: () => {
     hud.setOpen(false);
     shop.close();
+    house.close();
     cardTable.close();
     bank.close();
     bigMap.close();
@@ -118,6 +121,21 @@ const shop = new ShopPanel({
   onOpen: () => {
     hud.setOpen(false);
     skills.setOpen(false);
+    house.close();
+    cardTable.close();
+    bank.close();
+    bigMap.close();
+  },
+});
+// Opened from the offline shot for now; Interact at a door comes with the door positions (#524).
+const house = new HousePanel({
+  parent: document.body,
+  housing: game.housing,
+  send,
+  onOpen: () => {
+    hud.setOpen(false);
+    skills.setOpen(false);
+    shop.close();
     cardTable.close();
     bank.close();
     bigMap.close();
@@ -138,6 +156,7 @@ const cardTable = new CardTablePanel({
     hud.setOpen(false);
     skills.setOpen(false);
     shop.close();
+    house.close();
     bank.close();
     bigMap.close();
   },
@@ -159,6 +178,7 @@ const bank = new BankPanel({
     hud.setOpen(false);
     skills.setOpen(false);
     shop.close();
+    house.close();
     cardTable.close();
     bigMap.close();
   },
@@ -180,6 +200,7 @@ const trade = new TradePanel({
     hud.setOpen(false);
     skills.setOpen(false);
     shop.close();
+    house.close();
     cardTable.close();
     bank.close();
     bigMap.close();
@@ -196,6 +217,7 @@ const bigMap = new BigMap({
     hud.setOpen(false);
     skills.setOpen(false);
     shop.close();
+    house.close();
     cardTable.close();
     bank.close();
   },
@@ -212,7 +234,7 @@ const chatLog = new ChatLog({
   parent: document.body,
   lines: () => game.chat.log,
   playerId: () => game.playerId,
-  covered: () => anyOpen([hud, skills, shop, bank, trade, cardTable, bigMap]),
+  covered: () => anyOpen([hud, skills, shop, house, bank, trade, cardTable, bigMap]),
 });
 // Developer-only time control (?debug): overrides the shared time the sky follows.
 mountTimePanel(location.search, { parent: document.body, clock: game.clock });
@@ -241,6 +263,10 @@ function openOfflinePanel(panel: OfflinePanel): void {
       return hud.isOpen;
     },
     shop: () => shop.tryOpen(),
+    house: () => {
+      house.open(OFFLINE_HOUSE_ID);
+      return house.isOpen;
+    },
     bank: () => bank.isOpen,
     trade: () => trade.isOpen,
     'card-table': () => {
