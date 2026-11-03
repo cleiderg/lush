@@ -15,13 +15,21 @@ var sysStart = time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
 type recSink struct {
 	results []housing.Outcome
 	lists   [][]housing.Info
+	listTo  []world.PlayerID
+	auction []housing.AuctionOutcome
 	lapsed  [][2]uint64
 }
 
 func (s *recSink) HouseResult(_ world.PlayerID, _ housing.HouseID, o housing.Outcome) {
 	s.results = append(s.results, o)
 }
-func (s *recSink) HouseList(h []housing.Info) { s.lists = append(s.lists, h) }
+func (s *recSink) HouseList(to world.PlayerID, h []housing.Info) {
+	s.listTo = append(s.listTo, to)
+	s.lists = append(s.lists, h)
+}
+func (s *recSink) AuctionResult(_ world.PlayerID, _ housing.HouseID, o housing.AuctionOutcome) {
+	s.auction = append(s.auction, o)
+}
 func (s *recSink) HouseLapsedEvent(h housing.HouseID, prev world.PlayerID) {
 	s.lapsed = append(s.lapsed, [2]uint64{uint64(h), uint64(prev)})
 }
@@ -253,7 +261,7 @@ func TestSystemLapse(t *testing.T) {
 	if f.info(1).Owner != 0 || f.p.Inv.Locked() || !reflect.DeepEqual(f.sink.lapsed, [][2]uint64{{1, 1}}) {
 		t.Fatalf("lapse not applied: %+v", f.sink.lapsed)
 	}
-	if len(f.sink.lists) != 1 || f.sink.lists[0][0].Owner != 0 || f.sink.lists[0][0].State != housing.Empty {
+	if len(f.sink.lists) != 1 || f.sink.lists[0][0].Owner != 0 || f.sink.lists[0][0].State != housing.InAuction || !f.sink.lists[0][0].AuctionEnd.Equal(sysStart.Add(2*24*time.Hour+housing.New(f.d.Rules).AuctionDuration())) {
 		t.Fatalf("list %+v", f.sink.lists)
 	}
 	f.run()

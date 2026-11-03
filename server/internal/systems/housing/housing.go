@@ -24,14 +24,15 @@ const (
 type State int
 
 const (
-	Empty   State = iota // nobody owns it; claimable
-	Owned                // at least one month plus the warning period prepaid
-	Warning              // fewer than the warning days left before dropping below one month
-	Lapsed               // less than one month prepaid; goes to auction
+	Empty     State = iota // nobody owns it; claimable
+	Owned                  // at least one month plus the warning period prepaid
+	Warning                // fewer than the warning days left before dropping below one month
+	Lapsed                 // less than one month prepaid; goes to auction
+	InAuction              // up for auction; State never returns it, the system does
 )
 
 func (s State) String() string {
-	return [...]string{"Empty", "Owned", "Warning", "Lapsed"}[s]
+	return [...]string{"Empty", "Owned", "Warning", "Lapsed", "InAuction"}[s]
 }
 
 var (
