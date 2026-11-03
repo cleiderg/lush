@@ -120,7 +120,7 @@ describe('decode + GameState: item catalog', () => {
     feed(game, catalog());
     expect(game.items.item(5)).toEqual({
       id: 5, name: 'Bronze sword', kind: ItemKind.Weapon, equipSlot: EquipSlot.Weapon, levelToEquip: 1,
-      accuracy: 4, strength: 3, defence: -1, attackSpeed: 4, heal: 0, shopBuysFor: 10, shopSells: true, shopSellsFor: 25,
+      accuracy: 4, strength: 3, defence: -1, attackSpeed: 4, heal: 0, shopBuysFor: 10, shopSells: true, shopSellsFor: 25, toolSkill: 0, toolLevel: 0, cookingLevel: 0,
     });
     expect(game.items.item(9)?.name).toBe('Fish');
     expect(game.items.item(9)?.heal).toBe(3);
@@ -134,7 +134,7 @@ describe('decode + GameState: entity info and health', () => {
     const game = setup();
     feed(game, snapshot([1, 2, 3]), info(2, EntityKind.Player, 0, 5, 5, 0, 7, 0), info(3, EntityKind.Npc, 4, 12));
     expect(game.items.entityInfo(2)).toEqual({
-      id: 2, kind: EntityKind.Player, npcType: 0, combatLevel: 5, equipment: { weapon: 5, head: 0, body: 7, shield: 0 },
+      id: 2, kind: EntityKind.Player, npcType: 0, combatLevel: 5, totalLevel: 0, equipment: { weapon: 5, head: 0, body: 7, shield: 0 },
     });
     expect(game.items.entityInfo(3)).toMatchObject({ kind: EntityKind.Npc, npcType: 4, combatLevel: 12 });
     feed(game, info(2, EntityKind.Player, 0, 6, 0, 8, 7, 0));
@@ -228,7 +228,7 @@ describe('ItemState notifications', () => {
     let count = 0;
     s.subscribe(() => count++);
     s.setVisible([1]);
-    s.setEntityInfo({ id: 1, kind: EntityKind.Npc, npcType: 1, combatLevel: 2, equipment: { weapon: 0, head: 0, body: 0, shield: 0 } });
+    s.setEntityInfo({ id: 1, kind: EntityKind.Npc, npcType: 1, combatLevel: 2, totalLevel: 0, equipment: { weapon: 0, head: 0, body: 0, shield: 0 } });
     s.resetEntities();
     expect(count).toBe(2);
     expect(s.entityInfo(1)).toBeUndefined();
