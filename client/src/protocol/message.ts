@@ -25,6 +25,10 @@ import { EntityHealth } from '../protocol/entity-health';
 import { EntityInfo } from '../protocol/entity-info';
 import { GroundItems } from '../protocol/ground-items';
 import { Hello } from '../protocol/hello';
+import { HomeState } from '../protocol/home-state';
+import { HouseClaim } from '../protocol/house-claim';
+import { HousingResult } from '../protocol/housing-result';
+import { HousingState } from '../protocol/housing-state';
 import { Input } from '../protocol/input';
 import { InventoryState } from '../protocol/inventory-state';
 import { ItemAction } from '../protocol/item-action';
@@ -36,6 +40,7 @@ import { Ping } from '../protocol/ping';
 import { PlayerStats } from '../protocol/player-stats';
 import { Pong } from '../protocol/pong';
 import { Reload } from '../protocol/reload';
+import { RentPay } from '../protocol/rent-pay';
 import { ResourceState } from '../protocol/resource-state';
 import { RestartCountdown } from '../protocol/restart-countdown';
 import { ShedDraw } from '../protocol/shed-draw';
@@ -121,13 +126,18 @@ export enum Message {
   BankDepositInventory = 55,
   BankDepositEquipment = 56,
   BankResult = 57,
-  SkillCatalog = 58
+  SkillCatalog = 58,
+  HousingState = 59,
+  HouseClaim = 60,
+  RentPay = 61,
+  HousingResult = 62,
+  HomeState = 63
 }
 
 export function unionToMessage(
   type: Message,
-  accessor: (obj:AttackTarget|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome) => AttackTarget|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null
-): AttackTarget|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null {
+  accessor: (obj:AttackTarget|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome) => AttackTarget|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null
+): AttackTarget|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null {
   switch(Message[type]) {
     case 'NONE': return null; 
     case 'Hello': return accessor(new Hello())! as Hello;
@@ -188,15 +198,20 @@ export function unionToMessage(
     case 'BankDepositEquipment': return accessor(new BankDepositEquipment())! as BankDepositEquipment;
     case 'BankResult': return accessor(new BankResult())! as BankResult;
     case 'SkillCatalog': return accessor(new SkillCatalog())! as SkillCatalog;
+    case 'HousingState': return accessor(new HousingState())! as HousingState;
+    case 'HouseClaim': return accessor(new HouseClaim())! as HouseClaim;
+    case 'RentPay': return accessor(new RentPay())! as RentPay;
+    case 'HousingResult': return accessor(new HousingResult())! as HousingResult;
+    case 'HomeState': return accessor(new HomeState())! as HomeState;
     default: return null;
   }
 }
 
 export function unionListToMessage(
   type: Message, 
-  accessor: (index: number, obj:AttackTarget|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome) => AttackTarget|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null, 
+  accessor: (index: number, obj:AttackTarget|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome) => AttackTarget|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null, 
   index: number
-): AttackTarget|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null {
+): AttackTarget|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|EmoteSend|EntityHealth|EntityInfo|GroundItems|Hello|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|null {
   switch(Message[type]) {
     case 'NONE': return null; 
     case 'Hello': return accessor(index, new Hello())! as Hello;
@@ -257,6 +272,11 @@ export function unionListToMessage(
     case 'BankDepositEquipment': return accessor(index, new BankDepositEquipment())! as BankDepositEquipment;
     case 'BankResult': return accessor(index, new BankResult())! as BankResult;
     case 'SkillCatalog': return accessor(index, new SkillCatalog())! as SkillCatalog;
+    case 'HousingState': return accessor(index, new HousingState())! as HousingState;
+    case 'HouseClaim': return accessor(index, new HouseClaim())! as HouseClaim;
+    case 'RentPay': return accessor(index, new RentPay())! as RentPay;
+    case 'HousingResult': return accessor(index, new HousingResult())! as HousingResult;
+    case 'HomeState': return accessor(index, new HomeState())! as HomeState;
     default: return null;
   }
 }

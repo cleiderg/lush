@@ -13,7 +13,9 @@ const repo = resolve(__dirname, '../../..');
 const campus = JSON.parse(readFileSync(resolve(repo, 'shared/map/campus.json'), 'utf8'));
 const areas = JSON.parse(readFileSync(resolve(repo, 'shared/map/areas.json'), 'utf8'));
 const SPAWN = { x: areas.spawn.x / 10, z: areas.spawn.z / 10 };
-const CAMPUS = buildMapData(campus, areas);
+const skills = JSON.parse(readFileSync(resolve(repo, 'shared/map/skills.json'), 'utf8'));
+const BANK = { x: skills.bank.x / 10, z: skills.bank.z / 10 };
+const CAMPUS = buildMapData(campus, areas, skills);
 /** Near the buildings south of Aldrich Park (the spawn, in the park, has none within 60 m). */
 const TOWN = { x: -22.6, z: 50 };
 
@@ -192,6 +194,25 @@ describe('Minimap tap and big map (AC4)', () => {
     expect(m.root.style.width).toBe(`${r.w}px`);
   });
 
+  it('draws a bank icon at the booth, placed like the shop icon, hidden beyond the range', () => {
+    const pos = { x: BANK.x + 10, z: BANK.z + 20 };
+    const { m, state } = mount({ pos, yaw: Math.PI });
+    expect(m.bank!.style.display).toBe('');
+    expect(m.bank!.getAttribute('transform')).toBe('translate(-10.00 -20.00)');
+    expect(m.bank!.querySelector('.lush-map-bank-door')).not.toBeNull();
+    expect(m.bank!.querySelector('.lush-map-shop-awning')).toBeNull();
+    state.yaw = 0;
+    m.update();
+    expect(m.bank!.getAttribute('transform')).toBe('translate(10.00 20.00)');
+
+    state.pos = { x: BANK.x + MINIMAP_RANGE_M - 1, z: BANK.z };
+    m.update();
+    expect(m.bank!.style.display).toBe('');
+    state.pos = { x: BANK.x + MINIMAP_RANGE_M + 1, z: BANK.z };
+    m.update();
+    expect(m.bank!.style.display).toBe('none');
+  });
+
   it('tapping the minimap opens the big map panel in the shared theme; its close button closes it', () => {
     bigMap = new BigMap({
       parent: document.body, data: CAMPUS, position: () => SPAWN, remotes: () => [{ id: 2, x: 0, z: 0 }], viewport: () => ({ width: 390, height: 844 }),
@@ -214,6 +235,7 @@ describe('Minimap tap and big map (AC4)', () => {
     expect(map.svg!.querySelectorAll('.lush-map-building').length).toBe(campus.buildings.length);
     expect(map.svg!.querySelector('.lush-map-pvp')).not.toBeNull();
     expect(map.svg!.querySelector('.lush-map-shop')).not.toBeNull();
+    expect(map.svg!.querySelector('.lush-map-bank')!.getAttribute('transform')).toBe(`translate(${BANK.x} ${BANK.z})`);
     expect(map.svg!.querySelector('.lush-map-player')!.getAttribute('transform')).toBe(`translate(${SPAWN.x.toFixed(1)} ${SPAWN.z.toFixed(1)})`);
     expect(map.svg!.querySelectorAll('.lush-map-remote').length).toBe(1);
 

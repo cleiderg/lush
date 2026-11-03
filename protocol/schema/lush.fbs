@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 15
+  Current = 16
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -73,6 +73,18 @@ enum EquipSlot : ubyte {
   Head = 2,
   Body = 3,
   Shield = 4
+}
+
+// ItemDef.placement values: where a furniture item can be put in a home.
+enum PlacementKind : ubyte {
+  None = 0,           // not furniture
+  Floor = 1,
+  Rug = 2,
+  Surface = 3,        // sits on a surface piece
+  FloorOrSurface = 4,
+  Wall = 5,
+  Wallpaper = 6,
+  Flooring = 7
 }
 
 // One inventory slot. An empty slot is item_id EmptyItem.Id, quantity 0.
@@ -229,6 +241,10 @@ table ItemDef {
   tool_skill: ToolSkill;   // the skill this item is a tool for; None if not a tool
   tool_level: ubyte;       // skill level needed to use the tool; 0 if not a tool
   cooking_level: ubyte;    // Cooking level to cook it; 0 unless it is a raw fish
+  footprint_w: ubyte;      // furniture width in tiles; 0 when not furniture
+  footprint_d: ubyte;      // furniture depth in tiles; 0 when not furniture
+  placement: PlacementKind; // where it can go in a home; None if not furniture
+  surface_slots: ubyte;    // small items a surface piece holds; 0 if none
 }
 
 // Server -> client: every item definition, so the client doesn't hard-code
@@ -730,6 +746,80 @@ table BankResult {
   code: BankResultCode;
 }
 
+// HouseInfo.state values.
+enum HouseState : ubyte {
+  Empty = 0,    // unowned, can be claimed
+  Owned = 1,
+  Warning = 2,  // owner is under 7 days from falling below one month prepaid
+  Auction = 3
+}
+
+// One house in HousingState.
+table HouseInfo {
+  id: ushort;
+  area_id: ubyte;
+  owner_name: string;   // empty when unowned
+  mine: bool;           // the receiving player owns this house
+  paid_until: int64;    // Unix seconds; 0 when unowned
+  state: HouseState;
+  open: bool;           // true: anyone may visit; false: locked
+}
+
+// Server -> client: every house. Sent on login and whenever one changes.
+table HousingState {
+  houses: [HouseInfo];
+}
+
+// Client -> server: claim an empty house (pays two months' rent up front).
+// The server replies with HousingResult.
+table HouseClaim {
+  house_id: ushort;
+}
+
+// Client -> server: prepay months of rent on the player's own house.
+// The server replies with HousingResult.
+table RentPay {
+  house_id: ushort;
+  months: ubyte;
+}
+
+// HousingResult.code values.
+enum HousingResultCode : ubyte {
+  Ok = 0,
+  AlreadyOwned = 1,   // the house belongs to someone
+  OwnsAnother = 2,    // the player already owns a house
+  NotEnoughGold = 3,
+  TooFar = 4,
+  TooManyMonths = 5,  // would pass 6 months prepaid
+  NotOwner = 6,
+  SaveFailed = 7      // couldn't be saved and nothing changed
+}
+
+// Server -> client: the outcome of a HouseClaim or RentPay.
+table HousingResult {
+  code: HousingResultCode;
+}
+
+// One placed item inside HomeState.
+table PlacedItem {
+  placed_id: uint32;
+  item_id: ushort;       // ItemDef.id
+  x: ubyte;
+  y: ubyte;
+  rotation: ubyte;       // 0..3, in quarter turns
+  layer: ubyte;          // 0 floor, 1 surface, 2 wall
+  parent_placed_id: uint32; // 0 unless stacked on a surface piece
+}
+
+// Server -> client: one home's room.
+table HomeState {
+  house_id: ushort;
+  owner_name: string;
+  wallpaper_item_id: ushort;  // EmptyItem.Id when none
+  floor_item_id: ushort;      // EmptyItem.Id when none
+  items: [PlacedItem];
+}
+
 union Message {
   Hello,
   Welcome,
@@ -788,7 +878,12 @@ union Message {
   BankDepositInventory,
   BankDepositEquipment,
   BankResult,
-  SkillCatalog
+  SkillCatalog,
+  HousingState,
+  HouseClaim,
+  RentPay,
+  HousingResult,
+  HomeState
 }
 
 table Envelope {

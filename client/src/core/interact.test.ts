@@ -36,7 +36,7 @@ function setup(
   const entities = [{ id: 1, x: pos.x, z: pos.z, heading: 0, animation: 0 }, ...others.map((o) => ({ ...o, heading: 0, animation: 0 }))];
   game.handle({ type: 'snapshot', tick: 1, lastInputSeq: 0, entities }, 0);
   game.handle({ type: 'groundItems', items: ground.map((g) => ({ ...g, itemId: 1, quantity: 1 })) }, 0);
-  for (const o of others) game.handle({ type: 'entityInfo', id: o.id, kind: o.kind, npcType: 1, combatLevel: 3, equipment: NO_EQUIPMENT }, 0);
+  for (const o of others) game.handle({ type: 'entityInfo', id: o.id, kind: o.kind, npcType: 1, combatLevel: 3, totalLevel: 0, equipment: NO_EQUIPMENT }, 0);
 
   const t = new FakeTransport();
   const session = new Session({ factory: () => t, store: { get: () => '', set: () => {} }, onMessage: () => {} });

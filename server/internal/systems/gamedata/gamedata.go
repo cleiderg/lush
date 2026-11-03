@@ -204,6 +204,14 @@ type Rules struct {
 	PickupRangeDiagonal     bool        `json:"pickup_range_diagonal"` // diagonal neighbours count as in range
 	LogoutCombatLockSeconds int         `json:"logout_combat_lock_s"`
 	EatAttackDelayTicks     int         `json:"eat_attack_delay_combat_ticks"`
+
+	// Housing (docs/specs/housing.md, D-052). First-release numbers are placeholders.
+	HouseRentPerMonth     int `json:"house_rent_per_month"`
+	HouseDaysPerMonth     int `json:"house_days_per_month"`
+	HouseClaimMonths      int `json:"house_claim_months"`
+	HouseMaxPrepaidMonths int `json:"house_max_prepaid_months"`
+	HouseWarningDays      int `json:"house_warning_days"`
+	HouseAuctionDays      int `json:"house_auction_days"`
 }
 
 func (r Rules) RegenInterval() time.Duration    { return seconds(r.RegenIntervalSeconds) }
@@ -454,6 +462,10 @@ func (d *Data) index() error {
 		d.shopPrice[id] = e.Price
 	}
 
+	if r := d.Rules; r.HouseRentPerMonth < 1 || r.HouseDaysPerMonth < 1 || r.HouseClaimMonths < 1 ||
+		r.HouseMaxPrepaidMonths < r.HouseClaimMonths || r.HouseWarningDays < 0 || r.HouseAuctionDays < 1 {
+		return fmt.Errorf("gamedata: %s: invalid house rent settings", RulesFile)
+	}
 	if d.Rules.BankSlots < 1 {
 		return fmt.Errorf("gamedata: %s: bank_slots %d must be at least 1", RulesFile, d.Rules.BankSlots)
 	}
