@@ -255,6 +255,12 @@ function spec(id: number): Spec {
   return s;
 }
 
+/** Footprint of a furniture item in tiles at rotation 0 (width along x, depth along z). */
+export function furnitureFootprint(id: number): { w: number; d: number } {
+  const s = spec(id);
+  return { w: s.w, d: s.d };
+}
+
 const SLOT_SPACING = 1;
 
 /** Positions of the surface slots on the top face of an item, in model space. */
