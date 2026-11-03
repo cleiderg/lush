@@ -12,6 +12,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/cardroom"
 	"github.com/cleiderg/lush/server/internal/systems/cardtable"
 	"github.com/cleiderg/lush/server/internal/systems/cardtable/shed"
+	"github.com/cleiderg/lush/server/internal/systems/furniture"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/grounditems"
 	"github.com/cleiderg/lush/server/internal/systems/items"
@@ -365,6 +366,7 @@ type message struct {
 	equipSlot  protocol.EquipSlot
 	itemID     uint16
 	quantity   uint32
+	shop       protocol.ShopKind // ShopBuy and ShopSell; Market when absent
 	// Trade messages; slot and quantity are shared with the above.
 	partner uint16 // TradeRequest target
 	index   int    // TradeRemove offer index
@@ -411,8 +413,14 @@ func (m message) command(id world.PlayerID) world.Command {
 			}
 		}
 	case protocol.MessageShopBuy:
+		if m.shop == protocol.ShopKindThrift {
+			return ThriftBuyCommand{furniture.BuyCommand{Player: id, Item: gamedata.ItemID(m.itemID), Quantity: int(m.quantity)}}
+		}
 		return shop.BuyCommand{Player: id, Item: gamedata.ItemID(m.itemID), Quantity: int(m.quantity)}
 	case protocol.MessageShopSell:
+		if m.shop == protocol.ShopKindThrift {
+			return ThriftSellCommand{furniture.SellCommand{Player: id, Slot: m.slot, Quantity: int(m.quantity)}}
+		}
 		return shop.SellCommand{Player: id, Slot: m.slot, Quantity: int(m.quantity)}
 	case protocol.MessageTradeRequest:
 		if m.partner != 0 {
@@ -432,6 +440,8 @@ func (m message) command(id world.PlayerID) world.Command {
 		}
 	case protocol.MessageTradeCancel:
 		return trade.CancelCommand{Player: id}
+	case protocol.MessageWorkbenchCraft:
+		return CraftCommand{furniture.CraftCommand{Player: id, Output: gamedata.ItemID(m.itemID)}}
 	case protocol.MessageSkillAction:
 		return SkillActionCommand{Player: id, Kind: m.skillTarget, ID: m.skillID}
 	case protocol.MessageBankOpen:
@@ -513,11 +523,15 @@ func decode(buf []byte) (m message, err error) {
 	case protocol.MessageShopBuy:
 		var sb protocol.ShopBuy
 		sb.Init(tbl.Bytes, tbl.Pos)
-		m.itemID, m.quantity = sb.ItemId(), sb.Quantity()
+		m.itemID, m.quantity, m.shop = sb.ItemId(), sb.Quantity(), sb.Shop()
 	case protocol.MessageShopSell:
 		var ss protocol.ShopSell
 		ss.Init(tbl.Bytes, tbl.Pos)
-		m.slot, m.quantity = int(ss.Slot()), ss.Quantity()
+		m.slot, m.quantity, m.shop = int(ss.Slot()), ss.Quantity(), ss.Shop()
+	case protocol.MessageWorkbenchCraft:
+		var wc protocol.WorkbenchCraft
+		wc.Init(tbl.Bytes, tbl.Pos)
+		m.itemID = wc.OutputItemId()
 	case protocol.MessageTradeRequest:
 		var tr protocol.TradeRequest
 		tr.Init(tbl.Bytes, tbl.Pos)
@@ -673,6 +687,10 @@ func encodeItemCatalog(d *gamedata.Data) []byte {
 		protocol.ItemDefAddShopBuysFor(b, clampU32(it.ShopBuysFor))
 		protocol.ItemDefAddShopSells(b, sells)
 		protocol.ItemDefAddShopSellsFor(b, clampU32(price))
+		thriftSell, _ := d.ThriftSellPrice(it.ID)
+		thriftBuy, _ := d.ThriftBuyPrice(it.ID)
+		protocol.ItemDefAddThriftSellsFor(b, clampU32(thriftSell))
+		protocol.ItemDefAddThriftBuysFor(b, clampU32(thriftBuy))
 		defs[i] = protocol.ItemDefEnd(b)
 	}
 	protocol.ItemCatalogStartItemsVector(b, len(defs))
@@ -683,6 +701,51 @@ func encodeItemCatalog(d *gamedata.Data) []byte {
 	protocol.ItemCatalogStart(b)
 	protocol.ItemCatalogAddItems(b, items)
 	return finish(b, protocol.MessageItemCatalog, protocol.ItemCatalogEnd(b))
+}
+
+// encodeWorkbenchCatalog builds a WorkbenchCatalog of every recipe in d, in
+// table order.
+func encodeWorkbenchCatalog(d *gamedata.Data) []byte {
+	b := flatbuffers.NewBuilder(1024)
+	recs := make([]flatbuffers.UOffsetT, len(d.Workbench))
+	for i, r := range d.Workbench {
+		ids := make([]uint16, len(r.Inputs))
+		qtys := make([]uint32, len(r.Inputs))
+		for j, in := range r.Inputs {
+			ids[j], qtys[j] = uint16(in.Item), clampU32(in.Quantity)
+		}
+		protocol.WorkbenchRecipeStartInputItemIdsVector(b, len(ids))
+		for j := len(ids) - 1; j >= 0; j-- {
+			b.PrependUint16(ids[j])
+		}
+		idVec := b.EndVector(len(ids))
+		protocol.WorkbenchRecipeStartInputQuantitiesVector(b, len(qtys))
+		for j := len(qtys) - 1; j >= 0; j-- {
+			b.PrependUint32(qtys[j])
+		}
+		qtyVec := b.EndVector(len(qtys))
+		protocol.WorkbenchRecipeStart(b)
+		protocol.WorkbenchRecipeAddOutputItemId(b, uint16(r.Output))
+		protocol.WorkbenchRecipeAddInputItemIds(b, idVec)
+		protocol.WorkbenchRecipeAddInputQuantities(b, qtyVec)
+		protocol.WorkbenchRecipeAddGold(b, clampU32(r.Gold))
+		recs[i] = protocol.WorkbenchRecipeEnd(b)
+	}
+	protocol.WorkbenchCatalogStartRecipesVector(b, len(recs))
+	for i := len(recs) - 1; i >= 0; i-- {
+		b.PrependUOffsetT(recs[i])
+	}
+	vec := b.EndVector(len(recs))
+	protocol.WorkbenchCatalogStart(b)
+	protocol.WorkbenchCatalogAddRecipes(b, vec)
+	return finish(b, protocol.MessageWorkbenchCatalog, protocol.WorkbenchCatalogEnd(b))
+}
+
+func encodeCraftResult(code protocol.CraftResultCode) []byte {
+	b := flatbuffers.NewBuilder(32)
+	protocol.CraftResultStart(b)
+	protocol.CraftResultAddCode(b, code)
+	return finish(b, protocol.MessageCraftResult, protocol.CraftResultEnd(b))
 }
 
 // encodeNpcCatalog builds an NpcCatalog of every NPC type in d, in table order.
