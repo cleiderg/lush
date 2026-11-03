@@ -29,6 +29,7 @@ import { LocationPanel } from './ui/locationPanel';
 import { BigMap, Minimap } from './ui/minimap';
 import { PlayerPortrait } from './ui/playerPortrait';
 import { localRetroStore, RetroToggle } from './ui/retroToggle';
+import { HomeLeaveButton } from './ui/homeLeaveButton';
 import { HomeEditPanel, type Tile } from './ui/homeEditPanel';
 import { HousePanel } from './ui/housePanel';
 import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
@@ -159,6 +160,8 @@ const homeEdit = new HomeEditPanel({
   pickTile: (onTile) => { tilePick = onTile; },
 });
 void tilePick;
+const homeLeave = new HomeLeaveButton({ parent: document.body, housing: game.housing, sendHomeLeave: () => session.sendHomeLeave() });
+void homeLeave;
 const cardTable = new CardTablePanel({
   parent: document.body,
   tables: game.cardTables,
@@ -290,6 +293,7 @@ function openOfflinePanel(panel: OfflinePanel): void {
       homeEdit.setEditing(true);
       return homeEdit.isEditing;
     },
+    home: () => game.housing.inHome(),
     bank: () => bank.isOpen,
     trade: () => trade.isOpen,
     'card-table': () => {
