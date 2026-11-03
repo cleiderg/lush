@@ -129,12 +129,16 @@ describe('HousingStore home tracking', () => {
     // an edit Ok does not leave
     w.handle(decode(resultBytes(HomeResultCode.Ok))!, 0);
     expect(w.housing.inHome()).toBe(true);
-    // a refused leave keeps the home
+    // a refused edit sent before the leave keeps the home until the leave's Ok
     w.housing.beginLeave();
     w.handle(decode(resultBytes(HomeResultCode.RateLimited))!, 0);
     expect(w.housing.inHome()).toBe(true);
-    w.housing.beginLeave();
     w.handle(decode(resultBytes(HomeResultCode.Ok))!, 0);
+    expect(w.housing.inHome()).toBe(false);
+    // leaving when the server says you were not inside also forgets the home
+    w.handle(decode(homeBytes(3))!, 0);
+    w.housing.beginLeave();
+    w.handle(decode(resultBytes(HomeResultCode.NotInHome))!, 0);
     expect(w.housing.inHome()).toBe(false);
   });
 });

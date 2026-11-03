@@ -84,11 +84,15 @@ export class HousingStore {
     this.leaving = true;
   }
 
-  /** Applies a HomeResult; a successful leave forgets the home. */
+  /**
+   * Applies a HomeResult; a successful leave forgets the home. The server only
+   * answers HomeLeave with Ok or NotInHome, so any other code is the reply to an
+   * edit sent before the leave, and the leave is still pending.
+   */
   applyHomeResult(code: HomeResultCode): void {
-    const left = this.leaving && (code === HomeResultCode.Ok || code === HomeResultCode.NotInHome);
+    if (!this.leaving || (code !== HomeResultCode.Ok && code !== HomeResultCode.NotInHome)) return;
     this.leaving = false;
-    if (left && this.home) {
+    if (this.home) {
       this.home = null;
       this.notify();
     }
