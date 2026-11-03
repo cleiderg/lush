@@ -1,6 +1,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -52,9 +53,10 @@ const (
 	LayerWall    uint8 = 8
 )
 
-// PlacedItem is one item placed in a home. ID 0 in a HomeEdit means a new
-// item, which the store gives an id. Rotation and Side are 0..3. ParentID is
-// 0 unless the item sits on a surface item, in Slot; a wall item's Side is
+// PlacedItem is one item placed in a home. ID is chosen by the caller (the
+// room's item id), is non-zero and is unique across all homes, so saving the
+// same edit twice places nothing twice. Rotation and Side are 0..3. ParentID
+// is 0 unless the item sits on a surface item, in Slot; a wall item's Side is
 // the wall and X its position along it.
 type PlacedItem struct {
 	ID       int64
@@ -80,9 +82,9 @@ type HomeEdit struct {
 	// Holdings, when set, becomes the owner's holdings: the other half of
 	// placing or removing an item. Nil leaves them alone (a move or rotate).
 	Holdings *Holdings
-	// Items is the whole room. An item with a non-zero ID must already be in
-	// this home; one with ID 0 is new. Items not listed are removed. A
-	// ParentID must name another listed item that already exists.
+	// Items is the whole room. An item already placed is updated, a new one
+	// is placed and one not listed is removed. An ID placed in another home is
+	// invalid. A ParentID must name another listed item.
 	Items         []PlacedItem
 	WallpaperItem int32
 	FlooringItem  int32
@@ -136,8 +138,8 @@ type Housing interface {
 	// flooring, and appends entries to the economy audit log. An unknown home
 	// fails with ErrNotFound; an owner who doesn't own it, invalid holdings,
 	// an invalid item or an item id from another home with ErrInvalid. On any
-	// error nothing changes. It returns the items with ids given to new ones.
-	ApplyHomeEdit(ctx context.Context, e HomeEdit, entries []Entry) ([]PlacedItem, error)
+	// error nothing changes.
+	ApplyHomeEdit(ctx context.Context, e HomeEdit, entries []Entry) error
 	// SetHomeLocked sets whether the home is locked. An unknown home fails
 	// with ErrNotFound.
 	SetHomeLocked(ctx context.Context, homeID int64, locked bool) error
@@ -208,22 +210,41 @@ func (e HomeEdit) validate() error {
 	}
 	ids := map[int64]bool{}
 	for i, it := range e.Items {
-		if _, ok := layerNames[it.Layer]; !ok || it.Item <= 0 || it.Rotation > 3 || it.Side > 3 || it.ID < 0 || it.ParentID < 0 {
+		if _, ok := layerNames[it.Layer]; !ok || it.Item <= 0 || it.Rotation > 3 || it.Side > 3 || it.ID <= 0 || it.ParentID < 0 {
 			return fmt.Errorf("item %d: %+v: %w", i, it, ErrInvalid)
 		}
-		if it.ID != 0 {
-			if ids[it.ID] {
-				return fmt.Errorf("item %d listed twice: %w", it.ID, ErrInvalid)
-			}
-			ids[it.ID] = true
+		if ids[it.ID] {
+			return fmt.Errorf("item %d listed twice: %w", it.ID, ErrInvalid)
 		}
+		ids[it.ID] = true
 	}
 	for i, it := range e.Items {
-		if it.ParentID != 0 && (!ids[it.ParentID] || it.ParentID == it.ID) {
+		if it.ParentID != 0 && !ids[it.ParentID] {
 			return fmt.Errorf("item %d: parent %d not in the room: %w", i, it.ParentID, ErrInvalid)
 		}
 	}
+	if len(parentsFirst(e.Items)) != len(e.Items) {
+		return fmt.Errorf("items stacked in a loop: %w", ErrInvalid)
+	}
 	return nil
+}
+
+// parentsFirst orders items so each comes after its parent, leaving out any
+// item whose parent chain loops or names an item not listed.
+func parentsFirst(items []PlacedItem) []PlacedItem {
+	out := make([]PlacedItem, 0, len(items))
+	done := map[int64]bool{0: true}
+	for progress := true; progress && len(out) < len(items); {
+		progress = false
+		for _, it := range items {
+			if !done[it.ID] && done[it.ParentID] {
+				out = append(out, it)
+				done[it.ID] = true
+				progress = true
+			}
+		}
+	}
+	return out
 }
 
 // checkSeed checks what both stores require of a seed list.
@@ -248,17 +269,16 @@ func checkSeed(areas []Area, plots []Plot) error {
 // ---- Memory ----
 
 type memHousing struct {
-	areas        map[int32]Area
-	plots        map[int32]Plot
-	homes        map[int64]Home         // by owner
-	items        map[int64][]PlacedItem // by home id
-	nextID       int64
-	nextPlacedID int64
+	areas  map[int32]Area
+	plots  map[int32]Plot
+	homes  map[int64]Home         // by owner
+	items  map[int64][]PlacedItem // by home id, ordered by placed id
+	nextID int64
 }
 
 func (m *Memory) housingLocked() *memHousing {
 	if m.housing == nil {
-		m.housing = &memHousing{areas: map[int32]Area{}, plots: map[int32]Plot{}, homes: map[int64]Home{}, items: map[int64][]PlacedItem{}, nextID: 1, nextPlacedID: 1}
+		m.housing = &memHousing{areas: map[int32]Area{}, plots: map[int32]Plot{}, homes: map[int64]Home{}, items: map[int64][]PlacedItem{}, nextID: 1}
 	}
 	return m.housing
 }
@@ -330,16 +350,16 @@ func (m *Memory) LoadHomes(ctx context.Context) ([]HomeRoom, error) {
 	for _, home := range h.homes {
 		out = append(out, HomeRoom{Home: home, Items: slices.Clone(h.items[home.ID])})
 	}
-	slices.SortFunc(out, func(a, b HomeRoom) int { return int(a.ID - b.ID) })
+	slices.SortFunc(out, func(a, b HomeRoom) int { return cmp.Compare(a.ID, b.ID) })
 	return out, nil
 }
 
-func (m *Memory) ApplyHomeEdit(ctx context.Context, e HomeEdit, entries []Entry) ([]PlacedItem, error) {
+func (m *Memory) ApplyHomeEdit(ctx context.Context, e HomeEdit, entries []Entry) error {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("apply home edit %d: %w", e.HomeID, err)
+		return fmt.Errorf("apply home edit %d: %w", e.HomeID, err)
 	}
 	if err := e.validate(); err != nil {
-		return nil, fmt.Errorf("apply home edit %d: %w", e.HomeID, err)
+		return fmt.Errorf("apply home edit %d: %w", e.HomeID, err)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -352,18 +372,22 @@ func (m *Memory) ApplyHomeEdit(ctx context.Context, e HomeEdit, entries []Entry)
 		}
 	}
 	if !found {
-		return nil, fmt.Errorf("apply home edit %d: %w", e.HomeID, ErrNotFound)
+		return fmt.Errorf("apply home edit %d: %w", e.HomeID, ErrNotFound)
 	}
 	if home.OwnerID != e.OwnerID {
-		return nil, fmt.Errorf("apply home edit %d: owner %d: %w", e.HomeID, e.OwnerID, ErrInvalid)
+		return fmt.Errorf("apply home edit %d: owner %d: %w", e.HomeID, e.OwnerID, ErrInvalid)
 	}
-	cur := map[int64]bool{}
-	for _, it := range h.items[home.ID] {
-		cur[it.ID] = true
+	elsewhere := map[int64]bool{}
+	for id, items := range h.items {
+		for _, it := range items {
+			if id != home.ID {
+				elsewhere[it.ID] = true
+			}
+		}
 	}
 	for _, it := range e.Items {
-		if it.ID != 0 && !cur[it.ID] {
-			return nil, fmt.Errorf("apply home edit %d: item %d not in this home: %w", e.HomeID, it.ID, ErrInvalid)
+		if elsewhere[it.ID] {
+			return fmt.Errorf("apply home edit %d: item %d is in another home: %w", e.HomeID, it.ID, ErrInvalid)
 		}
 	}
 	var changes []EconomyChange
@@ -371,21 +395,15 @@ func (m *Memory) ApplyHomeEdit(ctx context.Context, e HomeEdit, entries []Entry)
 		changes = []EconomyChange{{PlayerID: e.OwnerID, Holdings: *e.Holdings}}
 	}
 	if err := m.checkEconomyLocked(changes, entries); err != nil {
-		return nil, fmt.Errorf("apply home edit %d: %w", e.HomeID, err)
+		return fmt.Errorf("apply home edit %d: %w", e.HomeID, err)
 	}
 	m.applyEconomyLocked(changes, entries)
 	items := slices.Clone(e.Items)
-	for i := range items {
-		if items[i].ID == 0 {
-			items[i].ID = h.nextPlacedID
-			h.nextPlacedID++
-		}
-	}
-	slices.SortFunc(items, func(a, b PlacedItem) int { return int(a.ID - b.ID) })
+	slices.SortFunc(items, func(a, b PlacedItem) int { return cmp.Compare(a.ID, b.ID) })
 	h.items[home.ID] = items
 	home.WallpaperItem, home.FlooringItem = e.WallpaperItem, e.FlooringItem
 	h.homes[home.OwnerID] = home
-	return slices.Clone(items), nil
+	return nil
 }
 
 func (m *Memory) SetHomeLocked(ctx context.Context, homeID int64, locked bool) error {
@@ -744,11 +762,10 @@ func (s *PGPlayers) LoadHomes(ctx context.Context) ([]HomeRoom, error) {
 	return out, nil
 }
 
-func (s *PGPlayers) ApplyHomeEdit(ctx context.Context, e HomeEdit, entries []Entry) ([]PlacedItem, error) {
+func (s *PGPlayers) ApplyHomeEdit(ctx context.Context, e HomeEdit, entries []Entry) error {
 	if err := e.validate(); err != nil {
-		return nil, fmt.Errorf("apply home edit %d: %w", e.HomeID, err)
+		return fmt.Errorf("apply home edit %d: %w", e.HomeID, err)
 	}
-	var out []PlacedItem
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		var owner int64
 		err := tx.QueryRow(ctx, `SELECT owner_id FROM homes WHERE home_id = $1 FOR UPDATE`, e.HomeID).Scan(&owner)
@@ -768,43 +785,34 @@ func (s *PGPlayers) ApplyHomeEdit(ctx context.Context, e HomeEdit, entries []Ent
 		if err := writeEconomy(ctx, tx, changes, entries); err != nil {
 			return err
 		}
+		// Upsert parents before the items on them, and only then remove the
+		// items not listed, so the cascade on parent_placed_id never takes a
+		// listed item with it.
 		keep := []int64{}
-		for _, it := range e.Items {
-			if it.ID != 0 {
-				keep = append(keep, it.ID)
-			}
-		}
-		if _, err := tx.Exec(ctx,
-			`DELETE FROM placed_items WHERE home_id = $1 AND NOT (placed_id = ANY($2))`, e.HomeID, keep); err != nil {
-			return fmt.Errorf("remove items: %w", err)
-		}
-		out = slices.Clone(e.Items)
-		for i, it := range out {
+		for _, it := range parentsFirst(e.Items) {
 			var parent *int64
 			if it.ParentID != 0 {
 				parent = &it.ParentID
 			}
-			if it.ID == 0 {
-				err = tx.QueryRow(ctx,
-					`INSERT INTO placed_items (home_id, item_id, x, y, rotation, layer, parent_placed_id, slot, side)
-					 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING placed_id`,
-					e.HomeID, it.Item, it.X, it.Y, int16(it.Rotation)*90, layerNames[it.Layer], parent, int16(it.Slot), int16(it.Side)).Scan(&out[i].ID)
-				if err != nil {
-					return fmt.Errorf("place item: %w", classify(err))
-				}
-				continue
-			}
 			tag, err := tx.Exec(ctx,
-				`UPDATE placed_items SET item_id = $3, x = $4, y = $5, rotation = $6, layer = $7,
-				        parent_placed_id = $8, slot = $9, side = $10
-				 WHERE placed_id = $1 AND home_id = $2`,
+				`INSERT INTO placed_items (placed_id, home_id, item_id, x, y, rotation, layer, parent_placed_id, slot, side)
+				 OVERRIDING SYSTEM VALUE VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+				 ON CONFLICT (placed_id) DO UPDATE SET item_id = EXCLUDED.item_id, x = EXCLUDED.x, y = EXCLUDED.y,
+				        rotation = EXCLUDED.rotation, layer = EXCLUDED.layer, parent_placed_id = EXCLUDED.parent_placed_id,
+				        slot = EXCLUDED.slot, side = EXCLUDED.side
+				 WHERE placed_items.home_id = EXCLUDED.home_id`,
 				it.ID, e.HomeID, it.Item, it.X, it.Y, int16(it.Rotation)*90, layerNames[it.Layer], parent, int16(it.Slot), int16(it.Side))
 			if err != nil {
-				return fmt.Errorf("update item %d: %w", it.ID, classify(err))
+				return fmt.Errorf("place item %d: %w", it.ID, classify(err))
 			}
 			if tag.RowsAffected() == 0 {
-				return fmt.Errorf("item %d not in this home: %w", it.ID, ErrInvalid)
+				return fmt.Errorf("item %d is in another home: %w", it.ID, ErrInvalid)
 			}
+			keep = append(keep, it.ID)
+		}
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM placed_items WHERE home_id = $1 AND NOT (placed_id = ANY($2))`, e.HomeID, keep); err != nil {
+			return fmt.Errorf("remove items: %w", err)
 		}
 		if _, err := tx.Exec(ctx,
 			`UPDATE homes SET wallpaper_item_id = NULLIF($2, 0), flooring_item_id = NULLIF($3, 0) WHERE home_id = $1`,
@@ -814,10 +822,9 @@ func (s *PGPlayers) ApplyHomeEdit(ctx context.Context, e HomeEdit, entries []Ent
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("apply home edit %d: %w", e.HomeID, err)
+		return fmt.Errorf("apply home edit %d: %w", e.HomeID, err)
 	}
-	slices.SortFunc(out, func(a, b PlacedItem) int { return int(a.ID - b.ID) })
-	return out, nil
+	return nil
 }
 
 func (s *PGPlayers) SetHomeLocked(ctx context.Context, homeID int64, locked bool) error {
