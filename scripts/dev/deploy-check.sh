@@ -7,6 +7,14 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
 
+# Keeps only systemd-analyze output about our units. Verify also loads the
+# runner's own /usr/lib/systemd units and warns about them; those aren't ours.
+# ExecStart paths don't exist on the checking machine, so ignore those too.
+filter_verify() {
+  grep -E 'lush-(production|staging)\.service' \
+    | grep -v -e 'is not executable' -e 'No such file or directory' -e 'Failed to prepare filesystem' || true
+}
+
 if [[ "${1:-}" == "--self-test" ]]; then
   tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
   fail=0
@@ -29,22 +37,23 @@ if [[ "${1:-}" == "--self-test" ]]; then
   expect_fail "hardcoded Caddy hostname" 's#{$LUSH_STAGING_HOST}#staging.example.com#' caddy/Caddyfile
   expect_fail "HTTP/3 enabled" 's#protocols h1 h2#protocols h1 h2 h3#' caddy/Caddyfile
   expect_fail "root user" 's#^User=lush#User=root#' systemd/lush-production.service
-  # Warnings about units outside deploy/ must be ignored; a real one must fail.
-  mkdir -p "$tmp/bin"
-  cat >"$tmp/bin/systemd-analyze" <<'STUB'
-#!/bin/sh
-echo "/usr/lib/systemd/system/xfs_scrub_all.service:26: Unit uses CPUAccounting=, which has been removed." >&2
-echo "system-xfs_scrub.slice:15: Unit uses CPUAccounting=, which has been removed." >&2
-[ -n "$STUB_BAD" ] && echo "$2:3: Unknown key name 'Bogus' in section 'Service', ignoring." >&2
-exit 0
-STUB
-  chmod +x "$tmp/bin/systemd-analyze"
-  if PATH="$tmp/bin:$PATH" "$0" "$root/deploy" >/dev/null 2>&1; then
-    echo "self-test: foreign unit warnings ignored (ok)"
-  else echo "self-test: foreign unit warnings were NOT ignored"; fail=1; fi
-  if STUB_BAD=1 PATH="$tmp/bin:$PATH" "$0" "$root/deploy" >/dev/null 2>&1; then
-    echo "self-test: bad deploy unit was NOT rejected"; fail=1
-  else echo "self-test: bad deploy unit rejected (ok)"; fi
+  # Only lines about our own units count; warnings from the runner's system
+  # units (e.g. "CPUAccounting= has been removed") must not.
+  noisy="/usr/lib/systemd/system/foo.service:3: Support for option CPUAccounting= has been removed
+lush-staging.service: Unknown key name 'Bogus' in section 'Service', ignoring."
+  if [[ "$(filter_verify <<<"$noisy")" == "lush-staging.service: Unknown key name 'Bogus' in section 'Service', ignoring." ]]; then
+    echo "self-test: system unit warnings ignored, our unit errors kept (ok)"
+  else echo "self-test: verify output filter is wrong"; fail=1; fi
+  if command -v systemd-analyze >/dev/null 2>&1; then
+    expect_fail_systemd() {
+      rm -rf "$tmp/d"; cp -R "$root/deploy" "$tmp/d"
+      sed -i.bak -e 's#^\[Service\]#[Service]\nBogusDirective=1\nType=nonsense#' "$tmp/d/systemd/lush-staging.service"; rm -f "$tmp/d/systemd/lush-staging.service.bak"
+      if "$0" "$tmp/d" >/dev/null 2>&1; then
+        echo "self-test: bad systemd unit was NOT rejected"; fail=1
+      else echo "self-test: bad systemd unit rejected (ok)"; fi
+    }
+    expect_fail_systemd
+  else echo "self-test: systemd-analyze not found, skipping real-unit check"; fi
   exit $fail
 fi
 
@@ -152,13 +161,8 @@ fi
 # systemd-analyze verify
 if [[ -z "${DEPLOY_CHECK_NO_SYSTEMD:-}" ]]; then
   if command -v systemd-analyze >/dev/null 2>&1; then
-    # Verify resolves ExecStart paths on this machine; they don't exist here, so
-    # ignore only that complaint.
     out="$(systemd-analyze verify "$dir"/systemd/lush-production.service "$dir"/systemd/lush-staging.service 2>&1 || true)"
-    # Verify also loads the runner image's own units and warns about them; keep
-    # only lines that name one of our units.
-    out="$(grep -e 'lush-production\.service' -e 'lush-staging\.service' <<<"$out" || true)"
-    out="$(grep -v -e 'is not executable' -e 'No such file or directory' -e 'Failed to prepare filesystem' <<<"$out" || true)"
+    out="$(filter_verify <<<"$out")"
     if [[ -n "$out" ]]; then echo "$out" >&2; bad "systemd-analyze verify reported problems"; fi
   elif [[ "${CI:-}" == "true" ]]; then
     bad "systemd-analyze not installed (required when CI=true)"
