@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { floorPlacement, furnitureDef, GHOST_BLOCKED, GHOST_VALID, pickRoom, RoomEditView } from './roomEdit';
@@ -118,6 +120,9 @@ describe('RoomEditView', () => {
     expect(e.setGhost(items.slice(0, 2), 4, on(1, -1)).result).toBe('ok');
     expect(hex(e)).toBe(GHOST_VALID);
     expect(e.setGhost(items, 1, floorPlacement(5, 5), 2).result).toBe('ok');
+    // room.go Move: a table still holding items can't move
+    expect(e.setGhost(items, 3, floorPlacement(2, 2), 1).result).toBe('has_items');
+    expect(hex(e)).toBe(GHOST_BLOCKED);
     e.hideGhost();
     expect(e.ghost.visible).toBe(false);
   });
@@ -129,5 +134,23 @@ describe('RoomEditView', () => {
     expect(e.ghostValid).toBe(true);
     expect(e.ghost.position.x).toBeCloseTo(3.5);
     expect(e.ghost.position.z).toBeCloseTo(5);
+  });
+
+  it('the default defs match items.json the way homeroom.go maps them', () => {
+    interface Item { id: number; kind: string; furniture?: { width: number; depth: number; layer: string; surface_slots: number; on_surface: boolean } }
+    const items: Item[] = JSON.parse(readFileSync(resolve(__dirname, '../../../server/internal/systems/gamedata/data/items.json'), 'utf8'));
+    const bits: Record<string, number> = { floor: LAYER_FLOOR, rug: LAYER_RUG, surface: LAYER_SURFACE, wall: LAYER_WALL };
+    const furniture = items.filter((i) => i.kind === 'furniture');
+    expect(furniture.length).toBeGreaterThan(0);
+    for (const { id, furniture: f } of furniture) {
+      const want: PlaceDef = { w: f!.width, d: f!.depth, layers: bits[f!.layer]! | (f!.on_surface ? LAYER_SURFACE : 0), slots: f!.surface_slots };
+      expect(furnitureDef(id), `item ${id}`).toEqual(want);
+    }
+    // so with the real items a rug goes under a chair and a desk lamp can't stand on the floor
+    const e = new RoomEditView(new RoomView());
+    const room = [item({ placedId: 1, itemId: 29, layer: LAYER_FLOOR, x: 3, y: 3 })];
+    expect(e.setGhost(room, 39, floorPlacement(3, 3)).result).toBe('ok');
+    expect(e.setGhost(room, 46, floorPlacement(5, 5)).result).toBe('bad_layer');
+    expect(e.setGhost(room, 29, on(1, -1)).result).toBe('not_surface_item');
   });
 });

@@ -18,15 +18,22 @@ export interface PlaceDef {
   slots: number;
 }
 
-/**
- * A guess from the client's furniture table: wall items go on walls, 1x1 pieces may also sit on surfaces.
- * The real layers live in the server's items.json; callers with that data pass their own defs.
- */
+// Starter furniture layers as items.json gives them (`layer`, plus `on_surface`), mapped the way
+// server/internal/systems/homeroom/homeroom.go does; roomEdit.test.ts checks this against items.json.
+const RUG_IDS: ReadonlySet<number> = new Set([39, 40]);
+const SURFACE_ONLY_IDS: ReadonlySet<number> = new Set([45, 46, 47, 48, 49, 50, 53]);
+const FLOOR_OR_SURFACE_IDS: ReadonlySet<number> = new Set([44]);
+
+/** The room def of a furniture item, matching the server's: footprint and slots from the furniture table. */
 export function furnitureDef(itemId: number): PlaceDef {
   const { w, d } = furnitureFootprint(itemId);
-  const slots = isWallItem(itemId) ? 0 : surfaceAnchors(itemId).length;
-  if (isWallItem(itemId)) return { w, d, layers: LAYER_WALL, slots };
-  return { w, d, layers: LAYER_FLOOR | (w === 1 && d === 1 && slots === 0 ? LAYER_SURFACE : 0), slots };
+  const slots = surfaceAnchors(itemId).length;
+  let layers = LAYER_FLOOR;
+  if (isWallItem(itemId)) layers = LAYER_WALL;
+  else if (RUG_IDS.has(itemId)) layers = LAYER_RUG;
+  else if (SURFACE_ONLY_IDS.has(itemId)) layers = LAYER_SURFACE;
+  else if (FLOOR_OR_SURFACE_IDS.has(itemId)) layers |= LAYER_SURFACE;
+  return { w, d, layers, slots };
 }
 
 /** Where the player wants an item (room.go Placement). Unused fields are ignored by layer. */
@@ -46,7 +53,8 @@ export interface Placement {
 export const floorPlacement = (x: number, y: number, rotation = 0): Placement => ({ x, y, rotation, parent: 0, slot: -1, side: 0, pos: 0 });
 
 /** The room.go Result names. */
-export type PlaceResult = 'ok' | 'out_of_bounds' | 'overlap' | 'bad_rotation' | 'bad_layer' | 'not_surface_item' | 'no_surface' | 'surface_full';
+export type PlaceResult =
+  | 'ok' | 'out_of_bounds' | 'overlap' | 'bad_rotation' | 'bad_layer' | 'not_surface_item' | 'no_surface' | 'surface_full' | 'has_items';
 
 export interface Checked {
   result: PlaceResult;
@@ -60,8 +68,8 @@ const sizeAt = (def: PlaceDef, rotation: number): { w: number; d: number } =>
   rotation % 2 !== 0 ? { w: def.d, d: def.w } : { w: def.w, d: def.d };
 
 /**
- * Whether `def` may go at `p` among `items`, following room.go resolve. `ignoreId` is the item being moved.
- * `defOf` gives the def of an already placed item.
+ * Whether `def` may go at `p` among `items`, following room.go Place, or Move when `ignoreId` is the item
+ * being moved (a piece still holding items can't move). `defOf` gives the def of an already placed item.
  */
 export function checkPlacement(
   items: readonly RoomItem[],
@@ -72,6 +80,7 @@ export function checkPlacement(
 ): Checked {
   const fail = (result: PlaceResult, layer = 0): Checked => ({ result, layer, slot: -1 });
   const others = items.filter((o) => o.placedId !== ignoreId);
+  if (ignoreId !== 0 && others.some((o) => o.layer === LAYER_SURFACE && o.parentPlacedId === ignoreId)) return fail('has_items');
   if (p.parent !== 0) {
     if (!(def.layers & LAYER_SURFACE)) return fail('not_surface_item');
     if (!Number.isInteger(p.rotation) || p.rotation < 0 || p.rotation > 3) return fail('bad_rotation', LAYER_SURFACE);
