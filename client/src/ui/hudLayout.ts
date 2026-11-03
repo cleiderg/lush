@@ -15,6 +15,8 @@ export interface HudLayout {
   toggle: Rect;
   /** The Retro look toggle (Q2), left of the inventory toggle in the top bar. */
   retro: Rect;
+  /** The Quality control (Auto, Low, Medium, High), left of the Retro toggle in the top bar. */
+  quality: Rect;
   panel: Rect;
   /** The shop panel; it takes the inventory panel's place (only one is open at a time). */
   shop: Rect;
@@ -83,12 +85,13 @@ export function hudLayout(width: number, height: number): HudLayout {
 
   const toggle = { x: left + appW - MARGIN - TOGGLE, y: MARGIN, w: TOGGLE, h: TOGGLE };
   const retro = { ...toggle, x: toggle.x - MARGIN - TOGGLE };
+  const quality = { ...toggle, x: retro.x - MARGIN - TOGGLE };
   // The top band left of the toggles holds the location panel, then the HUD.
-  const band = retro.x - MARGIN - (left + MARGIN);
+  const band = quality.x - MARGIN - (left + MARGIN);
   const locationW = Math.min(LOCATION_W, Math.round((band - MARGIN) * LOCATION_SHARE));
   const location = { x: left + MARGIN, y: MARGIN, w: locationW, h: HUD_H };
   const hudX = location.x + location.w + MARGIN;
-  const hud = { x: hudX, y: MARGIN, w: Math.min(HUD_W, retro.x - MARGIN - hudX), h: HUD_H };
+  const hud = { x: hudX, y: MARGIN, w: Math.min(HUD_W, quality.x - MARGIN - hudX), h: HUD_H };
   const panelTop = MARGIN + HUD_H + MARGIN;
   // The PvP strip sits just above the tray and the panels end above it, so it never hides panel content.
   const pvp = { x: left + MARGIN, y: trayTop - MARGIN - PVP_H, w: appW - 2 * MARGIN, h: PVP_H };
@@ -109,7 +112,7 @@ export function hudLayout(width: number, height: number): HudLayout {
   const portrait = { x: portraitX, y: portraitY, w: PORTRAIT, h: PORTRAIT };
   const minimap = { x: left + appW - MARGIN - MINIMAP, y: interact.y + interact.h + MARGIN, w: MINIMAP, h: MINIMAP };
   return {
-    controls, location, hud, toggle, retro, panel, shop: { ...panel }, skills: { ...panel }, trade: { ...panel }, cardTable: { ...panel }, tradePrompt, pvp,
+    controls, location, hud, toggle, retro, quality, panel, shop: { ...panel }, skills: { ...panel }, trade: { ...panel }, cardTable: { ...panel }, tradePrompt, pvp,
     chat, interact, portrait, minimap, map: { ...panel },
   };
 }
