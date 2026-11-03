@@ -226,6 +226,37 @@ export function poseRoll(part: PartDef, animation: number): number {
   return animation === Animation.Wave && part.name === WAVE_ARM ? WAVE_RAISE : 0;
 }
 
+/** One chop, cast or stir cycle of a skill animation, in seconds. The loops repeat with this period. */
+export const SKILL_LOOP_PERIOD: Readonly<Record<number, number>> = {
+  [Animation.Chop]: 1.2,
+  [Animation.Fish]: 2.4,
+  [Animation.Cook]: 0.9,
+};
+/** Arms forward while casting a line, in radians around X (negative is forward). */
+const FISH_HOLD = -1.0;
+/** Arms forward over the grill while cooking. */
+const COOK_HOLD = -0.8;
+
+/**
+ * Arm angle around X for a looping skill animation (Chop, Fish, Cook) `time` seconds in, or undefined when the
+ * part or animation has no skill pose. Chop swings the right arm through the attack arc; Fish holds both arms
+ * forward and flicks the right one back and forth; Cook holds both forward and stirs them in turn.
+ */
+export function skillPoseAngle(part: PartDef, animation: number, time: number): number | undefined {
+  const period = SKILL_LOOP_PERIOD[animation];
+  if (period === undefined || (part.name !== 'armL' && part.name !== 'armR')) return undefined;
+  const u = (((time % period) + period) % period) / period;
+  const right = part.name === 'armR';
+  switch (animation) {
+    case Animation.Chop:
+      return right ? attackAngle(u * ATTACK_DURATION) : -0.3;
+    case Animation.Fish:
+      return right ? FISH_HOLD - 0.5 * smooth(u < 0.3 ? u / 0.3 : 1 - (u - 0.3) / 0.7) : FISH_HOLD;
+    default:
+      return COOK_HOLD + 0.3 * Math.sin((u + (right ? 0 : 0.5)) * Math.PI * 2);
+  }
+}
+
 /** One full breath, in seconds. */
 export const BREATH_PERIOD = 3.2;
 /** How much the torso widens at the top of a breath (fraction of its rest size). */
@@ -349,7 +380,8 @@ export class Character {
     for (const { part, node } of this.joints) {
       const attacking = combat.attack !== 0 && part.name === ATTACK_ARM;
       const roll = attacking ? 0 : poseRoll(part, animation);
-      node.rotation.x = attacking ? combat.attack : roll !== 0 ? 0 : swingAngle(this.phase, part, running);
+      const skill = attacking || moving ? undefined : skillPoseAngle(part, animation, time);
+      node.rotation.x = attacking ? combat.attack : skill ?? (roll !== 0 ? 0 : swingAngle(this.phase, part, running));
       node.rotation.z = roll;
       node.position.y = part.pivot[1] + breathPose(part, b, node.scale);
     }
