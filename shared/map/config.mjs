@@ -12,13 +12,17 @@ export const ORIGIN = { lat: 33.64525, lon: -117.8425 };
  */
 export const HOUSING = {
   areas: [
-    { id: 'mesa_court', outline: 171555779 },
-    { id: 'middle_earth', outline: 171559658 },
+    { id: 'mesa_court', name: 'Mesa Court', outline: 171555779 },
+    { id: 'middle_earth', name: 'Middle Earth', outline: 171559658 },
   ],
   connecting: [365551570],
   /** Rectangle fetched around the outlines. */
   fetchBox: { south: 33.6405, west: -117.848, north: 33.6545, east: -117.835 },
 };
+/** Houses per housing area (housing.md): the largest buildings wholly inside the outline. */
+export const HOUSES_PER_AREA = 20;
+/** Thrift stall and workbench: the workbench stands this far (m, min and max) from the stall. */
+export const WORKBENCH_DIST = [1.5, 2.5];
 /** Edge length of a chunk in metres. Client meshes and the server spatial grid use this. */
 export const CHUNK_SIZE = 64;
 /** Collision cell edge in metres. */

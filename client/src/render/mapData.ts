@@ -178,3 +178,15 @@ export function parseFountain(json: string): FountainData {
   if (d.version !== 1) throw new Error(`unsupported fountain.json version ${d.version}`);
   return d;
 }
+
+/** A housing area from housing.json (decimetres): outline `p` is a closed polygon [x0,z0,...], last point not repeated. */
+export interface HousingArea { id: string; name: string; p: number[]; thrift: MapPoint; workbench: MapPoint }
+/** A house: `osm` is the id of its building in campus.json, (x, z) its door cell centre. */
+export interface House { id: string; area: string; osm: number; x: number; z: number }
+export interface HousingData { version: number; units: string; areas: HousingArea[]; houses: House[] }
+
+export function parseHousing(json: string): HousingData {
+  const d = JSON.parse(json) as HousingData;
+  if (d.version !== 1) throw new Error(`unsupported housing.json version ${d.version}`);
+  return d;
+}
