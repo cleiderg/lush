@@ -28,6 +28,8 @@ export interface MapData {
   readonly features: readonly MapFeature[];
   /** The Campus Market stall, in metres. */
   readonly shop: Point;
+  /** The bank booth, in metres (skills.json), or null when the map was built without it. */
+  readonly bank: Point | null;
   readonly bounds: { minX: number; minZ: number; maxX: number; maxZ: number };
 }
 
@@ -51,7 +53,7 @@ function feature(kind: MapFeatureKind, id: string, p: number[], widthDm = 0): Ma
 }
 
 /** Builds the map from campus.json and areas.json text/objects (decimetres) into metres. */
-export function buildMapData(campus: CampusJson, gameAreas: typeof areas): MapData {
+export function buildMapData(campus: CampusJson, gameAreas: typeof areas, skills?: { bank: Point }): MapData {
   const features: MapFeature[] = [
     ...(campus.plazas ?? []).map((a) => feature('plaza', `plaza-${a.id}`, a.p)),
     ...campus.paths.map((w) => feature('path', `path-${w.id}`, w.p, w.w)),
@@ -62,6 +64,7 @@ export function buildMapData(campus: CampusJson, gameAreas: typeof areas): MapDa
   return {
     features,
     shop: { x: gameAreas.shop.x / 10, z: gameAreas.shop.z / 10 },
+    bank: skills ? { x: skills.bank.x / 10, z: skills.bank.z / 10 } : null,
     bounds: { minX: b.minX / 10, minZ: b.minZ / 10, maxX: b.maxX / 10, maxZ: b.maxZ / 10 },
   };
 }
@@ -144,6 +147,19 @@ function shopIcon(scale: number): SVGGElement {
   return g;
 }
 
+/** The bank icon: a gold coin on a vault door, distinct from the shop stall, centred on the origin. */
+function bankIcon(scale: number): SVGGElement {
+  const g = svg('g', { class: 'lush-map-bank' });
+  const inner = svg('g', { transform: `scale(${scale})` });
+  inner.append(
+    svg('circle', { class: 'lush-map-bank-bg', cx: 0, cy: 0, r: 6 }),
+    svg('rect', { class: 'lush-map-bank-door', x: -4, y: -4, width: 8, height: 8 }),
+    svg('circle', { class: 'lush-map-bank-coin', cx: 0, cy: 0, r: 2.2 }),
+  );
+  g.append(inner);
+  return g;
+}
+
 function playerMarker(r: number): SVGGElement {
   const g = svg('g', { class: 'lush-map-player' });
   g.append(svg('circle', { cx: 0, cy: 0, r }));
@@ -179,6 +195,8 @@ export class Minimap {
   readonly features: SVGGElement;
   readonly dots: SVGGElement;
   readonly shop: SVGGElement;
+  /** The bank booth icon; null when the map data has no bank position. */
+  readonly bank: SVGGElement | null;
   readonly north: SVGGElement;
   private readonly data: MapData;
   private readonly range: number;
@@ -210,7 +228,8 @@ export class Minimap {
     this.dots = svg('g', {});
     this.world.append(this.features, this.dots);
     this.shop = shopIcon(r / 40);
-    disc.append(svg('circle', { class: 'lush-minimap-ground', cx: 0, cy: 0, r }), this.world, this.shop, playerMarker(r / 24));
+    this.bank = this.data.bank ? bankIcon(r / 40) : null;
+    disc.append(svg('circle', { class: 'lush-minimap-ground', cx: 0, cy: 0, r }), this.world, this.shop, ...(this.bank ? [this.bank] : []), playerMarker(r / 24));
     this.north = svg('g', { class: 'lush-minimap-north' });
     const n = svg('text', { x: 0, y: -r, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': r * 0.2 });
     n.textContent = 'N';
@@ -258,6 +277,12 @@ export class Minimap {
     const shopIn = Math.hypot(shop.x, shop.y) <= this.range;
     this.shop.style.display = shopIn ? '' : 'none';
     if (shopIn) this.shop.setAttribute('transform', `translate(${shop.x.toFixed(2)} ${shop.y.toFixed(2)})`);
+    if (this.bank && this.data.bank) {
+      const bank = toMinimap(this.data.bank.x - pos.x, this.data.bank.z - pos.z, yaw);
+      const bankIn = Math.hypot(bank.x, bank.y) <= this.range;
+      this.bank.style.display = bankIn ? '' : 'none';
+      if (bankIn) this.bank.setAttribute('transform', `translate(${bank.x.toFixed(2)} ${bank.y.toFixed(2)})`);
+    }
 
     const dotR = (this.range / 30).toFixed(2);
     const remotes = this.opts.remotes().filter((p) => Math.hypot(p.x - pos.x, p.z - pos.z) <= this.range);
@@ -383,6 +408,8 @@ export class BigMap {
     features.append(...this.data.features.map(featureShape));
     const shop = shopIcon(2.5);
     shop.setAttribute('transform', `translate(${this.data.shop.x} ${this.data.shop.z})`);
+    const bank = this.data.bank ? bankIcon(2.5) : null;
+    bank?.setAttribute('transform', `translate(${this.data.bank!.x} ${this.data.bank!.z})`);
     this.dots = svg('g', {});
     this.player = playerMarker(8);
     const north = svg('text', {
@@ -390,7 +417,7 @@ export class BigMap {
     });
     north.textContent = 'N ↑';
     s.append(svg('rect', { class: 'lush-minimap-ground', x: b.minX, y: b.minZ, width: b.maxX - b.minX, height: b.maxZ - b.minZ }),
-      features, shop, this.dots, this.player, north);
+      features, shop, ...(bank ? [bank] : []), this.dots, this.player, north);
     this.svg = s;
     this.panel.append(s);
   }
@@ -413,6 +440,9 @@ export const MINIMAP_CSS = `
 .lush-map-player circle { fill: #ffffff; stroke: #2a1f18; stroke-width: 0.8; }
 .lush-map-shop-bg { fill: var(--lush-panel-bg-solid); stroke: var(--lush-gold); stroke-width: 1; }
 .lush-map-shop-awning { fill: var(--lush-accent); }
+.lush-map-bank-bg { fill: var(--lush-panel-bg-solid); stroke: var(--lush-gold); stroke-width: 1; }
+.lush-map-bank-door { fill: var(--lush-gold-bright); }
+.lush-map-bank-coin { fill: var(--lush-panel-bg-solid); }
 .lush-map-shop-body { fill: var(--lush-gold-bright); }
 .lush-bigmap { box-sizing: border-box; z-index: 6; display: flex; flex-direction: column; gap: var(--lush-space-2); padding: var(--lush-space-2) var(--lush-space-3) var(--lush-space-3); user-select: none; -webkit-user-select: none; }
 .lush-bigmap[hidden] { display: none; }

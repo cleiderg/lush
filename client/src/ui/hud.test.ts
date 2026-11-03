@@ -10,7 +10,7 @@ import { hudLayout } from './hudLayout';
 function item(id: number, name: string, kind: ItemKind, equipSlot = EquipSlot.None): ItemInfo {
   return {
     id, name, kind, equipSlot, levelToEquip: 1, accuracy: 0, strength: 0, defence: 0, attackSpeed: 0,
-    heal: 0, shopBuysFor: 0, shopSells: false, shopSellsFor: 0,
+    heal: 0, shopBuysFor: 0, shopSells: false, shopSellsFor: 0, toolSkill: 0, toolLevel: 0, cookingLevel: 0,
   };
 }
 

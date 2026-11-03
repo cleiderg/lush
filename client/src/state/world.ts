@@ -136,6 +136,8 @@ export class GameState {
       this.hits.push(msg.tick, msg.hits);
     } else if (msg.type === 'skillStats') {
       this.skills.setStats(msg.skills);
+    } else if (msg.type === 'skillCatalog') {
+      this.skills.setCatalog(msg.trees, msg.fishingSpots);
     } else if (msg.type === 'resourceState') {
       this.skills.setResources(msg.felledTrees, msg.fishingSpots);
     } else if (msg.type === 'levelUp') {

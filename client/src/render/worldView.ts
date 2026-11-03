@@ -35,6 +35,11 @@ export interface HitView {
   readonly died: boolean;
 }
 
+/** A level-up on an entity; nearby players see an effect over it. Positions come from the entity's player or NPC view. */
+export interface LevelUpView {
+  readonly entityId: number;
+}
+
 /** An item lying on the ground. Positions are metres from the map origin. */
 export interface GroundItemView {
   readonly id: number;
@@ -84,6 +89,8 @@ export interface WorldView {
   readonly entities?: EntityLookup;
   /** Hits that arrived since the last frame, oldest first. Missing means none. */
   readonly hits?: readonly HitView[];
+  /** Level-ups that arrived since the last frame, by entity id. Missing means none. */
+  readonly levelUps?: readonly LevelUpView[];
   /** Items on the ground in view; missing means none are drawn and no marker mesh is added. */
   readonly groundItems?: readonly GroundItemView[];
   /** NPCs in view; missing means none are drawn and no NPC mesh is added. */

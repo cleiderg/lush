@@ -295,6 +295,7 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 - Every gameplay number is a placeholder to tune after playtests (D-047): the combat formulas and level curve, the NPC and item tables, shop prices, wave timing, trade distance, the PvP zone warning distance and the PvP death rules.
 - More attack styles (ranged, magic). Not planned yet.
 - Every number in [[skills]], [[quests]], [[groups]] and [[trust-and-death]] is a placeholder too (D-051, D-053, D-054, D-055).
+- TAP_LABEL_MS (3 s), how long the combat and total level label shows after tapping a player ([[skills]]), is a placeholder.
 
 **Card tables** ([[card-tables]], stretch)
 - Table rules placeholders (seats 2 to 4, start when all seated players are Ready, 20 s turn timer, 3 missed turns forfeit, no house cut), tuned after playtests.

@@ -864,9 +864,9 @@ func (s *Server) npcRatio(n *world.NPC) uint8 {
 	return healthRatio(n.HP, t.HP)
 }
 
-// playerInfo is p's EntityInfo: combat level and worn equipment.
+// playerInfo is p's EntityInfo: combat level, worn equipment and total level.
 func (s *Server) playerInfo(p *world.Player) entityInfo {
-	return entityInfo{kind: protocol.EntityKindPlayer, level: p.CombatLevel(s.data.Rules), equip: p.Inv.Equipment}
+	return entityInfo{kind: protocol.EntityKindPlayer, level: p.CombatLevel(s.data.Rules), equip: p.Inv.Equipment, total: p.TotalLevel(s.data.Rules)}
 }
 
 // npcInfo is n's EntityInfo: NPC type and the type's combat level.

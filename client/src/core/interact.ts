@@ -6,6 +6,8 @@ import type { GameState } from '../state/world';
 export interface InteractActions {
   /** Opens the shop panel (ShopPanel.tryOpen). */
   openShop: () => void;
+  /** Opens the bank: sends BankOpen (BankPanel.open). */
+  openBank: () => void;
   /** Opens the card table panel for that table (CardTablePanel.open). */
   openCardTable: (tableId: number) => void;
   sendPickUp: (groundItemId: number) => void;
@@ -19,10 +21,11 @@ export function interactTarget(game: GameState, now: number, stall: Point): Inte
   return pickInteractTarget({ pos: game.prediction.pos, stall, entities, groundItems: game.items.groundItems });
 }
 
-/** Runs the Interact button: opens the shop or a card table's panel, picks up a ground item, attacks, or sends a trade request; nothing without a target. */
+/** Runs the Interact button: opens the shop, the bank or a card table's panel, picks up a ground item, attacks, or sends a trade request; nothing without a target. */
 export function interact(game: GameState, now: number, stall: Point, actions: InteractActions): InteractTarget | null {
   const target = interactTarget(game, now, stall);
   if (target?.type === 'shop') actions.openShop();
+  else if (target?.type === 'bank') actions.openBank();
   else if (target?.type === 'cardTable') actions.openCardTable(target.id);
   else if (target?.type === 'pickUp') actions.sendPickUp(target.id);
   else if (target?.type === 'attack') actions.sendAttackTarget(target.id);
@@ -40,12 +43,17 @@ export interface InteractPromptText {
 /** The shop's name, as on its panel. */
 export const SHOP_NAME = 'Campus Market';
 
+/** The bank's name, as on its panel and the prompt. */
+export const BANK_NAME = 'Bank';
+
 /** The prompt for target (from interactTarget), or null when Interact does nothing (visual-style.md, Interact prompt). */
 export function interactPromptText(game: GameState, target: InteractTarget | null): InteractPromptText | null {
   if (!target) return null;
   switch (target.type) {
     case 'shop':
       return { verb: 'Open', name: SHOP_NAME };
+    case 'bank':
+      return { verb: 'Open', name: BANK_NAME };
     case 'cardTable':
       return { verb: 'Open card table' };
     case 'pickUp': {

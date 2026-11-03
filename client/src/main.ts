@@ -17,6 +17,7 @@ import collisionUrl from '../../shared/map/collision.bin?url';
 import { CollisionGrid } from './state/collision';
 import { GameState } from './state/world';
 import { ChatLog, anyOpen } from './ui/chatLog';
+import { BankPanel } from './ui/bankPanel';
 import { CardTablePanel } from './ui/cardTablePanel';
 import { Controls } from './ui/controls';
 import { Hud } from './ui/hud';
@@ -63,6 +64,7 @@ const controls = new Controls({
   onInteract: () =>
     interact(game, performance.now(), SHOP_STALL, {
       openShop: () => shop.tryOpen(),
+      openBank: () => bank.open(),
       openCardTable: (id) => cardTable.open(id),
       sendPickUp: (id) => session.sendPickUp(id),
       sendAttackTarget: (id) => session.sendAttackTarget(id),
@@ -89,6 +91,7 @@ const hud = new Hud({
     skills.setOpen(false);
     shop.close();
     cardTable.close();
+    bank.close();
     bigMap.close();
   },
 });
@@ -102,6 +105,7 @@ const skills = new SkillsPanel({
     hud.setOpen(false);
     shop.close();
     cardTable.close();
+    bank.close();
     bigMap.close();
   },
 });
@@ -114,6 +118,7 @@ const shop = new ShopPanel({
     hud.setOpen(false);
     skills.setOpen(false);
     cardTable.close();
+    bank.close();
     bigMap.close();
   },
 });
@@ -132,6 +137,28 @@ const cardTable = new CardTablePanel({
     hud.setOpen(false);
     skills.setOpen(false);
     shop.close();
+    bank.close();
+    bigMap.close();
+  },
+});
+const bank = new BankPanel({
+  parent: document.body,
+  bank: game.bank,
+  items: game.items,
+  session: {
+    sendBankOpen: () => session.sendBankOpen(),
+    sendBankClose: () => session.sendBankClose(),
+    sendBankDeposit: (id, n) => session.sendBankDeposit(id, n),
+    sendBankWithdraw: (id, n) => session.sendBankWithdraw(id, n),
+    sendBankDepositInventory: () => session.sendBankDepositInventory(),
+    sendBankDepositEquipment: () => session.sendBankDepositEquipment(),
+  },
+  position: () => game.prediction.pos,
+  onOpen: () => {
+    hud.setOpen(false);
+    skills.setOpen(false);
+    shop.close();
+    cardTable.close();
     bigMap.close();
   },
 });
@@ -153,6 +180,7 @@ const trade = new TradePanel({
     skills.setOpen(false);
     shop.close();
     cardTable.close();
+    bank.close();
     bigMap.close();
   },
 });
@@ -168,6 +196,7 @@ const bigMap = new BigMap({
     skills.setOpen(false);
     shop.close();
     cardTable.close();
+    bank.close();
   },
 });
 const minimap = new Minimap({
@@ -182,7 +211,7 @@ const chatLog = new ChatLog({
   parent: document.body,
   lines: () => game.chat.log,
   playerId: () => game.playerId,
-  covered: () => anyOpen([hud, skills, shop, trade, cardTable, bigMap]),
+  covered: () => anyOpen([hud, skills, shop, bank, trade, cardTable, bigMap]),
 });
 // Developer-only time control (?debug): overrides the shared time the sky follows.
 mountTimePanel(location.search, { parent: document.body, clock: game.clock });
@@ -211,6 +240,7 @@ function openOfflinePanel(panel: OfflinePanel): void {
       return hud.isOpen;
     },
     shop: () => shop.tryOpen(),
+    bank: () => bank.isOpen,
     trade: () => trade.isOpen,
     'card-table': () => {
       cardTable.open(OFFLINE_TABLE_ID);
@@ -232,6 +262,7 @@ function openOfflinePanel(panel: OfflinePanel): void {
 new GameLoop({
   update: (stepMs) => {
     shop.update();
+    bank.update();
     cardTable.update();
     pvpWarning.update();
     locationPanel.update();

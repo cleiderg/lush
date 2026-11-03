@@ -1,4 +1,4 @@
-import { EquipSlot, ItemKind, ShedColour, ShedSymbol, Skill } from '../protocol';
+import { EquipSlot, ItemKind, ShedColour, ShedSymbol, Skill, ToolSkill } from '../protocol';
 import type { ItemInfo, ServerMessage, ShedCardValue } from './codec';
 import { OFFLINE_PLAYER_ID, seededRandom, type OfflineOptions } from './offline';
 
@@ -17,7 +17,7 @@ export const OFFLINE_TABLE_ID = 1;
 function item(id: number, name: string, kind: ItemKind, extra: Partial<ItemInfo> = {}): ItemInfo {
   return {
     id, name, kind, equipSlot: EquipSlot.None, levelToEquip: 1, accuracy: 0, strength: 0, defence: 0, attackSpeed: 0, heal: 0,
-    shopBuysFor: 1, shopSells: false, shopSellsFor: 0, ...extra,
+    shopBuysFor: 1, shopSells: false, shopSellsFor: 0, toolSkill: ToolSkill.None, toolLevel: 0, cookingLevel: 0, ...extra,
   };
 }
 
@@ -111,6 +111,11 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
 
   for (let i = 0; i < CHAT_LINES; i++) {
     msgs.push({ type: 'chat', speakerId: i === CHAT_LINES - 2 ? playerId : pick(BOT_IDS), text: pick(CHAT) });
+  }
+
+  if (opts.panel === 'bank') {
+    // Every catalog item banked, so the panel has a list to search; BankState opens the bank.
+    msgs.push({ type: 'bankState', slots: CATALOG.map((d) => ({ itemId: d.id, quantity: between(rand, 1, 400) })) });
   }
 
   if (opts.panel === 'trade') {

@@ -5,6 +5,7 @@ import { MAX_REMOTE_PLAYERS, RemotePlayers } from './remotePlayers';
 import { BlobShadows, PLAYER_SHADOW_RADIUS, npcShadowRadius, type ShadowEntry } from './blobShadows';
 import { HealthBars, type BarEntry } from './healthBars';
 import { Hitsplats } from './hitsplats';
+import { LevelUpEffects } from './levelUp';
 import { CampusMap, loadCampus } from './campusMap';
 import { GroundItems } from './groundItems';
 import { Npcs } from './npcs';
@@ -73,6 +74,7 @@ export class WorldScene {
   readonly hitsplats = new Hitsplats();
   /** Attack swings and hit flinches, started by the view's hits. */
   readonly combat = new CombatAnims();
+  readonly levelUps = new LevelUpEffects();
   readonly chat = new ChatText();
   readonly floatTexts = new FloatTexts();
   /** Created on the first view that carries groundItems, so views without it leave the scene as before. */
@@ -177,6 +179,9 @@ export class WorldScene {
     // Hitsplats join the scene with the first hit, so a view without hits leaves the graph as it was.
     if (view.hits?.length && !this.hitsplats.group.parent) this.scene.add(this.hitsplats.group);
     if (this.hitsplats.group.parent) this.hitsplats.update(view, this.now(), this.rig.camera.quaternion);
+    // Like hitsplats, the effect joins the scene with the first level-up.
+    if (view.levelUps?.length && !this.levelUps.group.parent) this.scene.add(this.levelUps.group);
+    if (this.levelUps.group.parent) this.levelUps.update(view, this.now());
     this.healthBars.update(this.barEntries(view), this.rig.camera.quaternion);
     // Chat joins the scene with the first message, like hitsplats; it needs the DOM only from then on.
     if (view.chat?.length && !this.chat.group.parent) this.scene.add(this.chat.group);
