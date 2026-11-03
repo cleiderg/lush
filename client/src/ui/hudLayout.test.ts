@@ -72,7 +72,7 @@ describe('hudLayout portrait', () => {
       expect(p.x).toBe(l.location.x);
       expect(p.y).toBeGreaterThanOrEqual(l.location.y + l.location.h);
       expect(inside(p, { x: 0, y: 0, w, h: h / 3 })).toBe(true);
-      for (const name of ['location', 'hud', 'toggle', 'retro', 'interact', 'pvp', 'chat', 'controls'] as const) {
+      for (const name of ['location', 'hud', 'toggle', 'retro', 'quality', 'interact', 'pvp', 'chat', 'controls'] as const) {
         expect(intersects(p, l[name]), name).toBe(false);
       }
     });
@@ -91,7 +91,7 @@ describe('hudLayout minimap', () => {
       expect(m.x + m.w).toBeGreaterThanOrEqual(appRight - 16);
       expect(m.x).toBeGreaterThan(l.controls.x + l.controls.w / 2);
       expect(inside(m, { x: 0, y: 0, w, h: h / 3 })).toBe(true);
-      for (const name of ['location', 'hud', 'toggle', 'retro', 'portrait', 'interact', 'pvp', 'controls'] as const) {
+      for (const name of ['location', 'hud', 'toggle', 'retro', 'quality', 'portrait', 'interact', 'pvp', 'controls'] as const) {
         expect(intersects(m, l[name]), name).toBe(false);
       }
       expect(l.map).toEqual(l.panel);

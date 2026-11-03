@@ -2,6 +2,9 @@ import { AudioManager, installUiClicks } from './audio';
 import { initErrorReporting } from './core/errorReporting';
 import { interact, interactPromptText, interactTarget } from './core/interact';
 import { GameLoop } from './core/loop';
+import { detectDevice, localQualityStore, QualityChooser, startingPreset } from './core/quality';
+import { QualityController } from './core/qualityController';
+import { QualityControl } from './ui/qualityControl';
 import { sendMove } from './core/move';
 import { buildWorldView, controlYaw } from './core/view';
 import { sendWave } from './core/wave';
@@ -46,6 +49,12 @@ const renderer = createRenderer(canvas);
 window.addEventListener('resize', () => renderer.resize());
 // Applies the saved Retro choice (off when nothing is saved) before the first frame.
 new RetroToggle({ parent: document.body, target: renderer, store: localRetroStore() });
+// Applies the saved Quality choice (Auto when nothing is saved); Auto steps down as frame times come in.
+const quality = new QualityController(renderer, localQualityStore(), new QualityChooser(startingPreset(detectDevice())));
+const qualityControl = new QualityControl({ parent: document.body, model: quality });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) quality.pause();
+});
 
 const controls = new Controls({
   onWave: () => sendWave(session),
@@ -268,6 +277,8 @@ new GameLoop({
     sendMove(game, session, m.x, m.y, stepMs / 1000, controls.isRunning);
   },
   render: () => {
+    quality.rendered(performance.now());
+    qualityControl.update();
     chatLog.update();
     renderer.render(buildWorldView(game, performance.now()));
   },

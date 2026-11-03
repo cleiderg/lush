@@ -221,8 +221,56 @@ func (rcv *ItemDef) MutateCookingLevel(n byte) bool {
 	return rcv._tab.MutateByteSlot(34, n)
 }
 
+func (rcv *ItemDef) FootprintW() byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(36))
+	if o != 0 {
+		return rcv._tab.GetByte(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *ItemDef) MutateFootprintW(n byte) bool {
+	return rcv._tab.MutateByteSlot(36, n)
+}
+
+func (rcv *ItemDef) FootprintD() byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(38))
+	if o != 0 {
+		return rcv._tab.GetByte(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *ItemDef) MutateFootprintD(n byte) bool {
+	return rcv._tab.MutateByteSlot(38, n)
+}
+
+func (rcv *ItemDef) Placement() PlacementKind {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(40))
+	if o != 0 {
+		return PlacementKind(rcv._tab.GetByte(o + rcv._tab.Pos))
+	}
+	return 0
+}
+
+func (rcv *ItemDef) MutatePlacement(n PlacementKind) bool {
+	return rcv._tab.MutateByteSlot(40, byte(n))
+}
+
+func (rcv *ItemDef) SurfaceSlots() byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(42))
+	if o != 0 {
+		return rcv._tab.GetByte(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *ItemDef) MutateSurfaceSlots(n byte) bool {
+	return rcv._tab.MutateByteSlot(42, n)
+}
+
 func ItemDefStart(builder *flatbuffers.Builder) {
-	builder.StartObject(16)
+	builder.StartObject(20)
 }
 func ItemDefAddId(builder *flatbuffers.Builder, id uint16) {
 	builder.PrependUint16Slot(0, id, 0)
@@ -271,6 +319,18 @@ func ItemDefAddToolLevel(builder *flatbuffers.Builder, toolLevel byte) {
 }
 func ItemDefAddCookingLevel(builder *flatbuffers.Builder, cookingLevel byte) {
 	builder.PrependByteSlot(15, cookingLevel, 0)
+}
+func ItemDefAddFootprintW(builder *flatbuffers.Builder, footprintW byte) {
+	builder.PrependByteSlot(16, footprintW, 0)
+}
+func ItemDefAddFootprintD(builder *flatbuffers.Builder, footprintD byte) {
+	builder.PrependByteSlot(17, footprintD, 0)
+}
+func ItemDefAddPlacement(builder *flatbuffers.Builder, placement PlacementKind) {
+	builder.PrependByteSlot(18, byte(placement), 0)
+}
+func ItemDefAddSurfaceSlots(builder *flatbuffers.Builder, surfaceSlots byte) {
+	builder.PrependByteSlot(19, surfaceSlots, 0)
 }
 func ItemDefEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

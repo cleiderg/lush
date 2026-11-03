@@ -15,7 +15,8 @@ import { SHOP_STALL } from './shopPanel';
 function item(id: number, name: string): ItemInfo {
   return {
     id, name, kind: ItemKind.Loot, equipSlot: EquipSlot.None, levelToEquip: 1, accuracy: 0, strength: 0, defence: 0, attackSpeed: 0,
-    heal: 0, shopBuysFor: 1, shopSells: false, shopSellsFor: 0, toolSkill: 0, toolLevel: 0, cookingLevel: 0,
+    heal: 0, shopBuysFor: 1, shopSells: false, shopSellsFor: 0,
+    toolSkill: 0, toolLevel: 0, cookingLevel: 0,
   };
 }
 
