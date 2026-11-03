@@ -31,6 +31,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/cardroom"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
 	"github.com/cleiderg/lush/server/internal/systems/combat"
+	"github.com/cleiderg/lush/server/internal/systems/cook"
 	"github.com/cleiderg/lush/server/internal/systems/emote"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/grounditems"
@@ -203,6 +204,7 @@ type Server struct {
 	cards    *cardroom.System    // set by SetCardRoom; nil without the card room
 	bank     *bank.System        // set by SetBank; nil without the bank
 	gather   *skills             // set by SetGather; nil without gathering
+	cook     *cook.System        // set by SetCook; nil without cooking
 	pvp      *pvp.Combat         // set by SetPvP; nil without PvP
 	pve      *combat.System      // set by SetPvE; nil without PvE
 	ground   *grounditems.System // set by SetGroundItems; where PvP drops spawn

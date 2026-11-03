@@ -23,6 +23,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/cardroom"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
 	"github.com/cleiderg/lush/server/internal/systems/combat"
+	"github.com/cleiderg/lush/server/internal/systems/cook"
 	"github.com/cleiderg/lush/server/internal/systems/emote"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/gather"
@@ -276,8 +277,14 @@ func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, 
 		return nil, err
 	}
 	sess.SetGather(gathering, layout)
+	cooking, err := cook.New(data, layout, clock, rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())), sess.CookSink(), cook.DefaultConfig())
+	if err != nil {
+		return nil, err
+	}
+	cooking.LinkGather(gathering)
+	sess.SetCook(cooking)
 	out := []scheduled{}
-	for _, s := range []world.System{mover, gathering, npcs, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess),
+	for _, s := range []world.System{mover, gathering, cooking, npcs, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess),
 		items.New(data), shop.New(data, lookup, tileSize, sess), trades, banks, cards, ground} {
 		out = append(out, scheduled{s, 1})
 	}
