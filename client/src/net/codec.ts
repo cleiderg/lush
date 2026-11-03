@@ -8,9 +8,9 @@ import {
   FishingSpotState, LevelUp, SkillCatalog, FishingSpotKindDef, TreeKindDef, ToolSkill, ResourceState, Skill, SkillAction, SkillResult, SkillResultCode, SkillStats, SkillTarget, ShopResult, ShopResultCode, ShopSell, Snapshot, TradeAccept,
   TradeCancel, TradeItem, TradeOffer, TradeRemove, TradeRequest, TradeRequestNotice, TradeResult, TradeResultCode,
   TradeSetGold, TradeState, Vec2, Welcome,
-  CraftResult, CraftResultCode, PlacementKind, ShopKind, WorkbenchCatalog, WorkbenchCraft, WorkbenchRecipe,
+  CraftResult, CraftResultCode, ShopKind, WorkbenchCatalog, WorkbenchCraft, WorkbenchRecipe,
   HomeEnter, HomeLeave, HomeMove, HomePlace, HomeRemove, HomeResult, HomeResultCode, HomeRotate, HomeSetFloor, HomeSetOpen,
-  HomeSetWallpaper, HomeState, HouseClaim, HouseInfo, HouseState, HousingResult, HousingResultCode, HousingState, PlacedItem, RentPay,
+  HomeSetWallpaper, HomeState, HouseClaim, HouseInfo, HouseState, HousingResult, HousingResultCode, HousingState, PlacedItem, PlacementKind, RentPay,
 } from '../protocol';
 
 export interface EntityState {

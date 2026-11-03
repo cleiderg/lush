@@ -24,6 +24,10 @@ export interface HudLayout {
   house: Rect;
   /** The rent warning banner, in the PvP strip's place above the tray. */
   houseBanner: Rect;
+  /** The home Edit button: bottom right of the panel area, above the PvP strip. */
+  editButton: Rect;
+  /** The home edit drawer: slides up from the bottom of the panel area, just above the Edit button. */
+  editDrawer: Rect;
   /** The bank panel; it also takes the inventory panel's place. */
   bank: Rect;
   /** The Skills panel, a tab beside the inventory; it also takes the inventory panel's place. */
@@ -56,6 +60,10 @@ export interface HudLayout {
   /** The chat log, a strip at the bottom of the panel area just above the PvP strip; hidden while a panel is open. */
   chat: Rect;
 }
+
+const EDIT_BUTTON_W = 96;
+const EDIT_BUTTON_H = 44;
+const EDIT_DRAWER_H = 300;
 
 /** Mirrors index.html: #app is at most this wide and centred. */
 export const APP_MAX_WIDTH = 480;
@@ -112,6 +120,9 @@ export function hudLayout(width: number, height: number): HudLayout {
     w: appW - 2 * MARGIN,
     h: Math.max(0, pvp.y - MARGIN - panelTop),
   };
+  const editButton = { x: panel.x + panel.w - EDIT_BUTTON_W, y: panel.y + panel.h - EDIT_BUTTON_H, w: Math.min(EDIT_BUTTON_W, panel.w), h: Math.min(EDIT_BUTTON_H, panel.h) };
+  const drawerH = Math.max(0, Math.min(EDIT_DRAWER_H, panel.h - EDIT_BUTTON_H - MARGIN));
+  const editDrawer = { x: panel.x, y: editButton.y - MARGIN - drawerH, w: panel.w, h: drawerH };
   const tradePrompt = { ...panel, h: Math.min(PROMPT_H, panel.h) };
   const chatH = Math.min(CHAT_H, panel.h);
   const chat = { x: panel.x, y: panel.y + panel.h - chatH, w: panel.w, h: chatH };
@@ -123,7 +134,7 @@ export function hudLayout(width: number, height: number): HudLayout {
   const portrait = { x: portraitX, y: portraitY, w: PORTRAIT, h: PORTRAIT };
   const minimap = { x: left + appW - MARGIN - MINIMAP, y: interact.y + interact.h + MARGIN, w: MINIMAP, h: MINIMAP };
   return {
-    controls, location, hud, toggle, retro, quality, panel, shop: { ...panel }, house: { ...panel }, houseBanner: { ...pvp }, bank: { ...panel }, skills: { ...panel }, trade: { ...panel }, cardTable: { ...panel }, tradePrompt, pvp,
+    controls, location, hud, toggle, retro, quality, panel, shop: { ...panel }, house: { ...panel }, houseBanner: { ...pvp }, editButton, editDrawer, bank: { ...panel }, skills: { ...panel }, trade: { ...panel }, cardTable: { ...panel }, tradePrompt, pvp,
     chat, interact, portrait, minimap, map: { ...panel },
   };
 }

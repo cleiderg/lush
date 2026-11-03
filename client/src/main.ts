@@ -29,6 +29,7 @@ import { LocationPanel } from './ui/locationPanel';
 import { BigMap, Minimap } from './ui/minimap';
 import { PlayerPortrait } from './ui/playerPortrait';
 import { localRetroStore, RetroToggle } from './ui/retroToggle';
+import { HomeEditPanel, type Tile } from './ui/homeEditPanel';
 import { HousePanel } from './ui/housePanel';
 import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
 import { SkillsPanel } from './ui/skillsPanel';
@@ -141,6 +142,23 @@ const house = new HousePanel({
     bigMap.close();
   },
 });
+// Edit mode inside the player's own home. The room renderer answers the pick with the tapped tile (tile picking is a render issue).
+let tilePick: ((tile: Tile) => void) | null = null;
+const homeEdit = new HomeEditPanel({
+  parent: document.body,
+  housing: game.housing,
+  items: game.items,
+  session: {
+    sendHomePlace: (slot, p) => session.sendHomePlace(slot, p),
+    sendHomeMove: (id, p) => session.sendHomeMove(id, p),
+    sendHomeRotate: (id, r) => session.sendHomeRotate(id, r),
+    sendHomeRemove: (id) => session.sendHomeRemove(id),
+    sendHomeSetWallpaper: (slot) => session.sendHomeSetWallpaper(slot),
+    sendHomeSetFloor: (slot) => session.sendHomeSetFloor(slot),
+  },
+  pickTile: (onTile) => { tilePick = onTile; },
+});
+void tilePick;
 const cardTable = new CardTablePanel({
   parent: document.body,
   tables: game.cardTables,
@@ -267,6 +285,10 @@ function openOfflinePanel(panel: OfflinePanel): void {
     house: () => {
       house.open(OFFLINE_HOUSE_ID);
       return house.isOpen;
+    },
+    'home-edit': () => {
+      homeEdit.setEditing(true);
+      return homeEdit.isEditing;
     },
     bank: () => bank.isOpen,
     trade: () => trade.isOpen,

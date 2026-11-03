@@ -126,7 +126,17 @@ func (s *Server) CommitHousing(req housing.CommitRequest) {
 	switch req.Kind {
 	case housing.CommitClaim:
 		c := store.ClaimPlot{PlayerID: g.storeID, PlotID: int32(req.House), Cost: int64(req.Gold), Rent: req.PaidUntil.Sub(now), Now: now}
-		write = func(ctx context.Context) error { _, err := s.homes.ClaimPlot(ctx, c); return err }
+		write = func(ctx context.Context) error {
+			if _, err := s.homes.ClaimPlot(ctx, c); err != nil {
+				return err
+			}
+			// The claim is committed; a failure to read the new home back
+			// only delays it until restart, so it does not fail the claim.
+			if err := s.homeClaimed(ctx, g, c.PlotID); err != nil {
+				s.log.Error("claimed home", "plot", c.PlotID, "err", err)
+			}
+			return nil
+		}
 	case housing.CommitRent:
 		var before = req.PaidUntil
 		for _, h := range s.housing.List() {
