@@ -1,9 +1,9 @@
-import { type EquipSlot, type ItemActionKind, ShedColour, type SkillTarget } from '../protocol';
+import { type EquipSlot, type ItemActionKind, ShedColour, ShopKind, type SkillTarget } from '../protocol';
 import {
   decode, encodeAttackTarget, encodeBankClose, encodeBankDeposit, encodeBankDepositEquipment, encodeBankDepositInventory,
   encodeBankOpen, encodeBankWithdraw, encodeCardTableLeave, encodeCardTableReady, encodeCardTableSit, encodeChat, encodeHello, encodeItemAction, encodePickUp, encodeShedDraw, encodeShedPlay,
   encodeHomeEnter, encodeHomeLeave, encodeHomeMove, encodeHomePlace, encodeHomeRemove, encodeHomeRotate, encodeHomeSetFloor,
-  encodeHomeSetOpen, encodeHomeSetWallpaper, type HomePlacement, encodeHouseClaim, encodeRentPay, encodeShopBuy, encodeShopSell, encodeSkillAction, encodeTradeAccept, encodeTradeCancel, encodeTradeOffer, encodeTradeRemove, encodeTradeRequest, encodeTradeSetGold,
+  encodeHomeSetOpen, encodeHomeSetWallpaper, type HomePlacement, encodeHouseClaim, encodeRentPay, encodeShopBuy, encodeShopSell, encodeWorkbenchCraft, encodeSkillAction, encodeTradeAccept, encodeTradeCancel, encodeTradeOffer, encodeTradeRemove, encodeTradeRequest, encodeTradeSetGold,
   type ServerMessage, type ShedCardValue,
 } from './codec';
 import type { Transport, TransportFactory } from './transport';
@@ -90,12 +90,16 @@ export class Session {
     this.send(encodeItemAction(action, slot, equipSlot));
   }
 
-  sendShopBuy(itemId: number, quantity: number): void {
-    this.send(encodeShopBuy(itemId, quantity));
+  sendShopBuy(itemId: number, quantity: number, shop: ShopKind = ShopKind.Market): void {
+    this.send(encodeShopBuy(itemId, quantity, shop));
   }
 
-  sendShopSell(slot: number, quantity: number): void {
-    this.send(encodeShopSell(slot, quantity));
+  sendShopSell(slot: number, quantity: number, shop: ShopKind = ShopKind.Market): void {
+    this.send(encodeShopSell(slot, quantity, shop));
+  }
+
+  sendWorkbenchCraft(outputItemId: number): void {
+    this.send(encodeWorkbenchCraft(outputItemId));
   }
 
   sendPickUp(groundItemId: number): void {

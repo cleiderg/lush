@@ -121,6 +121,7 @@ describe('decode + GameState: item catalog', () => {
     expect(game.items.item(5)).toEqual({
       id: 5, name: 'Bronze sword', kind: ItemKind.Weapon, equipSlot: EquipSlot.Weapon, levelToEquip: 1,
       accuracy: 4, strength: 3, defence: -1, attackSpeed: 4, heal: 0, shopBuysFor: 10, shopSells: true, shopSellsFor: 25, toolSkill: 0, toolLevel: 0, cookingLevel: 0,
+      footprintW: 0, footprintD: 0, placement: 0, surfaceSlots: 0, thriftSellsFor: 0, thriftBuysFor: 0,
     });
     expect(game.items.item(9)?.name).toBe('Fish');
     expect(game.items.item(9)?.heal).toBe(3);
