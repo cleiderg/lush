@@ -376,6 +376,9 @@ type message struct {
 	tableID uint16     // CardTableSit
 	card    *shed.Card // ShedPlay; nil when the message names no card
 	chosen  shed.Colour
+	// SkillAction.
+	skillTarget protocol.SkillTarget
+	skillID     uint16
 }
 
 // gameSlots maps wire equipment slots to game data slots. EquipSlotNone is
@@ -429,6 +432,8 @@ func (m message) command(id world.PlayerID) world.Command {
 		}
 	case protocol.MessageTradeCancel:
 		return trade.CancelCommand{Player: id}
+	case protocol.MessageSkillAction:
+		return SkillActionCommand{Player: id, Kind: m.skillTarget, ID: m.skillID}
 	case protocol.MessageBankOpen:
 		return bank.OpenCommand{Player: id}
 	case protocol.MessageBankClose:
@@ -544,6 +549,10 @@ func decode(buf []byte) (m message, err error) {
 		var bw protocol.BankWithdraw
 		bw.Init(tbl.Bytes, tbl.Pos)
 		m.itemID, m.quantity = bw.ItemId(), bw.Amount()
+	case protocol.MessageSkillAction:
+		var sa protocol.SkillAction
+		sa.Init(tbl.Bytes, tbl.Pos)
+		m.skillTarget, m.skillID = sa.Target(), sa.TargetId()
 	case protocol.MessageAttackTarget:
 		var at protocol.AttackTarget
 		at.Init(tbl.Bytes, tbl.Pos)
