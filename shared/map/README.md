@@ -6,7 +6,7 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 |---|---|
 | `source/osm-central.json` | Committed OSM snapshot of central campus (`node shared/map/fetch.mjs central` refreshes it; needs network) |
 | `source/osm-housing.json` | Committed OSM snapshot of the Mesa Court and Middle Earth housing areas (`node shared/map/fetch.mjs housing` refreshes it) |
-| `build.mjs` | `node shared/map/build.mjs [outDir] [--no-nature]` writes `campus.json`, `collision.bin`, `areas.json`, `cardtables.json`, `fountain.json`, `props.json`, `skills.json` and `parknature.json` (skipped with `--no-nature`). Offline and deterministic |
+| `build.mjs` | `node shared/map/build.mjs [outDir] [--no-nature]` writes `campus.json`, `collision.bin`, `areas.json`, `cardtables.json`, `fountain.json`, `props.json`, `skills.json`, `housing.json` and `parknature.json` (skipped with `--no-nature`). Offline and deterministic |
 | `campus.json` | Compact map for rendering |
 | `collision.bin` | Collision grid for client and server |
 | `areas.mjs` | Gameplay places (spawn, shop, area polygons, card tables) in metres; edit here, then rebuild |
@@ -18,6 +18,7 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 | `props.json` | Campus props (benches, lamp posts, bins, ..., food carts, string lights and table-top cups, plates and pizza boxes), visual only |
 | `skills.mjs` | M9 skill tree counts, pond shape and fishing spot counts, placement seed and clearances; edit here, then rebuild |
 | `skills.json` | M9 woodcutting trees, pond and fishing spots, bank booth and grill, for client and server |
+| `housing.json` | M10 housing areas, their 20 houses each with a door, and the thrift stall and workbench, for client and server |
 | `parknature.mjs` | Aldrich Park nature types, seed, densities and clearances; edit here, then rebuild |
 | `parknature.json` | Aldrich Park trees, rocks, bushes, flower beds, picnic blankets and birds, visual only |
 | `config.mjs` | Bounding box, fixed origin, housing outline and connecting path ids, chunk size, cell size |
@@ -144,6 +145,18 @@ Milestone 9 skill objects from `docs/specs/map.md` (Gameplay areas: Bank booth, 
   - `spots[]`: `{id, kind, x, z}`, candidate positions on the outline the active spots move between; `kind` is `"net"` or `"rod"`, `id` is `<kind>-<n>`. Spread evenly round the edge, kinds in turn, each with a walkable cell outside the pond next to it.
 
 `build.mjs` places them after the props and before the nature, with their own seeded generator (`SKILLS_SEED`), so the file is byte-identical on every build and doesn't depend on `--no-nature`. The nature keeps its canopies off the skill trees and stays out of the pond and its shore.
+
+## `housing.json`
+
+M10 housing (`docs/specs/housing.md`: Neighborhoods and ownership, Economy hooks), so client and server agree on where houses, doors, the Campus Thrift stall and the workbench are. Kept out of `areas.json`, whose parser rejects unknown area ids. Same units: integer decimetres, x east, z south.
+
+`{version, units, areas, houses}`
+
+- `version`: 1.
+- `areas[]`: `{id, name, p, thrift, workbench}`. `id` is `mesa_court` or `middle_earth`; `name` the display name; `p` the OSM outline (`HOUSING` in `config.mjs`) as a closed polygon `[x0,z0,...]` (last point not repeated); `thrift` and `workbench` are `{x, z}` points.
+- `houses[]`: `{id, area, osm, x, z}`. `id` is `<area>-<n>` with n from 1, unique; `area` an area id; `osm` the OSM way id of the building (`campus.json` `buildings`); `x`, `z` the door, the centre of a walkable collision cell.
+
+`build.mjs` runs this last, on the final grid. Per area it takes the `HOUSES_PER_AREA` (20) largest buildings wholly inside the outline (ties by id) that have a door cell: a walkable cell inside the outline, outside the building and within 1.5 m of its footprint, nearest the wall (then best connected, then north-west first), never one used as another door. The thrift stall is on the open cell (all 8 neighbours walkable) inside the outline nearest the middle of the area's doors, at least 3 m from every door; the workbench is another such cell 1.5 to 2.5 m from the stall. All points are on walkable cells of `collision.bin`. Deterministic: byte-identical on every build.
 
 ## `parknature.json`
 

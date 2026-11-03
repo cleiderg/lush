@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Character, CombatAnims } from './character';
-import { CameraRig } from './cameraRig';
+import { CameraRig, FOV } from './cameraRig';
 import { MAX_REMOTE_PLAYERS, RemotePlayers } from './remotePlayers';
 import { BlobShadows, PLAYER_SHADOW_RADIUS, npcShadowRadius, type ShadowEntry } from './blobShadows';
 import { HealthBars, type BarEntry } from './healthBars';
@@ -20,6 +20,7 @@ import { loadParkNature } from './parkNature';
 import { SkillObjects, loadSkills } from './skillObjects';
 import { Fountain, loadFountain } from './fountain';
 import { DEFAULT_SKY, SkyRig } from './sky';
+import { RoomView, ROOM_SIZE, WALL_HEIGHT } from './roomView';
 import { CafeInterior, cafeLightSources } from './cafeInterior';
 import { LampLights, lampSources } from './lights';
 import type { CampusData } from './mapData';
@@ -41,6 +42,10 @@ function makeGround(b: CampusData['bounds']): THREE.Mesh {
   mesh.receiveShadow = true;
   return mesh;
 }
+
+/** Bounding sphere of the room, so it fits the view at any yaw. */
+const ROOM_CENTER = new THREE.Vector3(ROOM_SIZE / 2, WALL_HEIGHT / 2, ROOM_SIZE / 2);
+const ROOM_RADIUS = Math.hypot(ROOM_SIZE / 2, ROOM_SIZE / 2, WALL_HEIGHT / 2) * 1.05;
 
 /** Everything drawn for the world. Reads a WorldView; never writes to it. */
 export class WorldScene {
@@ -65,6 +70,7 @@ export class WorldScene {
   readonly lamps = new LampLights([...lampSources(loadProps()), ...cafeLightSources()], this.props.glow);
   /** The furnished Student Center café: floor, walls and props, two draw calls. */
   readonly cafe = new CafeInterior(this.props.glow);
+  private readonly ground: THREE.Mesh;
   private readonly player = new Character();
   private readonly remotes = new RemotePlayers();
   readonly healthBars = new HealthBars();
@@ -81,6 +87,10 @@ export class WorldScene {
   private groundItems: GroundItems | null = null;
   /** Created on the first view that carries npcs, like groundItems. */
   private npcs: Npcs | null = null;
+  /** The home room, present only while a view carries `home`. */
+  private room: RoomView | null = null;
+  /** Campus objects hidden for the room, with the visibility to restore. */
+  private readonly hiddenForRoom = new Map<THREE.Object3D, boolean>();
   private lastX: number | null = null;
   private lastZ = 0;
 
@@ -88,7 +98,8 @@ export class WorldScene {
   constructor(private readonly now: () => number = () => performance.now()) {
     this.sky.attach(this.scene);
     this.sky.update(undefined, 0, 0);
-    this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.areas.group, this.player.root, this.remotes.group, this.shadows.group, this.healthBars.group);
+    this.ground = makeGround(loadCampus().bounds);
+    this.scene.add(this.ground, this.map.group, this.areas.group, this.player.root, this.remotes.group, this.shadows.group, this.healthBars.group);
     // After the players: tests find the remote-player instanced meshes as the first ones in the scene.
     this.scene.add(this.cardTables.group, this.props.group, this.cafe.group, this.skills.group, this.fountain.group, this.nature.group, this.lamps.group);
     this.lamps.update(DEFAULT_SKY.elevation, this.rig.camera.position, this.now());
@@ -168,11 +179,16 @@ export class WorldScene {
       this.npcs.update([]);
     }
     this.shadows.update(this.shadowList(view));
-    this.rig.follow(local.x, local.z);
-    const cam = this.rig.camera.position;
-    this.map.cutaway?.update(local.x, local.z, cam.x, cam.z, this.now());
-    this.nature.cull(this.rig.camera);
-    this.skills.cull(this.rig.camera);
+    this.updateHome(view);
+    if (this.room) {
+      this.rig.follow(ROOM_CENTER.x, ROOM_CENTER.z, this.roomDistance(), ROOM_CENTER.y);
+    } else {
+      this.rig.follow(local.x, local.z);
+      const cam = this.rig.camera.position;
+      this.map.cutaway?.update(local.x, local.z, cam.x, cam.z, this.now());
+      this.nature.cull(this.rig.camera);
+      this.skills.cull(this.rig.camera);
+    }
     this.sky.update(view.sky, local.x, local.z);
     this.lamps.update((view.sky ?? DEFAULT_SKY).elevation, this.rig.camera.position, this.now());
     this.map.updateSky(view.sky);
@@ -188,6 +204,46 @@ export class WorldScene {
     if (this.chat.group.parent) this.chat.update(view);
     if (view.gains?.length && !this.floatTexts.group.parent) this.scene.add(this.floatTexts.group);
     if (this.floatTexts.group.parent) this.floatTexts.update(view, this.now());
+  }
+
+  /** Show the room for `view.home` and hide the campus, or undo both when it is gone. */
+  private updateHome(view: WorldView): void {
+    if (view.home) {
+      if (!this.room) {
+        this.room = new RoomView();
+        this.scene.add(this.room.group);
+      }
+      this.room.update(view.home);
+      // Checked every frame so groups added while at home (ground items, hitsplats...) are hidden too.
+      for (const o of this.campusObjects()) {
+        if (!this.hiddenForRoom.has(o)) this.hiddenForRoom.set(o, o.visible);
+        o.visible = false;
+      }
+    } else if (this.room) {
+      this.scene.remove(this.room.group);
+      this.room = null;
+      for (const [o, visible] of this.hiddenForRoom) o.visible = visible;
+      this.hiddenForRoom.clear();
+    }
+  }
+
+  /** Everything placed in campus space: scenery and everything standing on it. */
+  private campusObjects(): THREE.Object3D[] {
+    const list: (THREE.Object3D | null)[] = [
+      this.ground, this.map.group, this.areas.group, this.cardTables.group, this.props.group, this.cafe.group,
+      this.skills.group, this.fountain.group, this.nature.group, this.lamps.group, this.player.root,
+      this.remotes.group, this.shadows.group, this.healthBars.group, this.hitsplats.group, this.levelUps.group,
+      this.chat.group, this.floatTexts.group, this.groundItems?.group ?? null, this.npcs?.group ?? null,
+    ];
+    return list.filter((o): o is THREE.Object3D => o !== null);
+  }
+
+  /** Camera distance at which the room's bounding sphere fits the narrower field of view. */
+  private roomDistance(): number {
+    const { camera } = this.rig;
+    const tanV = Math.tan(THREE.MathUtils.degToRad(FOV) / 2);
+    const half = Math.atan(Math.min(tanV, tanV * camera.aspect));
+    return ROOM_RADIUS / Math.sin(half);
   }
 
   /** One shadow per drawn player and NPC, reusing the same objects each frame. */
