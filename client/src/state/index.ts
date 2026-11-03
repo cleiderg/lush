@@ -9,5 +9,6 @@ export * from './items';
 export * from './prediction';
 export * from './world';
 export * from './shop';
+export * from './housing';
 export * from './trade';
 export * from './skills';

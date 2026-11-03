@@ -11,6 +11,7 @@ import { ItemState } from './items';
 import { type PendingInput, Prediction, RUN_SPEED, WALK_SPEED } from './prediction';
 import { SkillState } from './skills';
 import { bankResultText, levelUpText, skillResultText } from './skillMessages';
+import { HousingStore, housingResultText } from './housing';
 import { TradeStore } from './trade';
 
 export interface PlayerView {
@@ -46,6 +47,8 @@ export class GameState {
   readonly gains = new GainTracker();
   /** Pending trade request, open trade window and last trade result; subscribe for changes. */
   readonly trade = new TradeStore();
+  /** Houses, the player's own house and the current home; subscribe for changes. */
+  readonly housing = new HousingStore();
   /** Open bank slots and the last bank result; subscribe for changes. */
   readonly bank = new BankStore();
   /** Card table seat and turn state, the local player's seat and the last result; subscribe for changes. */
@@ -79,6 +82,7 @@ export class GameState {
       this.hits.clear();
       this.gains.reset();
       this.trade.clear();
+      this.housing.clear();
       this.bank.clear();
       this.cardTables.clear();
       this.chat.clearOverheads();
@@ -110,6 +114,13 @@ export class GameState {
       this.items.setShopResult(msg.code);
     } else if (msg.type === 'npcCatalog') {
       this.items.setNpcCatalog(msg.npcs);
+    } else if (msg.type === 'housingState') {
+      this.housing.setHouses(msg.houses);
+    } else if (msg.type === 'homeState') {
+      this.housing.setHome(msg);
+    } else if (msg.type === 'housingResult') {
+      const text = housingResultText(msg.code);
+      if (text) this.chat.system(text);
     } else if (msg.type === 'tradeRequestNotice') {
       this.trade.setRequest(msg.fromId);
     } else if (msg.type === 'tradeState') {
