@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import skillsMap from '../../../shared/map/skills.json';
-import { EquipSlot, ItemKind, Skill, SkillTarget, ToolSkill } from '../protocol';
+import { EntityKind, EquipSlot, ItemKind, Skill, SkillTarget, ToolSkill } from '../protocol';
 import type { ItemInfo } from '../net/codec';
 import { BANK_BOOTH } from './bank';
 import { pickInteractTarget } from './interact';
@@ -85,6 +85,21 @@ describe('skill Interact order (AC1)', () => {
     expect(ground).toEqual({ type: 'fishingSpot', id: 7, kind: 'net' });
     expect(pick(treePos('tree-1'), w)).toEqual({ type: 'tree', id: treeIdx('tree-1'), kind: 'tree' });
   });
+
+  it('puts the grill and resources before a card table, ground item, NPC and player in range', () => {
+    const tree = { type: 'tree' as const, id: 3, x: GRILL.x, z: GRILL.z, kind: 'oak' };
+    const crowd = {
+      pos: GRILL, stall: { x: 1000, z: 1000 }, cardTables: [{ id: 1, x: GRILL.x, z: GRILL.z }],
+      groundItems: [{ id: 2, x: GRILL.x, z: GRILL.z }],
+      entities: [
+        { id: 5, x: GRILL.x, z: GRILL.z, kind: EntityKind.Npc },
+        { id: 6, x: GRILL.x, z: GRILL.z, kind: EntityKind.Player },
+      ],
+    };
+    expect(pickInteractTarget({ ...crowd, skill: { hasRawFish: true, resources: [tree] } })).toEqual({ type: 'grill' });
+    expect(pickInteractTarget({ ...crowd, skill: { hasRawFish: false, resources: [tree] } })).toEqual({ type: 'tree', id: 3, kind: 'oak' });
+    expect(pickInteractTarget({ ...crowd, skill: { hasRawFish: false, resources: [] } })).toEqual({ type: 'cardTable', id: 1 });
+  });
 });
 
 describe('usable resources (AC2)', () => {
@@ -115,10 +130,15 @@ describe('usable resources (AC2)', () => {
     noTool.skills.setResources([], [{ id: 1, candidate: 0 }]);
     expect(pick(p, noTool)).toBeNull();
     const rod = skillsMap.pond.spots.findIndex((s) => s.kind === 'rod');
-    const lowLevel = world({ held: [NET] });
-    lowLevel.skills.setResources([], [{ id: 2, candidate: rod }]);
     const r = skillsMap.pond.spots[rod];
-    expect(pick({ x: dm(r.x), z: dm(r.z) }, lowLevel)).toBeNull();
+    const rp = { x: dm(r.x), z: dm(r.z) };
+    // The rod (catalog tool 99) is held, so only the Fishing level decides.
+    const lowLevel = world({ held: [99], fish: 4 });
+    lowLevel.skills.setResources([], [{ id: 2, candidate: rod }]);
+    expect(pick(rp, lowLevel)).toBeNull();
+    const enough = world({ held: [99], fish: 5 });
+    enough.skills.setResources([], [{ id: 2, candidate: rod }]);
+    expect(pick(rp, enough)).toEqual({ type: 'fishingSpot', id: 2, kind: 'rod' });
   });
 });
 
