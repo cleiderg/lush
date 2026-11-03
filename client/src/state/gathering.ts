@@ -41,7 +41,9 @@ export class GatheringState {
     } else if (code === SkillResultCode.Success || code === SkillResultCode.Burnt) {
       this.attemptStart = now;
     } else {
-      this.clear();
+      // Keep the pending action: switching targets mid-gather sends Stopped
+      // for the old one just before Started for the new one.
+      this.active = undefined;
     }
   }
 

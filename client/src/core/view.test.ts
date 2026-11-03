@@ -331,6 +331,16 @@ describe('buildWorldView skills', () => {
     expect(buildWorldView(g, 100).activeResource).toBeUndefined();
   });
 
+  it('switches to the new target when Stopped for the old one comes just before Started', () => {
+    const g = welcome();
+    g.gathering.noteAction(SkillTarget.Tree, 0);
+    g.handle(result(SkillResultCode.Started), 0);
+    g.gathering.noteAction(SkillTarget.Tree, 13);
+    g.handle(result(SkillResultCode.Stopped), 100);
+    g.handle(result(SkillResultCode.Started), 100);
+    expect(buildWorldView(g, 100).activeResource).toBe(skillsMap.trees[13].id);
+  });
+
   it('clears activeResource when the local player moves, not when standing still', () => {
     const g = welcome();
     g.gathering.noteAction(SkillTarget.Grill, 0);
