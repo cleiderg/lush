@@ -54,10 +54,20 @@ func (s *Server) HouseResult(to world.PlayerID, _ housing.HouseID, o housing.Out
 	}
 }
 
-// HouseList implements housing.Sink: it sends every connected player the
-// houses, with mine set for their own. House owners' session ids are kept
-// from then on. Called on the tick goroutine.
-func (s *Server) HouseList(houses []housing.Info) {
+// AuctionResult implements housing.Sink. Called on the tick goroutine.
+func (s *Server) AuctionResult(to world.PlayerID, _ housing.HouseID, o housing.AuctionOutcome) {
+	if g := s.live[to]; g != nil && g.conn != nil {
+		b := flatbuffers.NewBuilder(32)
+		protocol.AuctionResultStart(b)
+		protocol.AuctionResultAddCode(b, protocol.AuctionResultCode(o)) // the values match (housing.AuctionOutcome)
+		g.conn.Send(finish(b, protocol.MessageAuctionResult, protocol.AuctionResultEnd(b)))
+	}
+}
+
+// HouseList implements housing.Sink: it sends one player the houses, with
+// mine set for their own. House owners' session ids are kept from then on.
+// Called on the tick goroutine.
+func (s *Server) HouseList(to world.PlayerID, houses []housing.Info) {
 	s.mu.Lock()
 	for _, h := range houses {
 		if g := s.live[h.Owner]; g != nil {
@@ -65,10 +75,8 @@ func (s *Server) HouseList(houses []housing.Info) {
 		}
 	}
 	s.mu.Unlock()
-	for _, g := range s.live {
-		if g.conn != nil {
-			g.conn.Send(s.housingState(g, houses))
-		}
+	if g := s.live[to]; g != nil && g.conn != nil {
+		g.conn.Send(s.housingState(g, houses))
 	}
 }
 
@@ -90,10 +98,10 @@ func (s *Server) CommitHousing(req housing.CommitRequest) {
 			s.housing.Resolve(req.ID, ok)
 		}
 	}
-	if req.Kind == housing.CommitLapse {
+	if req.Kind == housing.CommitLapse || req.Kind == housing.CommitBid || req.Kind == housing.CommitResolve {
 		if !s.lapseLog[req.House] {
 			s.lapseLog[req.House] = true
-			s.log.Error("commit housing: lapse is not wired, house stays owned", "house", req.House, "owner", req.Player)
+			s.log.Error("commit housing: lapse is not wired, house stays owned", "kind", req.Kind, "house", req.House, "owner", req.Player)
 		}
 		if p := s.w.Player(req.Player); p != nil {
 			// The system locked the online owner's inventory for the lapse

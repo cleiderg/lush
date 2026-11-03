@@ -888,9 +888,12 @@ func encodeHousingState(b *flatbuffers.Builder, houses []housing.Info, viewer wo
 		if h.Owner != 0 {
 			paid = h.PaidUntil.Unix()
 			state = protocol.HouseStateOwned
-			if h.State == housing.Warning || h.State == housing.Lapsed {
-				state = protocol.HouseStateWarning
-			}
+		}
+		switch h.State {
+		case housing.Warning, housing.Lapsed:
+			state = protocol.HouseStateWarning
+		case housing.InAuction:
+			state = protocol.HouseStateAuction
 		}
 		protocol.HouseInfoStart(b)
 		protocol.HouseInfoAddId(b, uint16(min(uint32(h.ID), math.MaxUint16)))
@@ -901,6 +904,11 @@ func encodeHousingState(b *flatbuffers.Builder, houses []housing.Info, viewer wo
 		protocol.HouseInfoAddMine(b, h.Owner != 0 && h.Owner == viewer)
 		protocol.HouseInfoAddPaidUntil(b, paid)
 		protocol.HouseInfoAddState(b, state)
+		protocol.HouseInfoAddTopBid(b, clampU32(h.TopBid))
+		if !h.AuctionEnd.IsZero() {
+			protocol.HouseInfoAddAuctionEnd(b, h.AuctionEnd.Unix())
+		}
+		protocol.HouseInfoAddMyBid(b, clampU32(h.MyBid))
 		offs[i] = protocol.HouseInfoEnd(b)
 	}
 	protocol.HousingStateStartHousesVector(b, len(offs))
