@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -14,7 +15,7 @@ import (
 )
 
 // latestMigration is the version of the newest file in db/migrations.
-const latestMigration = 8
+const latestMigration = 9
 
 // progressMigration is the version of 00003_player_progress.sql.
 const progressMigration = 3
@@ -37,14 +38,14 @@ func TestMigrate(t *testing.T) {
 		t.Skip("LUSH_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := schemaPool(ctx, t, url)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer pool.Close()
 
 	// Start from an empty database.
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -76,12 +77,12 @@ func TestMigrateProgressDownUp(t *testing.T) {
 		t.Skip("LUSH_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := schemaPool(ctx, t, url)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Migrate(ctx, pool); err != nil {
@@ -155,12 +156,12 @@ func TestMigrateCardPotsDownUp(t *testing.T) {
 		t.Skip("LUSH_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := schemaPool(ctx, t, url)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Migrate(ctx, pool); err != nil {
@@ -222,12 +223,12 @@ func TestMigrateBankDownUp(t *testing.T) {
 		t.Skip("LUSH_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := schemaPool(ctx, t, url)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Migrate(ctx, pool); err != nil {
@@ -302,12 +303,12 @@ func TestMigrateSkillXPDownUp(t *testing.T) {
 		t.Skip("LUSH_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := schemaPool(ctx, t, url)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Migrate(ctx, pool); err != nil {
@@ -321,7 +322,7 @@ func TestMigrateSkillXPDownUp(t *testing.T) {
 	}
 
 	const countColumns = `SELECT count(*) FROM information_schema.columns
-		WHERE table_name = 'players' AND column_name IN ('woodcutting_xp', 'fishing_xp', 'cooking_xp')`
+		WHERE table_schema = current_schema() AND table_name = 'players' AND column_name IN ('woodcutting_xp', 'fishing_xp', 'cooking_xp')`
 	var before int64
 	if err := pool.QueryRow(ctx, "INSERT INTO players (token_hash) VALUES ('before') RETURNING id").Scan(&before); err != nil {
 		t.Fatal(err)
@@ -387,12 +388,12 @@ func TestMigrateHousingDownUp(t *testing.T) {
 		t.Skip("LUSH_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := schemaPool(ctx, t, url)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Migrate(ctx, pool); err != nil {
@@ -406,7 +407,7 @@ func TestMigrateHousingDownUp(t *testing.T) {
 	}
 
 	const countTables = `SELECT count(*) FROM information_schema.tables
-		WHERE table_name IN ('housing_areas', 'house_plots', 'homes', 'placed_items')`
+		WHERE table_schema = current_schema() AND table_name IN ('housing_areas', 'house_plots', 'homes', 'placed_items')`
 	if _, err := provider.DownTo(ctx, housingMigration-1); err != nil {
 		t.Fatalf("down to %d: %v", housingMigration-1, err)
 	}
@@ -474,12 +475,12 @@ func TestMigrateHomeRoomsDownUp(t *testing.T) {
 		t.Skip("LUSH_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := schemaPool(ctx, t, url)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Migrate(ctx, pool); err != nil {
@@ -492,7 +493,7 @@ func TestMigrateHomeRoomsDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	const countCols = `SELECT count(*) FROM information_schema.columns
-		WHERE (table_name = 'placed_items' AND column_name IN ('slot', 'side')) OR (table_name = 'homes' AND column_name = 'locked')`
+		WHERE table_schema = current_schema() AND ((table_name = 'placed_items' AND column_name IN ('slot', 'side')) OR (table_name = 'homes' AND column_name = 'locked'))`
 	if _, err := provider.DownTo(ctx, homeRoomsMigration-1); err != nil {
 		t.Fatalf("down: %v", err)
 	}
@@ -528,4 +529,120 @@ func TestMigrateHomeRoomsDownUp(t *testing.T) {
 	if _, err := pool.Exec(ctx, "INSERT INTO placed_items (home_id, item_id, x, y, layer, side) SELECT home_id, 5, 1, 1, 'wall', 4 FROM homes"); err == nil {
 		t.Error("side 4 accepted, want rejected")
 	}
+}
+
+// houseAuctionsMigration is the version of 00009_house_auctions.sql.
+const houseAuctionsMigration = 9
+
+// TestMigrateHouseAuctionsDownUp rolls the house auctions migration back,
+// applies it again and checks its constraints.
+func TestMigrateHouseAuctionsDownUp(t *testing.T) {
+	url := os.Getenv("LUSH_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("LUSH_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := schemaPool(ctx, t, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatalf("up: %v", err)
+	}
+	db := stdlib.OpenDBFromPool(pool)
+	defer db.Close()
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const countTables = `SELECT count(*) FROM information_schema.tables
+		WHERE table_schema = current_schema() AND table_name IN ('house_auctions', 'house_bids')`
+	if _, err := provider.DownTo(ctx, houseAuctionsMigration-1); err != nil {
+		t.Fatalf("down to %d: %v", houseAuctionsMigration-1, err)
+	}
+	var n int
+	if err := pool.QueryRow(ctx, countTables).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("auction tables after down = %d, err %v; want 0", n, err)
+	}
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+	if v, err := provider.GetDBVersion(ctx); err != nil || v != latestMigration {
+		t.Fatalf("version after up again = %d, err %v; want %d", v, err, latestMigration)
+	}
+	if err := pool.QueryRow(ctx, countTables).Scan(&n); err != nil || n != 2 {
+		t.Fatalf("auction tables after up = %d, err %v; want 2", n, err)
+	}
+
+	var p1 int64
+	if err := pool.QueryRow(ctx, "INSERT INTO players (token_hash) VALUES ('h1') RETURNING id").Scan(&p1); err != nil {
+		t.Fatal(err)
+	}
+	mustExec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	mustExec("INSERT INTO housing_areas (area_id, name, x, z) VALUES (1, 'a', 0, 0)")
+	mustExec("INSERT INTO house_plots (plot_id, area_id, x, z) VALUES (1, 1, 0, 0)")
+	mustExec("INSERT INTO house_auctions (plot_id, ends_at) VALUES (1, now())")
+	mustExec("INSERT INTO house_bids (auction_id, player_id, amount, held) SELECT auction_id, $1, 100, 100 FROM house_auctions", p1)
+
+	for _, tc := range []struct {
+		name string
+		sql  string
+		args []any
+	}{
+		{"two auctions on a plot", "INSERT INTO house_auctions (plot_id, ends_at) VALUES (1, now())", nil},
+		{"auction on unknown plot", "INSERT INTO house_auctions (plot_id, ends_at) VALUES (99, now())", nil},
+		{"two bids by a player", "INSERT INTO house_bids (auction_id, player_id, amount, held) SELECT auction_id, $1, 200, 200 FROM house_auctions", []any{p1}},
+		{"held above amount", "UPDATE house_bids SET held = amount + 1", nil},
+		{"negative held", "UPDATE house_bids SET held = -1", nil},
+		{"zero amount", "UPDATE house_bids SET amount = 0, held = 0", nil},
+		{"bid by unknown player", "INSERT INTO house_bids (auction_id, player_id, amount, held) SELECT auction_id, 999999, 5, 5 FROM house_auctions", nil},
+	} {
+		if _, err := pool.Exec(ctx, tc.sql, tc.args...); err == nil {
+			t.Errorf("%s: accepted, want rejected", tc.name)
+		}
+	}
+	mustExec("DELETE FROM house_auctions")
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM house_bids").Scan(&n); err != nil || n != 0 {
+		t.Errorf("bids after removing the auction = %d, err %v; want 0", n, err)
+	}
+}
+
+// schemaPool returns a pool whose connections use a schema of their own, so
+// tests that drop and re-create tables don't disturb other packages' tests
+// running against the same database.
+func schemaPool(ctx context.Context, t *testing.T, url string) (*pgxpool.Pool, error) {
+	t.Helper()
+	admin, err := pgxpool.New(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	schema := "mig_" + strings.ToLower(t.Name())
+	if _, err := admin.Exec(ctx, "DROP SCHEMA IF EXISTS "+schema+" CASCADE"); err != nil {
+		admin.Close()
+		return nil, err
+	}
+	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		admin.Close()
+		return nil, err
+	}
+	t.Cleanup(func() {
+		_, _ = admin.Exec(context.Background(), "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
+		admin.Close()
+	})
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, err
+	}
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	return pgxpool.NewWithConfig(ctx, cfg)
 }

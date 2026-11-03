@@ -147,8 +147,8 @@ type Housing interface {
 	// the player owns no plot and holds c.Cost gold, takes the gold, sets
 	// owner, claimed_at and rent_paid_until, creates the home and appends a
 	// HousingClaimKind audit entry. An unknown plot or player fails with
-	// ErrNotFound, a taken plot or a player who already has one with
-	// ErrAlreadyExists, and too little gold or a negative cost with ErrInvalid.
+	// ErrNotFound, a taken plot, a plot with an open auction or a player who
+	// already has one with ErrAlreadyExists, and too little gold or a negative cost with ErrInvalid.
 	// On any error nothing changes. It returns the claimed plot.
 	ClaimPlot(ctx context.Context, c ClaimPlot) (Plot, error)
 	// PayRent, in one transaction, takes the gold, moves the rent_paid_until
@@ -269,16 +269,17 @@ func checkSeed(areas []Area, plots []Plot) error {
 // ---- Memory ----
 
 type memHousing struct {
-	areas  map[int32]Area
-	plots  map[int32]Plot
-	homes  map[int64]Home         // by owner
-	items  map[int64][]PlacedItem // by home id, ordered by placed id
-	nextID int64
+	areas    map[int32]Area
+	plots    map[int32]Plot
+	homes    map[int64]Home         // by owner
+	items    map[int64][]PlacedItem // by home id, ordered by placed id
+	nextID   int64
+	auctions map[int32]*memAuction // by plot id
 }
 
 func (m *Memory) housingLocked() *memHousing {
 	if m.housing == nil {
-		m.housing = &memHousing{areas: map[int32]Area{}, plots: map[int32]Plot{}, homes: map[int64]Home{}, items: map[int64][]PlacedItem{}, nextID: 1}
+		m.housing = &memHousing{areas: map[int32]Area{}, plots: map[int32]Plot{}, homes: map[int64]Home{}, items: map[int64][]PlacedItem{}, nextID: 1, auctions: map[int32]*memAuction{}}
 	}
 	return m.housing
 }
@@ -443,6 +444,9 @@ func (m *Memory) ClaimPlot(ctx context.Context, c ClaimPlot) (Plot, error) {
 	}
 	if p.OwnerID != 0 {
 		return Plot{}, fmt.Errorf("claim plot %d: owned by %d: %w", c.PlotID, p.OwnerID, ErrAlreadyExists)
+	}
+	if _, open := h.auctions[c.PlotID]; open {
+		return Plot{}, fmt.Errorf("claim plot %d: auction open: %w", c.PlotID, ErrAlreadyExists)
 	}
 	if _, has := h.homes[c.PlayerID]; has {
 		return Plot{}, fmt.Errorf("claim plot %d: player %d has a plot: %w", c.PlotID, c.PlayerID, ErrAlreadyExists)
@@ -632,6 +636,13 @@ func (s *PGPlayers) ClaimPlot(ctx context.Context, c ClaimPlot) (Plot, error) {
 		p.X, p.Z = float32(x), float32(z)
 		if owner != nil {
 			return fmt.Errorf("owned by %d: %w", *owner, ErrAlreadyExists)
+		}
+		var open bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM house_auctions WHERE plot_id = $1)`, c.PlotID).Scan(&open); err != nil {
+			return fmt.Errorf("check auction: %w", err)
+		}
+		if open {
+			return fmt.Errorf("auction open: %w", ErrAlreadyExists)
 		}
 		var has bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM house_plots WHERE owner_id = $1)`, c.PlayerID).Scan(&has); err != nil {
