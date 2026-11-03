@@ -20,7 +20,7 @@ Three skills, OSRS style, give players something to do besides fighting, and fee
 
 - Each skill has its own level, 1 to 30, using the same OSRS experience table as combat ([[gameplay]]).
 - Skill XP never counts toward combat level, and combat XP never counts toward skills.
-- **Total level** (the sum of combat and the three skills, 4 to 120) shows in the skills panel and above the player's name on tap.
+- **Total level** (the sum of combat and the three skills, 4 to 120) shows in the skills panel, and tapping another player shows "Combat N · Total N" above their head for TAP_LABEL_MS (3 s); tapping again or elsewhere hides it.
 - Reaching a new level shows a level-up message in the chat log and a short effect nearby players can see.
 - Skill levels and XP are saved with the player ([[persistence]]).
 
