@@ -1,10 +1,10 @@
 // Converts the committed OSM snapshot into the compact map file, the collision grid, the gameplay areas, the card tables,
-// the M8 fountain, the props, the M9 skill objects and the Aldrich Park nature.
+// the M8 fountain, the props, the M9 skill objects, the M10 housing and the Aldrich Park nature.
 //   node shared/map/build.mjs [outDir] [--no-nature]      (default: this directory; --no-nature skips parknature.json)
 // Deterministic: same input -> byte-identical output. No Math.random, no timestamps.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { BBOX, ORIGIN, CHUNK_SIZE, CELL_SIZE, HOUSING } from './config.mjs';
+import { BBOX, ORIGIN, CHUNK_SIZE, CELL_SIZE, HOUSING, HOUSES_PER_AREA, WORKBENCH_DIST } from './config.mjs';
 import {
   ALDRICH_PARK_WAY, SPAWN, SAFE_RADIUS, SHOP, SOUTH_FIELDS, PVP_ZONE, CARD_PLAZA, CARD_TABLES, STUDENT_CENTER_WAY, CAFE,
 } from './areas.mjs';
@@ -895,6 +895,96 @@ function placeNature() {
   };
 }
 
+// M10 housing (housing.json): per area the HOUSES_PER_AREA largest buildings wholly inside the outline, each with a door
+// on the walkable cell next to its footprint, plus a Campus Thrift stall and a workbench on open ground. Runs last, on the
+// final collision grid, so every point is on a cell that is walkable in collision.bin.
+function placeHousing() {
+  const walk = (c, r) => c >= 0 && r >= 0 && c < width && r < height && !((bits[(r * width + c) >> 3] >> ((r * width + c) & 7)) & 1);
+  const cellOf = (v, min) => Math.floor((v - min) / cellDm);
+  const centre = (c, r) => ({ x: minX + c * cellDm + cellDm / 2, z: minZ + r * cellDm + cellDm / 2 });
+  const polyArea = (p) => {
+    let a = 0;
+    for (let i = 0, n = p.length / 2; i < n; i++) { const j = (i + 1) % n; a += p[2 * i] * p[2 * j + 1] - p[2 * j] * p[2 * i + 1]; }
+    return Math.abs(a) / 2;
+  };
+  const edgeDm = (p, x, z) => {
+    let best = Infinity;
+    for (let i = 0, n = p.length / 2; i < n; i++) {
+      const j = (i + 1) % n, ax = p[2 * i], az = p[2 * i + 1], dx = p[2 * j] - ax, dz = p[2 * j + 1] - az;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+      best = Math.min(best, Math.hypot(x - (ax + t * dx), z - (az + t * dz)));
+    }
+    return best;
+  };
+  const openAround = (c, r, k) => { for (let a = -k; a <= k; a++) for (let b = -k; b <= k; b++) if (!walk(c + a, r + b)) return false; return true; };
+  const inDm = (x, z, p) => insideDm(x / 10, z / 10, p);
+  const nbrs = (c, r) => [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([a, b]) => walk(c + a, r + b)).length;
+  const areasOut = [];
+  const houses = [];
+  const doorCells = new Set();
+  HOUSING.areas.forEach((a, ai) => {
+    const o = flat(outlinePolys[ai], true);
+    const ob = (() => { const xs = o.filter((_, i) => i % 2 === 0), zs = o.filter((_, i) => i % 2 === 1); return [Math.min(...xs), Math.min(...zs), Math.max(...xs), Math.max(...zs)]; })();
+    const cands = buildings.filter((b) => b.p.every((_, i) => i % 2 || inDm(b.p[i], b.p[i + 1], o)))
+      .sort((p, q) => polyArea(q.p) - polyArea(p.p) || p.id - q.id);
+    const chosen = [];
+    for (const b of cands) {
+      if (chosen.length === HOUSES_PER_AREA) break;
+      // Door: walkable, inside the outline, within 1.5 m of the footprint, not outside any other building; the best
+      // connected cell nearest the wall, then north-west first.
+      const bx = b.p.filter((_, i) => i % 2 === 0), bz = b.p.filter((_, i) => i % 2 === 1);
+      const c0 = cellOf(Math.min(...bx) - 20, minX), c1 = cellOf(Math.max(...bx) + 20, minX);
+      const r0 = cellOf(Math.min(...bz) - 20, minZ), r1 = cellOf(Math.max(...bz) + 20, minZ);
+      let best = null;
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+        if (!walk(c, r) || doorCells.has(r * width + c)) continue;
+        const p = centre(c, r);
+        const d = edgeDm(b.p, p.x, p.z);
+        if (d > 15 || !inDm(p.x, p.z, o) || inDm(p.x, p.z, b.p)) continue;
+        const key = [Math.round(d), -nbrs(c, r), r, c];
+        if (!best || key.find((v, i) => v !== best.key[i]) < best.key[key.findIndex((v, i) => v !== best.key[i])]) best = { c, r, key };
+      }
+      if (!best) continue;
+      doorCells.add(best.r * width + best.c);
+      chosen.push(b);
+      houses.push({ id: `${a.id}-${chosen.length}`, area: a.id, osm: b.id, ...centre(best.c, best.r) });
+    }
+    if (chosen.length < HOUSES_PER_AREA) throw new Error(`${a.id}: only ${chosen.length} houses fit`);
+    // Thrift stall: the open cell (3 cells of walkable ground each way) inside the outline, nearest the middle of the
+    // houses' doors, at least 3 m from every door. The workbench is the next open cell 1.5 to 2.5 m from it.
+    const mine = houses.filter((h) => h.area === a.id);
+    const mx = mine.reduce((s, h) => s + h.x, 0) / mine.length, mz = mine.reduce((s, h) => s + h.z, 0) / mine.length;
+    const farFromDoors = (p) => mine.every((h) => Math.hypot(h.x - p.x, h.z - p.z) >= 30);
+    const open = [];
+    for (let r = cellOf(ob[1], minZ); r <= cellOf(ob[3], minZ); r++) for (let c = cellOf(ob[0], minX); c <= cellOf(ob[2], minX); c++) {
+      if (!walk(c, r)) continue;
+      const p = centre(c, r);
+      if (inDm(p.x, p.z, o) && openAround(c, r, 1)) open.push({ c, r, ...p });
+    }
+    const byMiddle = open.filter(farFromDoors).sort((p, q) => Math.hypot(p.x - mx, p.z - mz) - Math.hypot(q.x - mx, q.z - mz) || p.r - q.r || p.c - q.c);
+    const openSet = new Map(open.map((q) => [`${q.c},${q.r}`, q]));
+    const near = (s) => {
+      const reach = Math.ceil(WORKBENCH_DIST[1]) + 1;
+      const found = [];
+      for (let r = s.r - reach; r <= s.r + reach; r++) for (let c = s.c - reach; c <= s.c + reach; c++) {
+        const q = openSet.get(`${c},${r}`);
+        const d = q && Math.hypot(q.x - s.x, q.z - s.z);
+        if (q && d >= WORKBENCH_DIST[0] * 10 && d <= WORKBENCH_DIST[1] * 10 && farFromDoors(q)) found.push(q);
+      }
+      return found.sort((p, q) => p.r - q.r || p.c - q.c)[0];
+    };
+    let stall = null, bench = null;
+    for (const s of byMiddle) {
+      const w = openSet.get(`${s.c},${s.r}`) && near(s);
+      if (w) { stall = s; bench = w; break; }
+    }
+    if (!stall) throw new Error(`${a.id}: no room for the thrift stall and workbench`);
+    areasOut.push({ id: a.id, name: a.name, p: o, thrift: { x: stall.x, z: stall.z }, workbench: { x: bench.x, z: bench.z } });
+  });
+  return { version: 1, units: 'decimetres', areas: areasOut, houses };
+}
+const housing = placeHousing();
+
 mkdirSync(outDir, { recursive: true });
 writeFileSync(outDir + '/campus.json', JSON.stringify(campus) + '\n');
 writeFileSync(outDir + '/collision.bin', Buffer.concat([header, Buffer.from(bits)]));
@@ -903,5 +993,6 @@ writeFileSync(outDir + '/cardtables.json', JSON.stringify(cardTables) + '\n');
 writeFileSync(outDir + '/fountain.json', JSON.stringify(fountain) + '\n');
 writeFileSync(outDir + '/props.json', JSON.stringify(props) + '\n');
 writeFileSync(outDir + '/skills.json', JSON.stringify(skills) + '\n');
+writeFileSync(outDir + '/housing.json', JSON.stringify(housing) + '\n');
 if (nature) writeFileSync(outDir + '/parknature.json', JSON.stringify(nature) + '\n');
 console.log(`buildings=${buildings.length} paths=${paths.length} plazas=${plazas.length} green=${green.length} grid=${width}x${height} fountain=${fountain.x / 10},${fountain.z / 10} props=${placed.length} skillTrees=${skills.trees.length} nature=${nature ? nature.items.length : 'off'}`);
