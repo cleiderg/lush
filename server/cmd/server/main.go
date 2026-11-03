@@ -25,6 +25,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/combat"
 	"github.com/cleiderg/lush/server/internal/systems/emote"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/gather"
 	"github.com/cleiderg/lush/server/internal/systems/grounditems"
 	"github.com/cleiderg/lush/server/internal/systems/items"
 	"github.com/cleiderg/lush/server/internal/systems/npc"
@@ -210,7 +211,8 @@ type scheduled struct {
 }
 
 // gameSystems lists the world systems in registration order. Order matters:
-// movement applies inputs, the NPC system walks NPCs toward their goals,
+// movement applies inputs, gathering (after movement, which it watches for
+// a gatherer who moved) chops and fishes, the NPC system walks NPCs toward their goals,
 // emote overrides animation, chat delivers, items and shop apply item
 // actions and trades with the stall (whose results the session sends at
 // once), trade runs player trades and commits them through the session's
@@ -265,8 +267,17 @@ func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, 
 		return nil, err
 	}
 	sess.SetPvP(fights)
+	layout, err := gather.DefaultLayout()
+	if err != nil {
+		return nil, err
+	}
+	gathering, err := gather.New(data, layout, clock, rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())), sess, gather.DefaultConfig())
+	if err != nil {
+		return nil, err
+	}
+	sess.SetGather(gathering, layout)
 	out := []scheduled{}
-	for _, s := range []world.System{mover, npcs, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess),
+	for _, s := range []world.System{mover, gathering, npcs, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess),
 		items.New(data), shop.New(data, lookup, tileSize, sess), trades, banks, cards, ground} {
 		out = append(out, scheduled{s, 1})
 	}

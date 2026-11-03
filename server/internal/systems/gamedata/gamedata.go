@@ -29,7 +29,40 @@ const (
 	CardTablesFile = "cardtables.json"
 	// SkillsFile holds the woodcutting, fishing and cooking tables (docs/specs/skills.md).
 	SkillsFile = "skills.json"
+	// ThriftFile is the Campus Thrift furniture stall's stock (docs/specs/housing.md).
+	ThriftFile = "thrift.json"
+	// WorkbenchFile holds the workbench recipes (docs/specs/housing.md).
+	WorkbenchFile = "workbench.json"
 )
+
+// ThriftBuyBackDivisor is the fraction of its price the thrift stall pays for
+// an item back: a third, rounded down.
+const ThriftBuyBackDivisor = 3
+
+// FurnitureLayer is where a furniture item sits in a room.
+type FurnitureLayer string
+
+const (
+	LayerFloor   FurnitureLayer = "floor"   // stands on the floor; may offer surface slots
+	LayerSurface FurnitureLayer = "surface" // sits on a surface slot
+	LayerWall    FurnitureLayer = "wall"    // hangs on a wall
+	LayerRug     FurnitureLayer = "rug"     // lies on the floor under other items
+)
+
+func (l FurnitureLayer) valid() bool {
+	return l == LayerFloor || l == LayerSurface || l == LayerWall || l == LayerRug
+}
+
+// Furniture holds the placement data of a furniture item.
+type Furniture struct {
+	Width int            `json:"width"` // footprint in tiles
+	Depth int            `json:"depth"`
+	Layer FurnitureLayer `json:"layer"`
+	// SurfaceSlots is how many surface items fit on top of it.
+	SurfaceSlots int  `json:"surface_slots"`
+	OnFloor      bool `json:"on_floor"`   // can be placed on the floor
+	OnSurface    bool `json:"on_surface"` // can be placed on a surface slot
+}
 
 // ItemID identifies an item type. 0 is never a valid id.
 type ItemID uint16
@@ -45,6 +78,10 @@ const (
 	KindArmor  ItemKind = "armor"
 	KindFood   ItemKind = "food"
 	KindLoot   ItemKind = "loot"
+	// Housing items (docs/specs/housing.md). None of them stack: OSRS flatpacks don't.
+	KindFurniture     ItemKind = "furniture"
+	KindWallpaper     ItemKind = "wallpaper"
+	KindFloorCovering ItemKind = "floor_covering"
 )
 
 // IsEquipment reports whether items of this kind are worn in a slot.
@@ -108,6 +145,8 @@ type Item struct {
 	ToolSkill Skill   `json:"tool_skill"`
 	ToolLevel int     `json:"tool_level"`
 	ToolBonus float64 `json:"tool_bonus"`
+	// Furniture is set on KindFurniture items only.
+	Furniture *Furniture `json:"furniture"`
 }
 
 // Stackable reports whether any number of this item fits in one inventory
@@ -158,6 +197,21 @@ type ShopEntry struct {
 type Shop struct {
 	Name  string      `json:"name"`
 	Sells []ShopEntry `json:"sells"`
+}
+
+// RecipeInput is the logs or other item a workbench recipe consumes.
+type RecipeInput struct {
+	ItemKey  string `json:"item"`
+	Quantity int    `json:"quantity"`
+	Item     ItemID `json:"-"`
+}
+
+// WorkbenchRecipe is one workbench recipe: inputs and gold make one output item.
+type WorkbenchRecipe struct {
+	OutputKey string        `json:"output"`
+	Inputs    []RecipeInput `json:"inputs"`
+	Gold      int           `json:"gold"`
+	Output    ItemID        `json:"-"`
 }
 
 // KitStack is a quantity of one item.
@@ -249,7 +303,12 @@ type Data struct {
 	Items []Item
 	NPCs  []NPCType
 	Shop  Shop
-	Rules Rules
+	// Thrift is the Campus Thrift stall; it buys back everything it sells for
+	// a third of the price (see ThriftBuyPrice).
+	Thrift Shop
+	// Workbench lists the workbench recipes, in file order.
+	Workbench []WorkbenchRecipe
+	Rules     Rules
 	// CardTables are the card room's tables, in file order.
 	CardTables []CardTable
 	// Skills holds the woodcutting, fishing and cooking tables.
@@ -260,6 +319,21 @@ type Data struct {
 	npcByID   map[NPCTypeID]int
 	npcByKey  map[string]int
 	shopPrice map[ItemID]int
+	thrift    map[ItemID]int
+}
+
+// ThriftSellPrice returns what the Campus Thrift stall charges for one of an
+// item, and false if it doesn't sell it.
+func (d *Data) ThriftSellPrice(id ItemID) (int, bool) {
+	p, ok := d.thrift[id]
+	return p, ok
+}
+
+// ThriftBuyPrice returns what the Campus Thrift stall pays for one of an item
+// (a third of its price, rounded down), and false if it doesn't buy it.
+func (d *Data) ThriftBuyPrice(id ItemID) (int, bool) {
+	p, ok := d.thrift[id]
+	return p / ThriftBuyBackDivisor, ok
 }
 
 // Item returns the item with the given id.
@@ -322,7 +396,7 @@ func Load(fsys fs.FS) (*Data, error) {
 	for _, f := range []struct {
 		name string
 		v    any
-	}{{ItemsFile, &d.Items}, {NPCsFile, &d.NPCs}, {ShopFile, &d.Shop}, {RulesFile, &d.Rules}, {CardTablesFile, &d.CardTables}, {SkillsFile, &d.Skills}} {
+	}{{ItemsFile, &d.Items}, {NPCsFile, &d.NPCs}, {ShopFile, &d.Shop}, {ThriftFile, &d.Thrift}, {WorkbenchFile, &d.Workbench}, {RulesFile, &d.Rules}, {CardTablesFile, &d.CardTables}, {SkillsFile, &d.Skills}} {
 		if err := decode(fsys, f.name, f.v); err != nil {
 			return nil, err
 		}
@@ -376,8 +450,15 @@ func (d *Data) index() error {
 			if it.Slot != SlotNone {
 				return fmt.Errorf("gamedata: %s: %s item has slot %q", where, it.Kind, it.Slot)
 			}
+		case KindFurniture, KindWallpaper, KindFloorCovering:
+			if it.Slot != SlotNone {
+				return fmt.Errorf("gamedata: %s: %s item has slot %q", where, it.Kind, it.Slot)
+			}
 		default:
 			return fmt.Errorf("gamedata: %s: unknown kind %q", where, it.Kind)
+		}
+		if err := it.validateFurniture(where); err != nil {
+			return err
 		}
 		if it.Kind == KindWeapon && it.AttackSpeed <= 0 {
 			return fmt.Errorf("gamedata: %s: weapon needs a positive attack_speed", where)
@@ -462,6 +543,14 @@ func (d *Data) index() error {
 		d.shopPrice[id] = e.Price
 	}
 
+	var err error
+	if d.thrift, err = d.indexShop(d.Thrift, ThriftFile); err != nil {
+		return err
+	}
+	if err := d.validateWorkbench(); err != nil {
+		return err
+	}
+
 	if r := d.Rules; r.HouseRentPerMonth < 1 || r.HouseDaysPerMonth < 1 || r.HouseClaimMonths < 1 ||
 		r.HouseMaxPrepaidMonths < r.HouseClaimMonths || r.HouseWarningDays < 0 || r.HouseAuctionDays < 1 {
 		return fmt.Errorf("gamedata: %s: invalid house rent settings", RulesFile)
@@ -540,4 +629,84 @@ func (d *Data) resolve(key, where string) (ItemID, error) {
 		return 0, fmt.Errorf("gamedata: %s: unknown item %q", where, key)
 	}
 	return d.Items[i].ID, nil
+}
+
+// validateFurniture checks the furniture block is present exactly on furniture
+// items and describes a placeable item.
+func (it Item) validateFurniture(where string) error {
+	f := it.Furniture
+	if it.Kind != KindFurniture {
+		if f != nil {
+			return fmt.Errorf("gamedata: %s: %s item has a furniture block", where, it.Kind)
+		}
+		return nil
+	}
+	switch {
+	case f == nil:
+		return fmt.Errorf("gamedata: %s: furniture item needs a furniture block", where)
+	case !f.Layer.valid():
+		return fmt.Errorf("gamedata: %s: unknown furniture layer %q", where, f.Layer)
+	case f.Width < 1 || f.Depth < 1:
+		return fmt.Errorf("gamedata: %s: footprint %dx%d must be at least 1x1", where, f.Width, f.Depth)
+	case f.SurfaceSlots < 0:
+		return fmt.Errorf("gamedata: %s: negative surface_slots", where)
+	}
+	return nil
+}
+
+// indexShop resolves a shop's item keys and returns its price list.
+func (d *Data) indexShop(s Shop, file string) (map[ItemID]int, error) {
+	prices := map[ItemID]int{}
+	for k := range s.Sells {
+		e := &s.Sells[k]
+		id, err := d.resolve(e.ItemKey, file+": entry")
+		if err != nil {
+			return nil, err
+		}
+		if _, dup := prices[id]; dup {
+			return nil, fmt.Errorf("gamedata: %s: entry %q listed twice", file, e.ItemKey)
+		}
+		if e.Price <= 0 {
+			return nil, fmt.Errorf("gamedata: %s: entry %q needs a positive price", file, e.ItemKey)
+		}
+		e.Item = id
+		prices[id] = e.Price
+	}
+	return prices, nil
+}
+
+// validateWorkbench resolves every recipe's items and checks the amounts.
+func (d *Data) validateWorkbench() error {
+	seen := map[ItemID]bool{}
+	for i := range d.Workbench {
+		r := &d.Workbench[i]
+		where := fmt.Sprintf("%s: recipe for %q", WorkbenchFile, r.OutputKey)
+		out, err := d.resolve(r.OutputKey, where+" output")
+		if err != nil {
+			return err
+		}
+		if seen[out] {
+			return fmt.Errorf("gamedata: %s: listed twice", where)
+		}
+		seen[out] = true
+		r.Output = out
+		if r.Gold < 0 {
+			return fmt.Errorf("gamedata: %s: negative gold", where)
+		}
+		if len(r.Inputs) == 0 {
+			return fmt.Errorf("gamedata: %s: needs at least one input", where)
+		}
+		for k := range r.Inputs {
+			in := &r.Inputs[k]
+			id, err := d.resolve(in.ItemKey, where+" input")
+			if err != nil {
+				return err
+			}
+			if in.Quantity < 1 {
+				return fmt.Errorf("gamedata: %s: input %q needs a quantity of at least 1", where, in.ItemKey)
+			}
+			in.Item = id
+		}
+	}
+	return nil
 }

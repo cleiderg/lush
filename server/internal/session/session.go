@@ -136,6 +136,8 @@ type guest struct {
 	// The player's skill levels as of the last tick, for spotting level-ups;
 	// kept across connections while the player stays in the world.
 	levels [world.NumSkills]int
+	// The map id of the tree or fishing spot the player is gathering at.
+	gatherAt string
 	// What the client last got in EntityInfo, for entities in its view; an
 	// entity leaving view is forgotten, so it gets EntityInfo again on return.
 	known map[world.PlayerID]knownEnt
@@ -169,7 +171,7 @@ type op struct {
 
 // Server is the session layer. It implements world.System, chat.Sink,
 // shop.Sink, trade.Sink, trade.Committer, cardroom.Sink, cardroom.Committer, pvp.HitSink, pvp.DropSink,
-// combat.EventSink and transport.Handler (via ServeConn).
+// combat.EventSink, gather.Sink and transport.Handler (via ServeConn).
 type Server struct {
 	cfg   Config
 	w     *world.World
@@ -200,6 +202,7 @@ type Server struct {
 	trades   *trade.System       // set by SetTrades; nil without trading
 	cards    *cardroom.System    // set by SetCardRoom; nil without the card room
 	bank     *bank.System        // set by SetBank; nil without the bank
+	gather   *skills             // set by SetGather; nil without gathering
 	pvp      *pvp.Combat         // set by SetPvP; nil without PvP
 	pve      *combat.System      // set by SetPvE; nil without PvE
 	ground   *grounditems.System // set by SetGroundItems; where PvP drops spawn
@@ -349,7 +352,8 @@ func (s *Server) ServeConn(c transport.Conn) {
 			protocol.MessagePickUp, protocol.MessageCardTableSit, protocol.MessageCardTableLeave,
 			protocol.MessageCardTableReady, protocol.MessageShedPlay, protocol.MessageShedDraw,
 			protocol.MessageBankOpen, protocol.MessageBankClose, protocol.MessageBankDeposit,
-			protocol.MessageBankWithdraw, protocol.MessageBankDepositInventory, protocol.MessageBankDepositEquipment:
+			protocol.MessageBankWithdraw, protocol.MessageBankDepositInventory, protocol.MessageBankDepositEquipment,
+			protocol.MessageSkillAction:
 			if cmd := m.command(g.id); cmd != nil {
 				s.w.Enqueue(cmd)
 			}
@@ -591,6 +595,9 @@ func (s *Server) Handle(cmd world.Command, p *world.Player) {
 			}
 			s.pve.Handle(combat.AttackCommand{Player: p.ID, NPC: a.NPC}, p)
 		}
+		return
+	case SkillActionCommand:
+		s.handleSkillAction(a, p)
 		return
 	case DepositItemCommand:
 		if s.bank != nil {
@@ -975,6 +982,7 @@ func (s *Server) sendInitial(g *guest, p *world.Player) {
 	g.conn.Send(encodeInventoryState(s.bld, &p.Inv))
 	g.sentSkills = p.SkillXP
 	g.conn.Send(encodeSkillStats(s.bld, &p.SkillXP))
+	s.sendInitialSkills(g)
 }
 
 // sendChanged sends PlayerStats, InventoryState and SkillStats if they

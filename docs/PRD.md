@@ -314,6 +314,7 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 
 **Housing** ([[housing]], M10)
 - The first-release numbers (rent, auction, houses per area, furniture prices) are placeholders (D-052).
+- Home edit rate limit placeholder, tuned after playtests: at most `HOME_EDIT_PER_S` 4 home edit actions (place, move, rotate, remove, wallpaper, floor) per second per player ([[housing]]).
 - Later: home expansions, a rating or leaderboard, selling or giving a house, more housing areas.
 
 **Later phases**

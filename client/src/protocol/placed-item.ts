@@ -57,8 +57,18 @@ parentPlacedId():number {
   return offset ? this.bb!.readUint32(this.bb_pos + offset) : 0;
 }
 
+slot():number {
+  const offset = this.bb!.__offset(this.bb_pos, 18);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
+}
+
+side():number {
+  const offset = this.bb!.__offset(this.bb_pos, 20);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
+}
+
 static startPlacedItem(builder:flatbuffers.Builder) {
-  builder.startObject(7);
+  builder.startObject(9);
 }
 
 static addPlacedId(builder:flatbuffers.Builder, placedId:number) {
@@ -89,12 +99,20 @@ static addParentPlacedId(builder:flatbuffers.Builder, parentPlacedId:number) {
   builder.addFieldInt32(6, parentPlacedId, 0);
 }
 
+static addSlot(builder:flatbuffers.Builder, slot:number) {
+  builder.addFieldInt8(7, slot, 0);
+}
+
+static addSide(builder:flatbuffers.Builder, side:number) {
+  builder.addFieldInt8(8, side, 0);
+}
+
 static endPlacedItem(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createPlacedItem(builder:flatbuffers.Builder, placedId:number = 0, itemId:number = 0, x:number = 0, y:number = 0, rotation:number = 0, layer:number = 0, parentPlacedId:number = 0):flatbuffers.Offset {
+static createPlacedItem(builder:flatbuffers.Builder, placedId:number = 0, itemId:number = 0, x:number = 0, y:number = 0, rotation:number = 0, layer:number = 0, parentPlacedId:number = 0, slot:number = 0, side:number = 0):flatbuffers.Offset {
   PlacedItem.startPlacedItem(builder);
   PlacedItem.addPlacedId(builder, placedId);
   PlacedItem.addItemId(builder, itemId);
@@ -103,6 +121,8 @@ static createPlacedItem(builder:flatbuffers.Builder, placedId:number = 0, itemId
   PlacedItem.addRotation(builder, rotation);
   PlacedItem.addLayer(builder, layer);
   PlacedItem.addParentPlacedId(builder, parentPlacedId);
+  PlacedItem.addSlot(builder, slot);
+  PlacedItem.addSide(builder, side);
   return PlacedItem.endPlacedItem(builder);
 }
 }

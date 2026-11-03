@@ -71,11 +71,21 @@ const (
 	MessageRentPay              Message = 61
 	MessageHousingResult        Message = 62
 	MessageHomeState            Message = 63
-	MessageAuctionBid           Message = 64
-	MessageAuctionResult        Message = 65
-	MessageWorkbenchCatalog     Message = 66
-	MessageWorkbenchCraft       Message = 67
-	MessageCraftResult          Message = 68
+	MessageHomeEnter            Message = 64
+	MessageHomeLeave            Message = 65
+	MessageHomePlace            Message = 66
+	MessageHomeMove             Message = 67
+	MessageHomeRotate           Message = 68
+	MessageHomeRemove           Message = 69
+	MessageHomeSetWallpaper     Message = 70
+	MessageHomeSetFloor         Message = 71
+	MessageHomeSetOpen          Message = 72
+	MessageHomeResult           Message = 73
+	MessageAuctionBid           Message = 74
+	MessageAuctionResult        Message = 75
+	MessageWorkbenchCatalog     Message = 76
+	MessageWorkbenchCraft       Message = 77
+	MessageCraftResult          Message = 78
 )
 
 var EnumNamesMessage = map[Message]string{
@@ -143,6 +153,16 @@ var EnumNamesMessage = map[Message]string{
 	MessageRentPay:              "RentPay",
 	MessageHousingResult:        "HousingResult",
 	MessageHomeState:            "HomeState",
+	MessageHomeEnter:            "HomeEnter",
+	MessageHomeLeave:            "HomeLeave",
+	MessageHomePlace:            "HomePlace",
+	MessageHomeMove:             "HomeMove",
+	MessageHomeRotate:           "HomeRotate",
+	MessageHomeRemove:           "HomeRemove",
+	MessageHomeSetWallpaper:     "HomeSetWallpaper",
+	MessageHomeSetFloor:         "HomeSetFloor",
+	MessageHomeSetOpen:          "HomeSetOpen",
+	MessageHomeResult:           "HomeResult",
 	MessageAuctionBid:           "AuctionBid",
 	MessageAuctionResult:        "AuctionResult",
 	MessageWorkbenchCatalog:     "WorkbenchCatalog",
@@ -215,6 +235,16 @@ var EnumValuesMessage = map[string]Message{
 	"RentPay":              MessageRentPay,
 	"HousingResult":        MessageHousingResult,
 	"HomeState":            MessageHomeState,
+	"HomeEnter":            MessageHomeEnter,
+	"HomeLeave":            MessageHomeLeave,
+	"HomePlace":            MessageHomePlace,
+	"HomeMove":             MessageHomeMove,
+	"HomeRotate":           MessageHomeRotate,
+	"HomeRemove":           MessageHomeRemove,
+	"HomeSetWallpaper":     MessageHomeSetWallpaper,
+	"HomeSetFloor":         MessageHomeSetFloor,
+	"HomeSetOpen":          MessageHomeSetOpen,
+	"HomeResult":           MessageHomeResult,
 	"AuctionBid":           MessageAuctionBid,
 	"AuctionResult":        MessageAuctionResult,
 	"WorkbenchCatalog":     MessageWorkbenchCatalog,

@@ -2,7 +2,7 @@ import { type EquipSlot, type ItemActionKind, ShedColour, type SkillTarget } fro
 import {
   decode, encodeAttackTarget, encodeBankClose, encodeBankDeposit, encodeBankDepositEquipment, encodeBankDepositInventory,
   encodeBankOpen, encodeBankWithdraw, encodeCardTableLeave, encodeCardTableReady, encodeCardTableSit, encodeChat, encodeHello, encodeItemAction, encodePickUp, encodeShedDraw, encodeShedPlay,
-  encodeShopBuy, encodeShopSell, encodeSkillAction, encodeTradeAccept, encodeTradeCancel, encodeTradeOffer, encodeTradeRemove, encodeTradeRequest, encodeTradeSetGold,
+  encodeHouseClaim, encodeRentPay, encodeShopBuy, encodeShopSell, encodeSkillAction, encodeTradeAccept, encodeTradeCancel, encodeTradeOffer, encodeTradeRemove, encodeTradeRequest, encodeTradeSetGold,
   type ServerMessage, type ShedCardValue,
 } from './codec';
 import type { Transport, TransportFactory } from './transport';
@@ -101,6 +101,16 @@ export class Session {
 
   sendAttackTarget(targetId: number): void {
     this.send(encodeAttackTarget(targetId));
+  }
+
+  /** Claim an empty house. */
+  sendHouseClaim(houseId: number): void {
+    this.send(encodeHouseClaim(houseId));
+  }
+
+  /** Prepay months of rent on your own house. */
+  sendRentPay(houseId: number, months: number): void {
+    this.send(encodeRentPay(houseId, months));
   }
 
   /** Ask targetId to trade, or accept their pending request. */
