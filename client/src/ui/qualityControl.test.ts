@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QualityChooser, type QualityChoice, type QualityPreset, type QualityStore } from '../core/quality';
 import { QualityController } from '../core/qualityController';
-import { hudLayout, intersects } from './hudLayout';
+import { HUD_MIN_W, hudLayout, intersects } from './hudLayout';
 import { QualityControl } from './qualityControl';
 import { RetroToggle, type RetroStore } from './retroToggle';
 
@@ -71,6 +71,8 @@ describe('hudLayout quality', () => {
       const l = hudLayout(w, h);
       expect(l.quality.y).toBe(l.toggle.y);
       expect(l.quality.w).toBeGreaterThan(0);
+      // Room for the Quality control doesn't come out of the HUD's stats.
+      expect(l.hud.w).toBeGreaterThanOrEqual(HUD_MIN_W);
       for (const name of ['location', 'hud', 'toggle', 'retro', 'controls', 'portrait', 'interact', 'minimap'] as const) {
         expect(intersects(l.quality, l[name]), name).toBe(false);
       }
