@@ -63,11 +63,13 @@ const (
 	HasItems
 	NotFound
 	Exists
+
+	RateLimited // too many edits within one second
 )
 
 var resultNames = [...]string{"ok", "no_home", "locked", "full", "too_far", "not_owner", "not_inside",
 	"already_inside", "bad_item", "inventory_full", "busy", "out_of_bounds", "overlap", "bad_rotation",
-	"bad_layer", "not_surface_item", "no_surface", "surface_full", "has_items", "not_found", "exists"}
+	"bad_layer", "not_surface_item", "no_surface", "surface_full", "has_items", "not_found", "exists", "rate_limited"}
 
 func (r Result) String() string {
 	if int(r) < len(resultNames) {
@@ -213,6 +215,8 @@ type Config struct {
 	Reach float64
 	// RoomSize is the room edge in tiles; 0 means housing.DefaultSize.
 	RoomSize int
+	// Clock times the edit rate limit. Required.
+	Clock world.Clock
 }
 
 type home struct {
@@ -233,14 +237,27 @@ type System struct {
 	homes  map[HomeID]*home
 	where  map[world.PlayerID]*home
 	nextID housing.ID
+	edits  map[world.PlayerID]editWindow
 }
+
+// editWindow counts one player's edit actions in the current one-second window.
+type editWindow struct {
+	start time.Time
+	n     int
+}
+
+const editWindowLen = time.Second
 
 // New creates the system with no homes; add them with AddHome.
 func New(d *gamedata.Data, cfg Config, sink Sink) *System {
 	if cfg.RoomSize <= 0 {
 		cfg.RoomSize = housing.DefaultSize
 	}
-	return &System{data: d, cfg: cfg, sink: sink, homes: map[HomeID]*home{}, where: map[world.PlayerID]*home{}, nextID: 1}
+	if cfg.Clock == nil {
+		panic("homeroom: Config.Clock is required")
+	}
+	return &System{data: d, cfg: cfg, sink: sink, homes: map[HomeID]*home{}, where: map[world.PlayerID]*home{}, nextID: 1,
+		edits: map[world.PlayerID]editWindow{}}
 }
 
 func (s *System) Name() string { return "homeroom" }
@@ -385,6 +402,7 @@ func (s *System) Tick(w *world.World, _ time.Duration) {
 		for i := 0; i < len(h.inside); {
 			if w.Player(h.inside[i]) == nil {
 				delete(s.where, h.inside[i])
+				delete(s.edits, h.inside[i])
 				h.inside = append(h.inside[:i], h.inside[i+1:]...)
 				continue
 			}
@@ -465,12 +483,32 @@ func (s *System) edit(p *world.Player, fn func(*home) Result) Result {
 		return NotInside
 	case h.owner != p.ID:
 		return NotOwner
+	case !s.allowEdit(p.ID):
+		return RateLimited
 	}
 	r := fn(h)
 	if r == Ok {
 		s.broadcast(h)
 	}
 	return r
+}
+
+// allowEdit counts an edit attempt against p's limit in a fixed one-second
+// window and reports whether it is within Rules.HomeEditPerSecond. Refused
+// attempts are not counted.
+func (s *System) allowEdit(p world.PlayerID) bool {
+	now := s.cfg.Clock.Now()
+	w := s.edits[p]
+	if w.n == 0 || !now.Before(w.start.Add(editWindowLen)) {
+		w = editWindow{start: now}
+	}
+	if w.n >= s.data.Rules.HomeEditPerSecond {
+		s.edits[p] = w
+		return false
+	}
+	w.n++
+	s.edits[p] = w
+	return true
 }
 
 func (s *System) broadcast(h *home) {

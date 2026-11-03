@@ -263,6 +263,7 @@ func TestRulesMatchSpec(t *testing.T) {
 		{"house max prepaid months", r.HouseMaxPrepaidMonths, 6},
 		{"house warning days", r.HouseWarningDays, 7},
 		{"house auction days", r.HouseAuctionDays, 5},
+		{"home edit per second", r.HomeEditPerSecond, 4},
 	}
 	for _, tt := range tests {
 		if tt.got != tt.want {

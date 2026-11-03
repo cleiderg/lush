@@ -266,6 +266,8 @@ type Rules struct {
 	HouseMaxPrepaidMonths int `json:"house_max_prepaid_months"`
 	HouseWarningDays      int `json:"house_warning_days"`
 	HouseAuctionDays      int `json:"house_auction_days"`
+	// HomeEditPerSecond is the most home edit actions one player may send per second (placeholder, PRD section 13).
+	HomeEditPerSecond int `json:"home_edit_per_s"`
 }
 
 func (r Rules) RegenInterval() time.Duration    { return seconds(r.RegenIntervalSeconds) }
@@ -554,6 +556,9 @@ func (d *Data) index() error {
 	if r := d.Rules; r.HouseRentPerMonth < 1 || r.HouseDaysPerMonth < 1 || r.HouseClaimMonths < 1 ||
 		r.HouseMaxPrepaidMonths < r.HouseClaimMonths || r.HouseWarningDays < 0 || r.HouseAuctionDays < 1 {
 		return fmt.Errorf("gamedata: %s: invalid house rent settings", RulesFile)
+	}
+	if d.Rules.HomeEditPerSecond < 1 {
+		return fmt.Errorf("gamedata: %s: home_edit_per_s %d must be at least 1", RulesFile, d.Rules.HomeEditPerSecond)
 	}
 	if d.Rules.BankSlots < 1 {
 		return fmt.Errorf("gamedata: %s: bank_slots %d must be at least 1", RulesFile, d.Rules.BankSlots)

@@ -2,6 +2,7 @@ package homeroom_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/homeroom"
@@ -39,6 +40,7 @@ type fixture struct {
 	w    *world.World
 	sys  *homeroom.System
 	sink *rec
+	clk  *world.FakeClock
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -48,8 +50,9 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	f := &fixture{t: t, d: d, sink: &rec{states: map[world.PlayerID][]homeroom.State{}}}
+	f.clk = world.NewFakeClock(time.Unix(1000, 0))
 	f.w = world.New(world.DefaultConfig())
-	f.sys = homeroom.New(d, homeroom.Config{Doors: map[homeroom.HomeID]world.Vec2{home1: door}, Reach: 3}, f.sink)
+	f.sys = homeroom.New(d, homeroom.Config{Doors: map[homeroom.HomeID]world.Vec2{home1: door, 2: door}, Reach: 3, Clock: f.clk}, f.sink)
 	if err := f.w.Register(f.sys); err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +85,16 @@ func (f *fixture) player(id world.PlayerID, keys ...string) *world.Player {
 	return p
 }
 
+// do runs c a full rate-limit window after the previous command, so only the
+// rate-limit tests (which use send) ever hit the limit.
 func (f *fixture) do(c world.Command) homeroom.Result {
+	f.t.Helper()
+	f.clk.Advance(time.Second)
+	return f.send(c)
+}
+
+// send runs c at the current fake time.
+func (f *fixture) send(c world.Command) homeroom.Result {
 	f.t.Helper()
 	f.sink.results = nil
 	f.w.Enqueue(c)
@@ -400,5 +412,62 @@ func BenchmarkTick(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		f.sys.Tick(f.w, 0)
+	}
+}
+
+func TestEditRateLimit(t *testing.T) {
+	f := newFixture(t)
+	limit := f.d.Rules.HomeEditPerSecond
+	p := f.player(1, "stool", "stool")
+	f.want(homeroom.EnterCommand{Player: 1, Home: home1}, homeroom.Ok)
+	before := totals(f, p)
+	edit := homeroom.PlaceCommand{Player: 1, Slot: 5} // refused as BadItem when allowed through
+
+	f.clk.Advance(time.Second)
+	for i := 0; i < limit; i++ {
+		if got := f.send(edit); got != homeroom.BadItem {
+			t.Fatalf("edit %d = %v, want bad_item", i+1, got)
+		}
+	}
+	// Beyond the limit within the window: refused, nothing changes, no state sent.
+	states := len(f.sink.states[1])
+	for i := 0; i < 3; i++ {
+		f.clk.Advance(time.Second / 10)
+		if got := f.send(homeroom.PlaceCommand{Player: 1, Slot: 0}); got != homeroom.RateLimited {
+			t.Fatalf("over-limit edit = %v, want rate_limited", got)
+		}
+	}
+	sameTotals(t, before, totals(f, p))
+	if len(f.sink.states[1]) != states {
+		t.Error("rate-limited edit sent room state")
+	}
+	// Once the window has passed edits are accepted again.
+	f.clk.Advance(time.Second)
+	if got := f.send(homeroom.PlaceCommand{Player: 1, Slot: 0, At: housing.Placement{X: 0, Y: 0}}); got != homeroom.Ok {
+		t.Fatalf("edit after window = %v, want ok", got)
+	}
+}
+
+func TestEditRateLimitIsPerPlayer(t *testing.T) {
+	f := newFixture(t)
+	if err := f.sys.AddHome(homeroom.Spec{ID: 2, Owner: 2}); err != nil {
+		t.Fatal(err)
+	}
+	limit := f.d.Rules.HomeEditPerSecond
+	f.player(1)
+	f.player(2)
+	f.want(homeroom.EnterCommand{Player: 1, Home: home1}, homeroom.Ok)
+	f.want(homeroom.EnterCommand{Player: 2, Home: 2}, homeroom.Ok)
+	f.clk.Advance(time.Second)
+	for i := 0; i < limit+1; i++ {
+		f.send(homeroom.PlaceCommand{Player: 1, Slot: 5})
+	}
+	if got := f.send(homeroom.PlaceCommand{Player: 1, Slot: 5}); got != homeroom.RateLimited {
+		t.Fatalf("player 1 = %v, want rate_limited", got)
+	}
+	for i := 0; i < limit; i++ {
+		if got := f.send(homeroom.PlaceCommand{Player: 2, Slot: 5}); got != homeroom.BadItem {
+			t.Fatalf("player 2 edit %d = %v, want bad_item", i+1, got)
+		}
 	}
 }

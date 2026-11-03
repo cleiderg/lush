@@ -34,5 +34,6 @@
   "house_claim_months": 2,
   "house_max_prepaid_months": 6,
   "house_warning_days": 7,
-  "house_auction_days": 5
+  "house_auction_days": 5,
+  "home_edit_per_s": 4
 }
