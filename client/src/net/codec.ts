@@ -10,7 +10,7 @@ import {
   TradeSetGold, TradeState, Vec2, Welcome,
   HomeEnter, HomeLeave, HomeMove, HomePlace, HomeRemove, HomeResult, HomeResultCode, HomeRotate, HomeSetFloor, HomeSetOpen,
   AuctionBid, AuctionResult, AuctionResultCode,
-  HomeSetWallpaper, HomeState, HouseClaim, HouseInfo, HouseState, HousingResult, HousingResultCode, HousingState, PlacedItem, RentPay,
+  HomeSetWallpaper, HomeState, HouseClaim, HouseInfo, HouseState, HousingResult, HousingResultCode, HousingState, PlacedItem, PlacementKind, RentPay,
 } from '../protocol';
 
 export interface EntityState {
@@ -70,6 +70,8 @@ export interface ItemInfo {
   toolLevel: number;
   /** Cooking level to cook it; 0 unless it is a raw fish. */
   cookingLevel: number;
+  /** How the item is placed in a home; PlacementKind.None if it can't be. */
+  placement?: PlacementKind;
 }
 
 /** One tree kind of the SkillCatalog. */
@@ -661,6 +663,7 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
           toolSkill: d.toolSkill(),
           toolLevel: d.toolLevel(),
           cookingLevel: d.cookingLevel(),
+          placement: d.placement(),
         });
       }
       return { type: 'itemCatalog', items };

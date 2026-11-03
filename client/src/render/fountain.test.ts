@@ -107,7 +107,7 @@ describe('fountain map data (AC1)', () => {
       }
     }
     expect(inside).toBeGreaterThanOrEqual(12);
-    // With the basin cells cleared, the grid is the one committed before the fountain (with the #403 café opened).
+    // With the basin cells cleared, the grid is the one committed before the fountain (with the #403 café opened), grown to the housing areas (#523).
     const raw = new Uint8Array(readFileSync(join(mapDir, 'collision.bin')));
     const bits = raw.subarray(22);
     for (let row = 0; row < grid.height; row++) {
@@ -118,7 +118,7 @@ describe('fountain map data (AC1)', () => {
         bits[i >> 3] &= ~(1 << (i & 7));
       }
     }
-    expect(sha256(raw)).toBe('d200274d182381d7f1d7b66e72478a8fd7812c18b90cb062ea39c235f351b07b');
+    expect(sha256(raw)).toBe('9eac0f76e687fc0c6204c41a1a5a15be610f5a4d7805b58140bd135345991d7e');
   });
 
   it('still lets a player walk from the spawn to the shop, the card tables, the fountain and every gameplay area', () => {
