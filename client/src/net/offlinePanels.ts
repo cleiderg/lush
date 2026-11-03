@@ -1,4 +1,4 @@
-import { EquipSlot, HouseState, ItemKind, ShedColour, ShedSymbol, Skill, ToolSkill } from '../protocol';
+import { EquipSlot, HouseState, ItemKind, PlacementKind, ShedColour, ShedSymbol, Skill, ToolSkill } from '../protocol';
 import type { ItemInfo, ServerMessage, ShedCardValue } from './codec';
 import { OFFLINE_PLAYER_ID, seededRandom, type OfflineOptions } from './offline';
 
@@ -36,7 +36,16 @@ const CATALOG: readonly ItemInfo[] = [
   item(12, 'Shiny trinket', ItemKind.Loot, { shopBuysFor: 25 }),
   item(13, 'Coyote pelt', ItemKind.Loot, { shopBuysFor: 12 }),
   item(14, 'Scrap metal', ItemKind.Loot, { shopBuysFor: 8 }),
+  item(40, 'Beanbag', ItemKind.Loot, { placement: PlacementKind.Floor }),
+  item(41, 'Study desk', ItemKind.Loot, { placement: PlacementKind.Floor }),
+  item(42, 'Lava lamp', ItemKind.Loot, { placement: PlacementKind.Surface }),
+  item(43, 'Poster', ItemKind.Loot, { placement: PlacementKind.Wall }),
+  item(44, 'Blue wallpaper', ItemKind.Loot, { placement: PlacementKind.Wallpaper }),
+  item(45, 'Wood flooring', ItemKind.Loot, { placement: PlacementKind.Flooring }),
 ];
+
+/** The catalog items before the home furnishings, which only the home-edit panel puts in the inventory. */
+const BASE_ITEMS = CATALOG.slice(0, 11);
 
 /** Inventory slots (PRD: 28). */
 const INVENTORY_SLOTS = 28;
@@ -73,7 +82,7 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
   const slots = Array.from({ length: INVENTORY_SLOTS }, () => ({ itemId: 0, quantity: 0 }));
   const filled = between(rand, 8, 14);
   for (let i = 0; i < filled; i++) {
-    const d = pick(CATALOG);
+    const d = pick(BASE_ITEMS);
     slots[i] = { itemId: d.id, quantity: d.kind === ItemKind.Loot || d.kind === ItemKind.Food ? between(rand, 1, 20) : 1 };
   }
   const maxHp = between(rand, 20, 40);
@@ -132,12 +141,33 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
     });
   }
 
+  if (opts.panel === 'home-edit') {
+    // Inside the player's own home with furniture in the inventory and two pieces placed.
+    const paidUntil = Math.floor(Date.now() / 1000) + 90 * 24 * 3600;
+    const free = slots.filter((x) => !x.itemId);
+    [40, 41, 42, 43, 44, 45].forEach((id, i) => { free[i].itemId = id; free[i].quantity = 1; });
+    msgs.push(
+      {
+        type: 'housingState', rentPerMonth: 200, claimMonths: 2, maxPrepaidMonths: 6,
+        houses: [{ id: OFFLINE_HOUSE_ID, areaId: 1, ownerName: 'You', mine: true, paidUntil, state: HouseState.Owned, open: true }],
+      },
+      { type: 'inventory', slots, equipment: { weapon: 1, head: 0, body: 4, shield: 0 } },
+      {
+        type: 'homeState', houseId: OFFLINE_HOUSE_ID, ownerName: 'You', wallpaperItemId: 0, floorItemId: 0,
+        items: [
+          { placedId: 1, itemId: 41, x: 2, y: 1, rotation: 0, layer: 0, parentPlacedId: 0, slot: 0, side: 0 },
+          { placedId: 2, itemId: 40, x: 4, y: 3, rotation: 1, layer: 0, parentPlacedId: 0, slot: 0, side: 0 },
+        ],
+      },
+    );
+  }
+
   if (opts.panel === 'trade') {
     const mine = slots.filter((s) => s.itemId).slice(0, 2).map((s) => ({ itemId: s.itemId, quantity: Math.min(s.quantity, 3) }));
     msgs.push({
       type: 'tradeState', partnerId: BOT_IDS[0], screen: 1,
       myItems: mine, myGold: between(rand, 0, 50),
-      partnerItems: [{ itemId: pick(CATALOG).id, quantity: 1 }, { itemId: 13, quantity: between(rand, 1, 5) }], partnerGold: between(rand, 5, 100),
+      partnerItems: [{ itemId: pick(BASE_ITEMS).id, quantity: 1 }, { itemId: 13, quantity: between(rand, 1, 5) }], partnerGold: between(rand, 5, 100),
       myAccepted: false, partnerAccepted: true,
     });
   }
