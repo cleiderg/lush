@@ -33,6 +33,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/combat"
 	"github.com/cleiderg/lush/server/internal/systems/cook"
 	"github.com/cleiderg/lush/server/internal/systems/emote"
+	"github.com/cleiderg/lush/server/internal/systems/furniture"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/grounditems"
 	"github.com/cleiderg/lush/server/internal/systems/housing"
@@ -185,6 +186,7 @@ type Server struct {
 
 	catalog  []byte                 // encoded ItemCatalog, shared by every connection
 	npcCat   []byte                 // encoded NpcCatalog, shared by every connection
+	benchCat []byte                 // encoded WorkbenchCatalog, shared by every connection
 	cardCat  []byte                 // encoded CardTableCatalog, shared by every connection
 	newToken func() (string, error) // replaced by tests
 
@@ -202,35 +204,37 @@ type Server struct {
 	pots  map[cardroom.CommitID]*potRef // open pots by game; saver goroutine
 
 	// Tick-goroutine only.
-	trades   *trade.System    // set by SetTrades; nil without trading
-	cards    *cardroom.System // set by SetCardRoom; nil without the card room
-	bank     *bank.System     // set by SetBank; nil without the bank
-	housing  *housing.System  // set by SetHousing; nil without housing
-	homes    store.Housing    // set by SetHousing
-	areaOf   map[housing.HouseID]uint8
-	lapseLog map[housing.HouseID]bool // houses whose unwired lapse has been logged
-	gather   *skills                  // set by SetGather; nil without gathering
-	cook     *cook.System             // set by SetCook; nil without cooking
-	pvp      *pvp.Combat              // set by SetPvP; nil without PvP
-	pve      *combat.System           // set by SetPvE; nil without PvE
-	ground   *grounditems.System      // set by SetGroundItems; where PvP drops spawn
-	tickHits []hit                    // this tick's PvP and PvE swings, sent as CombatHit
-	levelUps []levelUp                // this tick's skill level-ups, sent as LevelUp
-	seen     []hit                    // reused: the hits one player can see
-	live     map[world.PlayerID]*guest
-	gone     map[world.PlayerID]*guest // live players with no connection, waiting out the logout lock
-	nextSave time.Time
-	saves    []saveReq
-	econ     []econReq
-	grid     *interest.Grid
-	hits     []interest.Hit
-	ents     []snapEnt
-	npcsIn   map[world.PlayerID]uint64 // NPC ids in grid, with the last tick they were in the world
-	infoLeft int                       // EntityInfo frames the current client may still get this tick
-	healths  []healthEnt               // reused: this tick's EntityHealth entries for one client
-	near     []grounditems.Item        // reused: ground items near one client
-	grounds  []groundEnt               // reused: the ground items one client may see
-	bld      *flatbuffers.Builder
+	trades    *trade.System    // set by SetTrades; nil without trading
+	cards     *cardroom.System // set by SetCardRoom; nil without the card room
+	bank      *bank.System     // set by SetBank; nil without the bank
+	housing   *housing.System  // set by SetHousing; nil without housing
+	homes     store.Housing    // set by SetHousing
+	areaOf    map[housing.HouseID]uint8
+	lapseLog  map[housing.HouseID]bool // houses whose unwired lapse has been logged
+	gather    *skills                  // set by SetGather; nil without gathering
+	cook      *cook.System             // set by SetCook; nil without cooking
+	furn      *furniture.System        // set by SetFurniture; nil without furniture
+	furnCraft bool                     // the furniture command being handled is a craft
+	pvp       *pvp.Combat              // set by SetPvP; nil without PvP
+	pve       *combat.System           // set by SetPvE; nil without PvE
+	ground    *grounditems.System      // set by SetGroundItems; where PvP drops spawn
+	tickHits  []hit                    // this tick's PvP and PvE swings, sent as CombatHit
+	levelUps  []levelUp                // this tick's skill level-ups, sent as LevelUp
+	seen      []hit                    // reused: the hits one player can see
+	live      map[world.PlayerID]*guest
+	gone      map[world.PlayerID]*guest // live players with no connection, waiting out the logout lock
+	nextSave  time.Time
+	saves     []saveReq
+	econ      []econReq
+	grid      *interest.Grid
+	hits      []interest.Hit
+	ents      []snapEnt
+	npcsIn    map[world.PlayerID]uint64 // NPC ids in grid, with the last tick they were in the world
+	infoLeft  int                       // EntityInfo frames the current client may still get this tick
+	healths   []healthEnt               // reused: this tick's EntityHealth entries for one client
+	near      []grounditems.Item        // reused: ground items near one client
+	grounds   []groundEnt               // reused: the ground items one client may see
+	bld       *flatbuffers.Builder
 }
 
 // New creates the Server. Register it on w after the movement, emote and chat systems.
@@ -269,7 +273,7 @@ func New(cfg Config, w *world.World, clock world.Clock, players store.Players, l
 	}
 	banks, _ := players.(store.Bank)
 	return &Server{saver: newSaver(players, log), banks: banks, cfg: cfg, w: w, log: log, clock: clock, store: players,
-		data: data, catalog: encodeItemCatalog(data), npcCat: encodeNpcCatalog(data), cardCat: encodeCardTableCatalog(data), newToken: newToken,
+		data: data, catalog: encodeItemCatalog(data), npcCat: encodeNpcCatalog(data), cardCat: encodeCardTableCatalog(data), benchCat: encodeWorkbenchCatalog(data), newToken: newToken,
 		pots: map[cardroom.CommitID]*potRef{}, keep: map[int64]world.PlayerID{}, lapseLog: map[housing.HouseID]bool{}, guests: map[int64]*guest{}, idle: list.New(), conns: map[transport.Conn]struct{}{},
 		live: map[world.PlayerID]*guest{}, gone: map[world.PlayerID]*guest{}, grid: interest.NewGrid(), npcsIn: map[world.PlayerID]uint64{}, bld: flatbuffers.NewBuilder(1024)}
 }
@@ -361,7 +365,7 @@ func (s *Server) ServeConn(c transport.Conn) {
 			protocol.MessageCardTableReady, protocol.MessageShedPlay, protocol.MessageShedDraw,
 			protocol.MessageBankOpen, protocol.MessageBankClose, protocol.MessageBankDeposit,
 			protocol.MessageBankWithdraw, protocol.MessageBankDepositInventory, protocol.MessageBankDepositEquipment,
-			protocol.MessageSkillAction, protocol.MessageHouseClaim, protocol.MessageRentPay:
+			protocol.MessageSkillAction, protocol.MessageWorkbenchCraft, protocol.MessageHouseClaim, protocol.MessageRentPay:
 			if cmd := m.command(g.id); cmd != nil {
 				s.w.Enqueue(cmd)
 			}
@@ -620,6 +624,15 @@ func (s *Server) Handle(cmd world.Command, p *world.Player) {
 		return
 	case SkillActionCommand:
 		s.handleSkillAction(a, p)
+		return
+	case CraftCommand:
+		s.handleFurniture(a.CraftCommand, true, p)
+		return
+	case ThriftBuyCommand:
+		s.handleFurniture(a.BuyCommand, false, p)
+		return
+	case ThriftSellCommand:
+		s.handleFurniture(a.SellCommand, false, p)
 		return
 	case DepositItemCommand:
 		if s.bank != nil {
@@ -1001,6 +1014,9 @@ func (s *Server) sendInitial(g *guest, p *world.Player) {
 	g.conn.Send(s.catalog)
 	g.conn.Send(s.npcCat)
 	g.conn.Send(s.cardCat)
+	if s.furn != nil {
+		g.conn.Send(s.benchCat) // only where there is a workbench to use
+	}
 	g.sentStats = statsOf(s.data.Rules, p)
 	g.conn.Send(encodePlayerStats(s.bld, g.sentStats))
 	g.sentInv = cloneInventory(p.Inv)
