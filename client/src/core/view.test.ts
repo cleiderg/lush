@@ -272,6 +272,8 @@ describe('buildWorldView sky', () => {
     const night = Date.UTC(2026, 9, 30, 10, 0); // 03:00 PDT
     g.clock.override(night);
     g.clock.pause();
-    expect(buildWorldView(g, 0).sky).toEqual(sunPosition(night));
+    // The clock may have ticked a millisecond between override and pause, so compare with its frozen time.
+    expect(Math.abs(g.clock.now() - night)).toBeLessThan(1000);
+    expect(buildWorldView(g, 0).sky).toEqual(sunPosition(g.clock.now()));
   });
 });

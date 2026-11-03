@@ -65,6 +65,7 @@ function setup(
   const press = () =>
     interact(game, NOW, SHOP_STALL, {
       openShop: () => shop?.tryOpen(),
+      openBank: () => {},
       openCardTable: (id) => cardTable?.open(id),
       sendPickUp: (id) => session.sendPickUp(id),
       sendAttackTarget: (id) => session.sendAttackTarget(id),
