@@ -3,6 +3,7 @@ import { toWorldMove, type Vec2 } from '../input/joystick';
 import type { ChatBubbleView, NpcView, PlayerView, WorldView } from '../render/worldView';
 import { EntityKind } from '../protocol';
 import { FLOAT_TEXT_MS } from '../render/floatText';
+import skillsMap from '../../../shared/map/skills.json';
 import { sunPosition } from './sun';
 import { overheadOpacity } from '../state/chat';
 
@@ -33,7 +34,12 @@ export function buildWorldView(game: GameState, now: number): WorldView {
       const opacity = overheadOpacity(now - o.at);
       return opacity < 1 ? { id: o.speakerId, text: o.text, opacity } : { id: o.speakerId, text: o.text };
     });
-  return { local, remotes, npcs, entities: game.items, groundItems: game.items.groundItems, hits, gains: game.gains.active(now, FLOAT_TEXT_MS), chat, sky: sunPosition(game.clock.now()) };
+  const candidateOf = (id: number): number | undefined => game.skills.fishingSpotCandidate(id);
+  const felledTrees = new Set(game.skills.felledTrees().flatMap((i) => skillsMap.trees[i]?.id ?? []));
+  const fishingSpots = new Set(game.skills.fishingSpots().flatMap((f) => skillsMap.pond.spots[f.candidate]?.id ?? []));
+  const activeResource = game.gathering.activeResource(candidateOf);
+  const resourceProgress = game.gathering.progress(now);
+  return { local, remotes, npcs, felledTrees, fishingSpots, activeResource, resourceProgress, entities: game.items, groundItems: game.items.groundItems, hits, gains: game.gains.active(now, FLOAT_TEXT_MS), chat, sky: sunPosition(game.clock.now()) };
 }
 
 /**

@@ -14,7 +14,7 @@ import (
 func fixture(t *testing.T, file, old, new string) fstest.MapFS {
 	t.Helper()
 	fsys := fstest.MapFS{}
-	for _, name := range []string{gamedata.ItemsFile, gamedata.NPCsFile, gamedata.ShopFile, gamedata.RulesFile, gamedata.CardTablesFile, gamedata.SkillsFile} {
+	for _, name := range []string{gamedata.ItemsFile, gamedata.NPCsFile, gamedata.ShopFile, gamedata.RulesFile, gamedata.CardTablesFile, gamedata.SkillsFile, gamedata.ThriftFile, gamedata.WorkbenchFile} {
 		b, err := os.ReadFile(filepath.Join("data", name))
 		if err != nil {
 			t.Fatal(err)
@@ -50,6 +50,12 @@ func TestLoadRejectsBadData(t *testing.T) {
 		{"no bank slots", gamedata.RulesFile,
 			`"bank_slots": 200`, `"bank_slots": 0`,
 			`rules.json: bank_slots 0 must be at least 1`},
+		{"zero home edit limit", gamedata.RulesFile,
+			`"home_edit_per_s": 4`, `"home_edit_per_s": 0`,
+			`rules.json: home_edit_per_s 0 must be at least 1`},
+		{"negative home edit limit", gamedata.RulesFile,
+			`"home_edit_per_s": 4`, `"home_edit_per_s": -3`,
+			`rules.json: home_edit_per_s -3 must be at least 1`},
 		{"negative bank distance", gamedata.RulesFile,
 			`"bank_distance_tiles": 2`, `"bank_distance_tiles": -1`,
 			`rules.json: bank_distance_tiles -1 must not be negative`},

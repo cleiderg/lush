@@ -57,14 +57,29 @@ func (rcv *ShopSell) MutateQuantity(n uint32) bool {
 	return rcv._tab.MutateUint32Slot(6, n)
 }
 
+func (rcv *ShopSell) Shop() ShopKind {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	if o != 0 {
+		return ShopKind(rcv._tab.GetByte(o + rcv._tab.Pos))
+	}
+	return 0
+}
+
+func (rcv *ShopSell) MutateShop(n ShopKind) bool {
+	return rcv._tab.MutateByteSlot(8, byte(n))
+}
+
 func ShopSellStart(builder *flatbuffers.Builder) {
-	builder.StartObject(2)
+	builder.StartObject(3)
 }
 func ShopSellAddSlot(builder *flatbuffers.Builder, slot byte) {
 	builder.PrependByteSlot(0, slot, 0)
 }
 func ShopSellAddQuantity(builder *flatbuffers.Builder, quantity uint32) {
 	builder.PrependUint32Slot(1, quantity, 0)
+}
+func ShopSellAddShop(builder *flatbuffers.Builder, shop ShopKind) {
+	builder.PrependByteSlot(2, byte(shop), 0)
 }
 func ShopSellEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

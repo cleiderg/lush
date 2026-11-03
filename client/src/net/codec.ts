@@ -5,9 +5,11 @@ import {
   EquipSlot, GroundItem, GroundItems, Hello, HealthRatio, Hit, Input, InventorySlot, InventoryState, ItemAction,
   ItemActionKind, ItemCatalog, ItemDef, ItemKind, Message, NpcCatalog, NpcDef, PickUp, Ping, PlayerStats, Pong,
   ProtocolVersion, Reload, RestartCountdown, ShedCard, ShedColour, ShedDraw, ShedHand, ShedPlay, ShedState, ShedSymbol, ShopBuy,
-  FishingSpotState, LevelUp, ResourceState, Skill, SkillAction, SkillResult, SkillResultCode, SkillStats, SkillTarget, ShopResult, ShopResultCode, ShopSell, Snapshot, TradeAccept,
+  FishingSpotState, LevelUp, SkillCatalog, FishingSpotKindDef, TreeKindDef, ToolSkill, ResourceState, Skill, SkillAction, SkillResult, SkillResultCode, SkillStats, SkillTarget, ShopResult, ShopResultCode, ShopSell, Snapshot, TradeAccept,
   TradeCancel, TradeItem, TradeOffer, TradeRemove, TradeRequest, TradeRequestNotice, TradeResult, TradeResultCode,
   TradeSetGold, TradeState, Vec2, Welcome,
+  HomeEnter, HomeLeave, HomeMove, HomePlace, HomeRemove, HomeResult, HomeResultCode, HomeRotate, HomeSetFloor, HomeSetOpen,
+  HomeSetWallpaper, HomeState, HouseClaim, HouseInfo, HouseState, HousingResult, HousingResultCode, HousingState, PlacedItem, RentPay,
 } from '../protocol';
 
 export interface EntityState {
@@ -61,6 +63,27 @@ export interface ItemInfo {
   shopBuysFor: number;
   shopSells: boolean;
   shopSellsFor: number;
+  /** The skill this item is a tool for; ToolSkill.None if not a tool. */
+  toolSkill: ToolSkill;
+  /** Skill level needed to use the tool; 0 if not a tool. */
+  toolLevel: number;
+  /** Cooking level to cook it; 0 unless it is a raw fish. */
+  cookingLevel: number;
+}
+
+/** One tree kind of the SkillCatalog. */
+export interface TreeKindInfo {
+  kind: string;
+  /** Woodcutting level needed. */
+  level: number;
+}
+
+/** One fishing spot kind of the SkillCatalog. */
+export interface FishingSpotKindInfo {
+  kind: string;
+  /** Fishing level needed. */
+  level: number;
+  toolItemId: number;
 }
 
 export interface EntityInfoState {
@@ -68,6 +91,8 @@ export interface EntityInfoState {
   kind: EntityKind;
   npcType: number;
   combatLevel: number;
+  /** Combat level plus every skill level; 0 for NPCs. */
+  totalLevel: number;
   equipment: Equipment;
 }
 
@@ -117,6 +142,42 @@ export interface TradeView {
   partnerGold: number;
   myAccepted: boolean;
   partnerAccepted: boolean;
+}
+
+/** One house from HousingState. */
+export interface HouseInfoState {
+  id: number;
+  areaId: number;
+  ownerName: string;
+  mine: boolean;
+  /** Unix seconds; 0 when unowned. */
+  paidUntil: number;
+  state: HouseState;
+  open: boolean;
+}
+
+/** One placed item in a home. */
+export interface PlacedItemState {
+  placedId: number;
+  itemId: number;
+  x: number;
+  y: number;
+  rotation: number;
+  layer: number;
+  parentPlacedId: number;
+  /** Surface slot on the parent (surface items). */
+  slot: number;
+  /** WallSide for wall items. */
+  side: number;
+}
+
+/** One home's room. */
+export interface HomeView {
+  houseId: number;
+  ownerName: string;
+  wallpaperItemId: number;
+  floorItemId: number;
+  items: PlacedItemState[];
 }
 
 /** Public seat and turn state of one card table. */
@@ -213,12 +274,17 @@ export type ServerMessage =
   | ({ type: 'playerStats' } & PlayerStatsState)
   | ({ type: 'inventory' } & InventoryView)
   | { type: 'itemCatalog'; items: ItemInfo[] }
+  | { type: 'skillCatalog'; trees: TreeKindInfo[]; fishingSpots: FishingSpotKindInfo[] }
   | ({ type: 'entityInfo' } & EntityInfoState)
   | { type: 'entityHealth'; entries: HealthEntry[] }
   | { type: 'groundItems'; items: GroundItemState[] }
   | { type: 'shopResult'; code: ShopResultCode }
   | { type: 'combatHit'; tick: number; hits: HitEvent[] }
   | { type: 'npcCatalog'; npcs: NpcInfo[] }
+  | { type: 'housingState'; houses: HouseInfoState[]; rentPerMonth: number; claimMonths: number; maxPrepaidMonths: number }
+  | { type: 'housingResult'; code: HousingResultCode }
+  | ({ type: 'homeState' } & HomeView)
+  | { type: 'homeResult'; code: HomeResultCode }
   | { type: 'tradeRequestNotice'; fromId: number }
   | ({ type: 'tradeState' } & TradeView)
   | { type: 'tradeResult'; code: TradeResultCode }
@@ -295,6 +361,85 @@ export function encodePickUp(groundItemId: number): Uint8Array {
 export function encodeAttackTarget(targetId: number): Uint8Array {
   const b = new flatbuffers.Builder(16);
   return wrap(b, Message.AttackTarget, AttackTarget.createAttackTarget(b, targetId));
+}
+
+/** Claim an empty house. */
+export function encodeHouseClaim(houseId: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.HouseClaim, HouseClaim.createHouseClaim(b, houseId));
+}
+
+/** Prepay months of rent on the player's own house. */
+export function encodeRentPay(houseId: number, months: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.RentPay, RentPay.createRentPay(b, houseId, months));
+}
+
+/** Where a placed item goes; surface items use parentPlacedId and slot, wall items use side. */
+export interface HomePlacement {
+  x: number;
+  y: number;
+  rotation: number;
+  parentPlacedId?: number;
+  slot?: number;
+  side?: number;
+}
+
+/** Enter a home. */
+export function encodeHomeEnter(houseId: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.HomeEnter, HomeEnter.createHomeEnter(b, houseId));
+}
+
+/** Leave the current home. */
+export function encodeHomeLeave(): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  HomeLeave.startHomeLeave(b);
+  return wrap(b, Message.HomeLeave, HomeLeave.endHomeLeave(b));
+}
+
+/** Place an inventory item in the room. */
+export function encodeHomePlace(inventorySlot: number, p: HomePlacement): Uint8Array {
+  const b = new flatbuffers.Builder(48);
+  return wrap(b, Message.HomePlace, HomePlace.createHomePlace(
+    b, inventorySlot, p.x, p.y, p.rotation, p.parentPlacedId ?? 0, p.slot ?? 0, p.side ?? 0));
+}
+
+/** Move a placed item. */
+export function encodeHomeMove(placedId: number, p: HomePlacement): Uint8Array {
+  const b = new flatbuffers.Builder(48);
+  return wrap(b, Message.HomeMove, HomeMove.createHomeMove(
+    b, placedId, p.x, p.y, p.rotation, p.parentPlacedId ?? 0, p.slot ?? 0, p.side ?? 0));
+}
+
+/** Rotate a placed item in place. */
+export function encodeHomeRotate(placedId: number, rotation: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.HomeRotate, HomeRotate.createHomeRotate(b, placedId, rotation));
+}
+
+/** Pick a placed item back up. */
+export function encodeHomeRemove(placedId: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.HomeRemove, HomeRemove.createHomeRemove(b, placedId));
+}
+
+/** Apply a wallpaper item from the inventory. */
+export function encodeHomeSetWallpaper(inventorySlot: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.HomeSetWallpaper, HomeSetWallpaper.createHomeSetWallpaper(b, inventorySlot));
+}
+
+/** Apply a flooring item from the inventory. */
+export function encodeHomeSetFloor(inventorySlot: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.HomeSetFloor, HomeSetFloor.createHomeSetFloor(b, inventorySlot));
+}
+
+/** Lock or unlock the home to visitors (owner only). */
+export function encodeHomeSetOpen(open: boolean): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.HomeSetOpen, HomeSetOpen.createHomeSetOpen(b, open));
 }
 
 /** Ask targetId to trade, or accept their pending request. */
@@ -499,6 +644,9 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
           shopBuysFor: d.shopBuysFor(),
           shopSells: d.shopSells(),
           shopSellsFor: d.shopSellsFor(),
+          toolSkill: d.toolSkill(),
+          toolLevel: d.toolLevel(),
+          cookingLevel: d.cookingLevel(),
         });
       }
       return { type: 'itemCatalog', items };
@@ -511,6 +659,7 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
         kind: m.kind(),
         npcType: m.npcType(),
         combatLevel: m.combatLevel(),
+        totalLevel: m.totalLevel(),
         equipment: { weapon: m.weapon(), head: m.head(), body: m.body(), shield: m.shield() },
       };
     }
@@ -556,6 +705,45 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
       }
       return { type: 'npcCatalog', npcs };
     }
+    case Message.HousingState: {
+      const m = env.msg(new HousingState()) as HousingState;
+      const houses: HouseInfoState[] = [];
+      const h = new HouseInfo();
+      for (let i = 0; i < m.housesLength(); i++) {
+        const o = m.houses(i, h);
+        if (!o) continue;
+        houses.push({
+          id: o.id(), areaId: o.areaId(), ownerName: o.ownerName() ?? '', mine: o.mine(),
+          paidUntil: Number(o.paidUntil()), state: o.state(), open: o.open(),
+        });
+      }
+      return {
+        type: 'housingState', houses, rentPerMonth: m.rentPerMonth(), claimMonths: m.claimMonths(),
+        maxPrepaidMonths: m.maxPrepaidMonths(),
+      };
+    }
+    case Message.HousingResult:
+      return { type: 'housingResult', code: (env.msg(new HousingResult()) as HousingResult).code() };
+    case Message.HomeState: {
+      const m = env.msg(new HomeState()) as HomeState;
+      const items: PlacedItemState[] = [];
+      const p = new PlacedItem();
+      for (let i = 0; i < m.itemsLength(); i++) {
+        const o = m.items(i, p);
+        if (!o) continue;
+        items.push({
+          placedId: o.placedId(), itemId: o.itemId(), x: o.x(), y: o.y(),
+          rotation: o.rotation(), layer: o.layer(), parentPlacedId: o.parentPlacedId(),
+          slot: o.slot(), side: o.side(),
+        });
+      }
+      return {
+        type: 'homeState', houseId: m.houseId(), ownerName: m.ownerName() ?? '',
+        wallpaperItemId: m.wallpaperItemId(), floorItemId: m.floorItemId(), items,
+      };
+    }
+    case Message.HomeResult:
+      return { type: 'homeResult', code: (env.msg(new HomeResult()) as HomeResult).code() };
     case Message.TradeRequestNotice:
       return { type: 'tradeRequestNotice', fromId: (env.msg(new TradeRequestNotice()) as TradeRequestNotice).fromId() };
     case Message.TradeState: {
@@ -649,6 +837,22 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
           { skill: Skill.Cooking, level: m.cookingLevel(), xp: m.cookingXp() / 10 },
         ],
       };
+    }
+    case Message.SkillCatalog: {
+      const m = env.msg(new SkillCatalog()) as SkillCatalog;
+      const trees: TreeKindInfo[] = [];
+      const t = new TreeKindDef();
+      for (let i = 0; i < m.treesLength(); i++) {
+        m.trees(i, t);
+        trees.push({ kind: t.kind() ?? '', level: t.level() });
+      }
+      const fishingSpots: FishingSpotKindInfo[] = [];
+      const f = new FishingSpotKindDef();
+      for (let i = 0; i < m.fishingSpotsLength(); i++) {
+        m.fishingSpots(i, f);
+        fishingSpots.push({ kind: f.kind() ?? '', level: f.level(), toolItemId: f.toolItemId() });
+      }
+      return { type: 'skillCatalog', trees, fishingSpots };
     }
     case Message.ResourceState: {
       const m = env.msg(new ResourceState()) as ResourceState;

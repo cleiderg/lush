@@ -44,8 +44,8 @@ func buildSnapshot(n int) []byte {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if ProtocolVersionCurrent != 15 {
-		t.Fatalf("ProtocolVersionCurrent = %d, want 15", ProtocolVersionCurrent)
+	if ProtocolVersionCurrent != 18 {
+		t.Fatalf("ProtocolVersionCurrent = %d, want 18", ProtocolVersionCurrent)
 	}
 }
 
@@ -1565,8 +1565,8 @@ func TestBankMessageIDs(t *testing.T) {
 			t.Fatalf("%v = %d, want %d", m, m, 50+i)
 		}
 	}
-	if len(EnumNamesMessage) != 59 {
-		t.Fatalf("Message has %d values, want 59 (NONE plus 58 messages)", len(EnumNamesMessage))
+	if len(EnumNamesMessage) != 79 {
+		t.Fatalf("Message has %d values, want 79 (NONE plus 78 messages)", len(EnumNamesMessage))
 	}
 }
 
@@ -1644,7 +1644,7 @@ func TestBankSlotIsSixteenBytes(t *testing.T) {
 	one := buildBankState([]bankSlot{{1, 2}})
 	two := buildBankState([]bankSlot{{1, 2}, {3, 4}})
 	if d := len(two) - len(one); d != 16 {
-		t.Fatalf("one more slot adds %d bytes, want 16", d)
+		t.Fatalf("one more slot adds %d bytes, want 17", d)
 	}
 }
 

@@ -5,6 +5,7 @@ import { MAX_REMOTE_PLAYERS, RemotePlayers } from './remotePlayers';
 import { BlobShadows, PLAYER_SHADOW_RADIUS, npcShadowRadius, type ShadowEntry } from './blobShadows';
 import { HealthBars, type BarEntry } from './healthBars';
 import { Hitsplats } from './hitsplats';
+import { LevelUpEffects } from './levelUp';
 import { CampusMap, loadCampus } from './campusMap';
 import { GroundItems } from './groundItems';
 import { Npcs } from './npcs';
@@ -12,10 +13,12 @@ import { ChatText } from './chatText';
 import { FloatTexts } from './floatText';
 import { AreaMarkers, loadAreas } from './gameAreas';
 import { CardTables, loadCardTables } from './cardTables';
-import { Nature } from './nature';
+import { Nature, FLOWERS_PER_M2, GRASS_TUFTS_PER_M2, type NatureOptions } from './nature';
+import { QUALITY_GRASS, QUALITY_SHADOW_MAP, type QualityPreset } from './quality';
 import { Props, loadProps } from './propKit';
 import { loadParkNature } from './parkNature';
 import { SkillObjects, loadSkills } from './skillObjects';
+import { Fountain, loadFountain } from './fountain';
 import { DEFAULT_SKY, SkyRig } from './sky';
 import { CafeInterior, cafeLightSources } from './cafeInterior';
 import { LampLights, lampSources } from './lights';
@@ -48,11 +51,14 @@ export class WorldScene {
   readonly areas = new AreaMarkers(loadAreas());
   readonly cardTables = new CardTables(loadCardTables());
   /** Grass tufts and flowers, instanced per map chunk. */
-  readonly nature = new Nature(loadCampus(), { exclude: [loadCardTables().plaza] });
+  nature = new Nature(loadCampus(), this.natureOptions('high'));
+  private preset: QualityPreset = 'high';
   /** Campus props from props.json, merged per chunk. */
   readonly props = new Props(loadProps());
   /** Woodcutting trees and stumps, the bank booth, the grill and the pond from skills.json. */
   readonly skills = new SkillObjects(loadSkills());
+  /** The M8 fountain from fountain.json: basin, rippling water and its ring of stones. */
+  readonly fountain = new Fountain(loadFountain());
   /** Sun, ambient, sky colour and fog, following WorldView.sky. */
   readonly sky = new SkyRig();
   /** Warm point lights and glowing heads for lamp posts and lanterns, lit from sunset to sunrise. */
@@ -68,6 +74,7 @@ export class WorldScene {
   readonly hitsplats = new Hitsplats();
   /** Attack swings and hit flinches, started by the view's hits. */
   readonly combat = new CombatAnims();
+  readonly levelUps = new LevelUpEffects();
   readonly chat = new ChatText();
   readonly floatTexts = new FloatTexts();
   /** Created on the first view that carries groundItems, so views without it leave the scene as before. */
@@ -83,7 +90,7 @@ export class WorldScene {
     this.sky.update(undefined, 0, 0);
     this.scene.add(makeGround(loadCampus().bounds), this.map.group, this.areas.group, this.player.root, this.remotes.group, this.shadows.group, this.healthBars.group);
     // After the players: tests find the remote-player instanced meshes as the first ones in the scene.
-    this.scene.add(this.cardTables.group, this.props.group, this.cafe.group, this.skills.group, this.nature.group, this.lamps.group);
+    this.scene.add(this.cardTables.group, this.props.group, this.cafe.group, this.skills.group, this.fountain.group, this.nature.group, this.lamps.group);
     this.lamps.update(DEFAULT_SKY.elevation, this.rig.camera.position, this.now());
     // Cull again for the camera actually rendering, in case its aspect changed since the last view.
     this.scene.onBeforeRender = (_renderer, _scene, camera) => {
@@ -101,6 +108,32 @@ export class WorldScene {
     this.skills.cull(start.camera);
   }
 
+  private natureOptions(preset: QualityPreset): NatureOptions {
+    const f = QUALITY_GRASS[preset];
+    return { exclude: [loadCardTables().plaza], tuftsPerM2: GRASS_TUFTS_PER_M2 * f, flowersPerM2: FLOWERS_PER_M2 * f };
+  }
+
+  /** The current quality preset. */
+  get quality(): QualityPreset {
+    return this.preset;
+  }
+
+  /**
+   * Switch the sun shadow map and the grass and flower density. Replaced geometries and shadow map
+   * render targets are disposed. Props, lamps, sky colours and the nature draw call are unchanged.
+   */
+  setQuality(preset: QualityPreset): void {
+    if (preset === this.preset) return;
+    this.preset = preset;
+    this.sky.setShadowMapSize(QUALITY_SHADOW_MAP[preset]);
+    const old = this.nature;
+    this.nature = new Nature(loadCampus(), this.natureOptions(preset));
+    this.scene.remove(old.group);
+    old.dispose();
+    this.scene.add(this.nature.group);
+    this.nature.cull(this.rig.camera);
+  }
+
   update(view: WorldView): void {
     const { local } = view;
     const dist = this.lastX === null ? 0 : Math.hypot(local.x - this.lastX, local.z - this.lastZ);
@@ -113,6 +146,7 @@ export class WorldScene {
     this.player.setEquipment(lookup?.entityInfo(local.id)?.equipment, lookup);
     this.remotes.update(view.remotes, lookup, time, this.player, this.combat);
     this.skills.update(view.felledTrees);
+    this.fountain.update(time);
     this.skills.setFishingSpots(view.fishingSpots);
     this.skills.setProgress(view.activeResource, view.resourceProgress);
     if (view.groundItems) {
@@ -145,6 +179,9 @@ export class WorldScene {
     // Hitsplats join the scene with the first hit, so a view without hits leaves the graph as it was.
     if (view.hits?.length && !this.hitsplats.group.parent) this.scene.add(this.hitsplats.group);
     if (this.hitsplats.group.parent) this.hitsplats.update(view, this.now(), this.rig.camera.quaternion);
+    // Like hitsplats, the effect joins the scene with the first level-up.
+    if (view.levelUps?.length && !this.levelUps.group.parent) this.scene.add(this.levelUps.group);
+    if (this.levelUps.group.parent) this.levelUps.update(view, this.now());
     this.healthBars.update(this.barEntries(view), this.rig.camera.quaternion);
     // Chat joins the scene with the first message, like hitsplats; it needs the DOM only from then on.
     if (view.chat?.length && !this.chat.group.parent) this.scene.add(this.chat.group);

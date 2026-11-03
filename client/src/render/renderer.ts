@@ -4,6 +4,7 @@ import { WorldScene } from './scene';
 import { showAttribution } from './attribution';
 import { PostChain, supportsPost } from './post';
 import { RetroPass } from './retro';
+import type { QualityPreset } from './quality';
 import type { WorldView } from './worldView';
 
 /** Exposure before tone mapping. Placeholder tuned by eye against day-tavern.jpg. */
@@ -25,6 +26,10 @@ export interface GameRenderer {
   readonly bloom: boolean;
   /** Removes or restores the bloom pass (for quality presets). */
   setBloom(enabled: boolean): void;
+  /** The quality preset. Starts on 'high'. */
+  readonly quality: QualityPreset;
+  /** Switches sun shadows, shadow map size and grass and flower density. */
+  setQuality(preset: QualityPreset): void;
   render(view: WorldView): void;
   resize(): void;
   dispose(): void;
@@ -95,6 +100,23 @@ export function createRenderer(canvas: HTMLCanvasElement): GameRenderer {
       sizePost();
     },
     post,
+    get quality() {
+      return world.quality;
+    },
+    setQuality(preset) {
+      if (preset === world.quality) return;
+      world.setQuality(preset);
+      const on = preset !== 'low';
+      if (renderer.shadowMap.enabled !== on) {
+        renderer.shadowMap.enabled = on;
+        // Shadow code is compiled into the materials, so they build again with the new setting.
+        world.scene.traverse((o) => {
+          const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+          if (Array.isArray(m)) m.forEach((x) => (x.needsUpdate = true));
+          else if (m) m.needsUpdate = true;
+        });
+      }
+    },
     get bloom() {
       return post?.bloom ?? false;
     },

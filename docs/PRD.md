@@ -295,6 +295,7 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 - Every gameplay number is a placeholder to tune after playtests (D-047): the combat formulas and level curve, the NPC and item tables, shop prices, wave timing, trade distance, the PvP zone warning distance and the PvP death rules.
 - More attack styles (ranged, magic). Not planned yet.
 - Every number in [[skills]], [[quests]], [[groups]] and [[trust-and-death]] is a placeholder too (D-051, D-053, D-054, D-055).
+- TAP_LABEL_MS (3 s), how long the combat and total level label shows after tapping a player ([[skills]]), is a placeholder.
 
 **Card tables** ([[card-tables]], stretch)
 - Table rules placeholders (seats 2 to 4, start when all seated players are Ready, 20 s turn timer, 3 missed turns forfeit, no house cut), tuned after playtests.
@@ -307,10 +308,13 @@ Grouped by where the answer will live. Agents raise these as question issues (la
 - Chat display placeholders, tuned after playtests: chat log length `CHAT_LOG_LINES` 50 lines, overhead message duration `OVERHEAD_CHAT_MS` 5000 ms.
 - Camera zoom placeholders, tuned after playtests: closest zoom `CAMERA_ZOOM_MIN` 0.5 and furthest `CAMERA_ZOOM_MAX` 1.5, as multiples of the default camera distance (which frames about 20 m across on a portrait phone, [[visual-style]]).
 - Milestone 8 look placeholders, tuned after profiling on an iPhone 13 and playtests: grass tufts `GRASS_TUFTS_PER_M2` 0.5 and flowers `FLOWERS_PER_M2` 0.05 per square metre of grass; point lights fade in and out over `POINT_LIGHT_FADE_MS` 500 ms; lantern flames flicker by up to `FLAME_FLICKER` 0.15 (±15%) of their base intensity; overhead chat bubbles fade out over the last `CHAT_FADE_MS` 1000 ms of `OVERHEAD_CHAT_MS`; floating +XP and gold numbers rise `FLOAT_TEXT_RISE_M` 1 m over `FLOAT_TEXT_MS` 1200 ms, fading out over the second half; the café cut-away fades roof and walls in and out over `CUTAWAY_FADE_MS` 300 ms ([[visual-style]]).
+- Milestone 9 effect placeholder, tuned after playtests: the level-up effect over a player lasts `LEVEL_UP_EFFECT_MS` 2000 ms ([[skills]]).
 - Bloom, grade and vignette placeholders, tuned after profiling on an iPhone 13 and playtests: bloom luminance threshold `BLOOM_THRESHOLD` 0.85, strength `BLOOM_STRENGTH` 0.6, radius `BLOOM_RADIUS` 0.4, rendered at `BLOOM_SCALE` 0.5 of the canvas size; warm colour grade `GRADE_WARMTH` 0.05; soft vignette `LOOK_VIGNETTE` 0.25 ([[visual-style]]).
+- Quality preset placeholders, tuned after profiling on an iPhone 13: sun shadow map `QUALITY_SHADOW_MAP` High 2048, Medium 1024, Low off; grass and flower density factor `QUALITY_GRASS` High 1, Medium 0.5, Low 0.25; phones (coarse pointer, short screen side under 600 CSS px) start on Medium, others on High; after `QUALITY_WARMUP_S` 10 s, step down one preset when the average over `QUALITY_WINDOW_S` 5 s stays under `QUALITY_MIN_FPS` 27 fps, never step up automatically; the override is stored in localStorage `lush.quality` ([[visual-style]]).
 
 **Housing** ([[housing]], M10)
 - The first-release numbers (rent, auction, houses per area, furniture prices) are placeholders (D-052).
+- Home edit rate limit placeholder, tuned after playtests: at most `HOME_EDIT_PER_S` 4 home edit actions (place, move, rotate, remove, wallpaper, floor) per second per player ([[housing]]).
 - Later: home expansions, a rating or leaderboard, selling or giving a house, more housing areas.
 
 **Later phases**

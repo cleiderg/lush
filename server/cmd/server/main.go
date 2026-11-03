@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"math/rand/v2"
@@ -23,9 +24,12 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/cardroom"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
 	"github.com/cleiderg/lush/server/internal/systems/combat"
+	"github.com/cleiderg/lush/server/internal/systems/cook"
 	"github.com/cleiderg/lush/server/internal/systems/emote"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/gather"
 	"github.com/cleiderg/lush/server/internal/systems/grounditems"
+	"github.com/cleiderg/lush/server/internal/systems/housing"
 	"github.com/cleiderg/lush/server/internal/systems/items"
 	"github.com/cleiderg/lush/server/internal/systems/npc"
 	"github.com/cleiderg/lush/server/internal/systems/pvp"
@@ -117,7 +121,7 @@ func run(ctx context.Context, getenv func(string) string, clock world.Clock, out
 		log.Error("areas", "err", err)
 		return 1
 	}
-	systems, err := gameSystems(mover, data, lookup, grid, cfg.MoveSpeed, w.TickInterval(), clock, sess)
+	systems, err := gameSystems(mover, data, lookup, grid, cfg.MoveSpeed, w.TickInterval(), clock, sess, players)
 	if err != nil {
 		log.Error("system setup failed", "err", err)
 		return 1
@@ -210,7 +214,8 @@ type scheduled struct {
 }
 
 // gameSystems lists the world systems in registration order. Order matters:
-// movement applies inputs, the NPC system walks NPCs toward their goals,
+// movement applies inputs, gathering (after movement, which it watches for
+// a gatherer who moved) chops and fishes, the NPC system walks NPCs toward their goals,
 // emote overrides animation, chat delivers, items and shop apply item
 // actions and trades with the stall (whose results the session sends at
 // once), trade runs player trades and commits them through the session's
@@ -226,7 +231,7 @@ type scheduled struct {
 // metres per second (the player walk speed, D-044); tick is the world tick
 // interval, the unit of the card tables' turn timers.
 func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, grid *world.Grid, walkSpeed float32,
-	tick time.Duration, clock world.Clock, sess *session.Server) ([]scheduled, error) {
+	tick time.Duration, clock world.Clock, sess *session.Server, players store.Players) ([]scheduled, error) {
 	tileSize := grid.CellSize()
 	heal, err := regen.New(data.Rules, clock)
 	if err != nil {
@@ -258,6 +263,10 @@ func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, 
 		return nil, err
 	}
 	sess.SetCardRoom(cards)
+	homes, err := housingSystem(data, tileSize, clock, sess, players)
+	if err != nil {
+		return nil, err
+	}
 	ground := grounditems.New(data, clock, tileSize)
 	sess.SetGroundItems(ground)
 	fights, err := pvp.NewCombat(data, lookup, tileSize, clock, rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())), sess, sess)
@@ -265,13 +274,64 @@ func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, 
 		return nil, err
 	}
 	sess.SetPvP(fights)
+	layout, err := gather.DefaultLayout()
+	if err != nil {
+		return nil, err
+	}
+	gathering, err := gather.New(data, layout, clock, rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())), sess, gather.DefaultConfig())
+	if err != nil {
+		return nil, err
+	}
+	sess.SetGather(gathering, layout)
+	cooking, err := cook.New(data, layout, clock, rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())), sess.CookSink(), cook.DefaultConfig())
+	if err != nil {
+		return nil, err
+	}
+	cooking.LinkGather(gathering)
+	sess.SetCook(cooking)
 	out := []scheduled{}
-	for _, s := range []world.System{mover, npcs, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess),
-		items.New(data), shop.New(data, lookup, tileSize, sess), trades, banks, cards, ground} {
+	for _, s := range []world.System{mover, gathering, cooking, npcs, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess),
+		items.New(data), shop.New(data, lookup, tileSize, sess), trades, banks, cards, homes, ground} {
 		out = append(out, scheduled{s, 1})
 	}
 	return append(out, scheduled{fights, combatEvery}, scheduled{pve, combatEvery}, scheduled{spawns, 1},
 		scheduled{heal, 1}, scheduled{sess, 1}), nil
+}
+
+// housingSystem builds the housing system from the stored plots (a plot's
+// position is its door) and connects it to the session. The store may keep no
+// plots, in which case the system has no houses. Owners are given their
+// session ids first, so the system names them before they connect.
+func housingSystem(data *gamedata.Data, tileSize float64, clock world.Clock, sess *session.Server, players store.Players) (*housing.System, error) {
+	homes, _ := players.(store.Housing)
+	var stored []store.Plot
+	if homes != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), dbStartTimeout)
+		defer cancel()
+		var err error
+		if stored, err = homes.LoadPlots(ctx); err != nil {
+			return nil, fmt.Errorf("load plots: %w", err)
+		}
+	}
+	plots := make([]housing.Plot, len(stored))
+	for i, sp := range stored {
+		plots[i] = housing.Plot{ID: housing.HouseID(sp.ID), Door: world.Vec2{X: sp.X, Y: sp.Z}, PaidUntil: sp.RentPaidUntil}
+		if sp.OwnerID != 0 {
+			id, ok := sess.ReserveOwner(sp.OwnerID)
+			if !ok {
+				return nil, fmt.Errorf("no session id left for the owner of plot %d", sp.ID)
+			}
+			plots[i].Owner = id
+		}
+	}
+	cfg := housing.DefaultConfig()
+	cfg.TileSize = tileSize
+	h, err := housing.NewSystem(data, cfg, plots, clock, sess, sess)
+	if err != nil {
+		return nil, err
+	}
+	sess.SetHousing(h, homes, stored)
+	return h, nil
 }
 
 // openDatabase connects a pool and applies pending migrations. The returned

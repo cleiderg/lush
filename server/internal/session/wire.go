@@ -12,8 +12,10 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/cardroom"
 	"github.com/cleiderg/lush/server/internal/systems/cardtable"
 	"github.com/cleiderg/lush/server/internal/systems/cardtable/shed"
+	"github.com/cleiderg/lush/server/internal/systems/furniture"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/grounditems"
+	"github.com/cleiderg/lush/server/internal/systems/housing"
 	"github.com/cleiderg/lush/server/internal/systems/items"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
 	"github.com/cleiderg/lush/server/internal/systems/trade"
@@ -174,6 +176,7 @@ type entityInfo struct {
 	npcType uint16
 	level   int
 	equip   world.Equipment
+	total   int // total level; 0 for NPCs
 }
 
 func encodeEntityInfo(b *flatbuffers.Builder, id world.PlayerID, in entityInfo) []byte {
@@ -187,6 +190,7 @@ func encodeEntityInfo(b *flatbuffers.Builder, id world.PlayerID, in entityInfo) 
 	protocol.EntityInfoAddHead(b, uint16(in.equip.Head))
 	protocol.EntityInfoAddBody(b, uint16(in.equip.Body))
 	protocol.EntityInfoAddShield(b, uint16(in.equip.Shield))
+	protocol.EntityInfoAddTotalLevel(b, uint16(min(max(in.total, 0), math.MaxUint16)))
 	return finish(b, protocol.MessageEntityInfo, protocol.EntityInfoEnd(b))
 }
 
@@ -363,6 +367,7 @@ type message struct {
 	equipSlot  protocol.EquipSlot
 	itemID     uint16
 	quantity   uint32
+	shop       protocol.ShopKind // ShopBuy and ShopSell; Market when absent
 	// Trade messages; slot and quantity are shared with the above.
 	partner uint16 // TradeRequest target
 	index   int    // TradeRemove offer index
@@ -374,6 +379,12 @@ type message struct {
 	tableID uint16     // CardTableSit
 	card    *shed.Card // ShedPlay; nil when the message names no card
 	chosen  shed.Colour
+	// SkillAction.
+	skillTarget protocol.SkillTarget
+	skillID     uint16
+	// HouseClaim and RentPay.
+	houseID uint16
+	months  uint8
 }
 
 // gameSlots maps wire equipment slots to game data slots. EquipSlotNone is
@@ -406,8 +417,14 @@ func (m message) command(id world.PlayerID) world.Command {
 			}
 		}
 	case protocol.MessageShopBuy:
+		if m.shop == protocol.ShopKindThrift {
+			return ThriftBuyCommand{furniture.BuyCommand{Player: id, Item: gamedata.ItemID(m.itemID), Quantity: int(m.quantity)}}
+		}
 		return shop.BuyCommand{Player: id, Item: gamedata.ItemID(m.itemID), Quantity: int(m.quantity)}
 	case protocol.MessageShopSell:
+		if m.shop == protocol.ShopKindThrift {
+			return ThriftSellCommand{furniture.SellCommand{Player: id, Slot: m.slot, Quantity: int(m.quantity)}}
+		}
 		return shop.SellCommand{Player: id, Slot: m.slot, Quantity: int(m.quantity)}
 	case protocol.MessageTradeRequest:
 		if m.partner != 0 {
@@ -427,6 +444,10 @@ func (m message) command(id world.PlayerID) world.Command {
 		}
 	case protocol.MessageTradeCancel:
 		return trade.CancelCommand{Player: id}
+	case protocol.MessageWorkbenchCraft:
+		return CraftCommand{furniture.CraftCommand{Player: id, Output: gamedata.ItemID(m.itemID)}}
+	case protocol.MessageSkillAction:
+		return SkillActionCommand{Player: id, Kind: m.skillTarget, ID: m.skillID}
 	case protocol.MessageBankOpen:
 		return bank.OpenCommand{Player: id}
 	case protocol.MessageBankClose:
@@ -443,6 +464,10 @@ func (m message) command(id world.PlayerID) world.Command {
 		if m.ground != 0 {
 			return grounditems.PickUpCommand{Player: id, ID: grounditems.ID(m.ground)}
 		}
+	case protocol.MessageHouseClaim:
+		return housing.ClaimCommand{Player: id, House: housing.HouseID(m.houseID)}
+	case protocol.MessageRentPay:
+		return housing.PayRentCommand{Player: id, House: housing.HouseID(m.houseID), Months: int(m.months)}
 	case protocol.MessageCardTableSit:
 		return cardroom.SitCommand{Player: id, TableID: cardroom.TableID(m.tableID)}
 	case protocol.MessageCardTableLeave:
@@ -506,11 +531,15 @@ func decode(buf []byte) (m message, err error) {
 	case protocol.MessageShopBuy:
 		var sb protocol.ShopBuy
 		sb.Init(tbl.Bytes, tbl.Pos)
-		m.itemID, m.quantity = sb.ItemId(), sb.Quantity()
+		m.itemID, m.quantity, m.shop = sb.ItemId(), sb.Quantity(), sb.Shop()
 	case protocol.MessageShopSell:
 		var ss protocol.ShopSell
 		ss.Init(tbl.Bytes, tbl.Pos)
-		m.slot, m.quantity = int(ss.Slot()), ss.Quantity()
+		m.slot, m.quantity, m.shop = int(ss.Slot()), ss.Quantity(), ss.Shop()
+	case protocol.MessageWorkbenchCraft:
+		var wc protocol.WorkbenchCraft
+		wc.Init(tbl.Bytes, tbl.Pos)
+		m.itemID = wc.OutputItemId()
 	case protocol.MessageTradeRequest:
 		var tr protocol.TradeRequest
 		tr.Init(tbl.Bytes, tbl.Pos)
@@ -542,6 +571,18 @@ func decode(buf []byte) (m message, err error) {
 		var bw protocol.BankWithdraw
 		bw.Init(tbl.Bytes, tbl.Pos)
 		m.itemID, m.quantity = bw.ItemId(), bw.Amount()
+	case protocol.MessageHouseClaim:
+		var hc protocol.HouseClaim
+		hc.Init(tbl.Bytes, tbl.Pos)
+		m.houseID = hc.HouseId()
+	case protocol.MessageRentPay:
+		var rp protocol.RentPay
+		rp.Init(tbl.Bytes, tbl.Pos)
+		m.houseID, m.months = rp.HouseId(), rp.Months()
+	case protocol.MessageSkillAction:
+		var sa protocol.SkillAction
+		sa.Init(tbl.Bytes, tbl.Pos)
+		m.skillTarget, m.skillID = sa.Target(), sa.TargetId()
 	case protocol.MessageAttackTarget:
 		var at protocol.AttackTarget
 		at.Init(tbl.Bytes, tbl.Pos)
@@ -662,6 +703,10 @@ func encodeItemCatalog(d *gamedata.Data) []byte {
 		protocol.ItemDefAddShopBuysFor(b, clampU32(it.ShopBuysFor))
 		protocol.ItemDefAddShopSells(b, sells)
 		protocol.ItemDefAddShopSellsFor(b, clampU32(price))
+		thriftSell, _ := d.ThriftSellPrice(it.ID)
+		thriftBuy, _ := d.ThriftBuyPrice(it.ID)
+		protocol.ItemDefAddThriftSellsFor(b, clampU32(thriftSell))
+		protocol.ItemDefAddThriftBuysFor(b, clampU32(thriftBuy))
 		defs[i] = protocol.ItemDefEnd(b)
 	}
 	protocol.ItemCatalogStartItemsVector(b, len(defs))
@@ -672,6 +717,51 @@ func encodeItemCatalog(d *gamedata.Data) []byte {
 	protocol.ItemCatalogStart(b)
 	protocol.ItemCatalogAddItems(b, items)
 	return finish(b, protocol.MessageItemCatalog, protocol.ItemCatalogEnd(b))
+}
+
+// encodeWorkbenchCatalog builds a WorkbenchCatalog of every recipe in d, in
+// table order.
+func encodeWorkbenchCatalog(d *gamedata.Data) []byte {
+	b := flatbuffers.NewBuilder(1024)
+	recs := make([]flatbuffers.UOffsetT, len(d.Workbench))
+	for i, r := range d.Workbench {
+		ids := make([]uint16, len(r.Inputs))
+		qtys := make([]uint32, len(r.Inputs))
+		for j, in := range r.Inputs {
+			ids[j], qtys[j] = uint16(in.Item), clampU32(in.Quantity)
+		}
+		protocol.WorkbenchRecipeStartInputItemIdsVector(b, len(ids))
+		for j := len(ids) - 1; j >= 0; j-- {
+			b.PrependUint16(ids[j])
+		}
+		idVec := b.EndVector(len(ids))
+		protocol.WorkbenchRecipeStartInputQuantitiesVector(b, len(qtys))
+		for j := len(qtys) - 1; j >= 0; j-- {
+			b.PrependUint32(qtys[j])
+		}
+		qtyVec := b.EndVector(len(qtys))
+		protocol.WorkbenchRecipeStart(b)
+		protocol.WorkbenchRecipeAddOutputItemId(b, uint16(r.Output))
+		protocol.WorkbenchRecipeAddInputItemIds(b, idVec)
+		protocol.WorkbenchRecipeAddInputQuantities(b, qtyVec)
+		protocol.WorkbenchRecipeAddGold(b, clampU32(r.Gold))
+		recs[i] = protocol.WorkbenchRecipeEnd(b)
+	}
+	protocol.WorkbenchCatalogStartRecipesVector(b, len(recs))
+	for i := len(recs) - 1; i >= 0; i-- {
+		b.PrependUOffsetT(recs[i])
+	}
+	vec := b.EndVector(len(recs))
+	protocol.WorkbenchCatalogStart(b)
+	protocol.WorkbenchCatalogAddRecipes(b, vec)
+	return finish(b, protocol.MessageWorkbenchCatalog, protocol.WorkbenchCatalogEnd(b))
+}
+
+func encodeCraftResult(code protocol.CraftResultCode) []byte {
+	b := flatbuffers.NewBuilder(32)
+	protocol.CraftResultStart(b)
+	protocol.CraftResultAddCode(b, code)
+	return finish(b, protocol.MessageCraftResult, protocol.CraftResultEnd(b))
 }
 
 // encodeNpcCatalog builds an NpcCatalog of every NPC type in d, in table order.
@@ -780,4 +870,56 @@ func encodeShedHand(b *flatbuffers.Builder, id cardroom.TableID, hand []shed.Car
 	protocol.ShedHandAddTableId(b, clampU16(int(id)))
 	protocol.ShedHandAddCards(b, cards)
 	return finish(b, protocol.MessageShedHand, protocol.ShedHandEnd(b))
+}
+
+// encodeHousingState builds a HousingState of houses for the player viewer:
+// mine is set only on their own house. A lapsed house is still owned until its
+// lapse is saved, so it shows as Warning. A house with no recorded area gets 0.
+func encodeHousingState(b *flatbuffers.Builder, houses []housing.Info, viewer world.PlayerID, areaOf map[housing.HouseID]uint8, r gamedata.Rules) []byte {
+	b.Reset()
+	offs := make([]flatbuffers.UOffsetT, len(houses))
+	for i, h := range houses {
+		var name flatbuffers.UOffsetT
+		if h.Owner != 0 {
+			name = b.CreateString(fmt.Sprintf("Guest %d", h.Owner)) // PLACEHOLDER: players have no names yet
+		}
+		state := protocol.HouseStateEmpty
+		var paid int64
+		if h.Owner != 0 {
+			paid = h.PaidUntil.Unix()
+			state = protocol.HouseStateOwned
+		}
+		switch h.State {
+		case housing.Warning, housing.Lapsed:
+			state = protocol.HouseStateWarning
+		case housing.InAuction:
+			state = protocol.HouseStateAuction
+		}
+		protocol.HouseInfoStart(b)
+		protocol.HouseInfoAddId(b, uint16(min(uint32(h.ID), math.MaxUint16)))
+		protocol.HouseInfoAddAreaId(b, areaOf[h.ID])
+		if h.Owner != 0 {
+			protocol.HouseInfoAddOwnerName(b, name)
+		}
+		protocol.HouseInfoAddMine(b, h.Owner != 0 && h.Owner == viewer)
+		protocol.HouseInfoAddPaidUntil(b, paid)
+		protocol.HouseInfoAddState(b, state)
+		protocol.HouseInfoAddTopBid(b, clampU32(h.TopBid))
+		if !h.AuctionEnd.IsZero() {
+			protocol.HouseInfoAddAuctionEnd(b, h.AuctionEnd.Unix())
+		}
+		protocol.HouseInfoAddMyBid(b, clampU32(h.MyBid))
+		offs[i] = protocol.HouseInfoEnd(b)
+	}
+	protocol.HousingStateStartHousesVector(b, len(offs))
+	for i := len(offs) - 1; i >= 0; i-- {
+		b.PrependUOffsetT(offs[i])
+	}
+	vec := b.EndVector(len(offs))
+	protocol.HousingStateStart(b)
+	protocol.HousingStateAddHouses(b, vec)
+	protocol.HousingStateAddRentPerMonth(b, clampU32(r.HouseRentPerMonth))
+	protocol.HousingStateAddClaimMonths(b, clampU8(r.HouseClaimMonths))
+	protocol.HousingStateAddMaxPrepaidMonths(b, clampU8(r.HouseMaxPrepaidMonths))
+	return finish(b, protocol.MessageHousingState, protocol.HousingStateEnd(b))
 }

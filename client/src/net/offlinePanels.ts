@@ -1,4 +1,4 @@
-import { EquipSlot, ItemKind, ShedColour, ShedSymbol, Skill } from '../protocol';
+import { EquipSlot, HouseState, ItemKind, ShedColour, ShedSymbol, Skill, ToolSkill } from '../protocol';
 import type { ItemInfo, ServerMessage, ShedCardValue } from './codec';
 import { OFFLINE_PLAYER_ID, seededRandom, type OfflineOptions } from './offline';
 
@@ -11,13 +11,15 @@ import { OFFLINE_PLAYER_ID, seededRandom, type OfflineOptions } from './offline'
 
 /** The bots the panels use: the first offline bots' ids (makeBots numbers them from OFFLINE_PLAYER_ID + 1). */
 const BOT_IDS = [OFFLINE_PLAYER_ID + 1, OFFLINE_PLAYER_ID + 2, OFFLINE_PLAYER_ID + 3];
+/** The offline house the house panel shows: the player's own, in the rent warning. */
+export const OFFLINE_HOUSE_ID = 7;
 /** Card table 1 (shared/map/cardtables.json), where OFFLINE_PLACES.cardtable stands. */
 export const OFFLINE_TABLE_ID = 1;
 
 function item(id: number, name: string, kind: ItemKind, extra: Partial<ItemInfo> = {}): ItemInfo {
   return {
     id, name, kind, equipSlot: EquipSlot.None, levelToEquip: 1, accuracy: 0, strength: 0, defence: 0, attackSpeed: 0, heal: 0,
-    shopBuysFor: 1, shopSells: false, shopSellsFor: 0, ...extra,
+    shopBuysFor: 1, shopSells: false, shopSellsFor: 0, toolSkill: ToolSkill.None, toolLevel: 0, cookingLevel: 0, ...extra,
   };
 }
 
@@ -111,6 +113,23 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
 
   for (let i = 0; i < CHAT_LINES; i++) {
     msgs.push({ type: 'chat', speakerId: i === CHAT_LINES - 2 ? playerId : pick(BOT_IDS), text: pick(CHAT) });
+  }
+
+  if (opts.panel === 'bank') {
+    // Every catalog item banked, so the panel has a list to search; BankState opens the bank.
+    msgs.push({ type: 'bankState', slots: CATALOG.map((d) => ({ itemId: d.id, quantity: between(rand, 1, 400) })) });
+  }
+
+  if (opts.panel === 'house') {
+    // The player's own house, 6 days short of dropping below one month prepaid, and one empty house.
+    const paidUntil = Math.floor(Date.now() / 1000) + 36 * 24 * 3600;
+    msgs.push({
+      type: 'housingState', rentPerMonth: 200, claimMonths: 2, maxPrepaidMonths: 6,
+      houses: [
+        { id: OFFLINE_HOUSE_ID, areaId: 1, ownerName: 'You', mine: true, paidUntil, state: HouseState.Warning, open: true },
+        { id: 8, areaId: 1, ownerName: '', mine: false, paidUntil: 0, state: HouseState.Empty, open: false },
+      ],
+    });
   }
 
   if (opts.panel === 'trade') {
