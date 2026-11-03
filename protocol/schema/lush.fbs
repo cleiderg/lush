@@ -945,12 +945,12 @@ table AuctionBid {
 
 // AuctionResult.code values.
 enum AuctionResultCode : ubyte {
-  Ok = 0,
+  Ok = 0,             // the bid is now the top bid and its gold is held
   NotAuction = 1,     // the house isn't in auction
   TooFar = 2,         // the player isn't close enough to the house
   PreviousOwner = 3,  // the previous owner can't bid on their own lapsed house
   BidTooLow = 4,      // not above the top bid or the minimum
-  NotEnoughGold = 5,
+  NotEnoughGold = 5,  // the player doesn't have the gold to hold the bid
   OwnsAnother = 6,    // the player already owns a house
   SaveFailed = 7      // couldn't be saved and nothing changed
 }
