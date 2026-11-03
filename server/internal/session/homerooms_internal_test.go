@@ -263,6 +263,22 @@ func TestHomeEditsInOneTickNeverDuplicate(t *testing.T) {
 	if len(h.hs.bad) != 0 || h.hs.checked != 3 {
 		t.Fatalf("%d writes checked, inconsistent: %v", h.hs.checked, h.hs.bad)
 	}
+	if got := h.reasons(homeroom.ReasonRemove); got != 1 {
+		t.Fatalf("%d %s audit entries, want 1", got, homeroom.ReasonRemove)
+	}
+}
+
+// count is how many times the store logged the write w.
+func (h *homeRig) count(w string) int {
+	h.cs.cmu.Lock()
+	defer h.cs.cmu.Unlock()
+	n := 0
+	for _, s := range h.cs.log {
+		if s == w {
+			n++
+		}
+	}
+	return n
 }
 
 // AC4 (#588): move, rotate, lock, wallpaper and floor are saved, and a
@@ -290,6 +306,16 @@ func TestHomeRoomSurvivesRestart(t *testing.T) {
 	if !r.Locked || r.WallpaperItem != int32(h.item("white_wallpaper")) || r.FlooringItem != int32(h.item("dark_boards_floor")) ||
 		len(r.Items) != 1 || it.X != 4 || it.Y != 5 || it.Rotation != 1 {
 		t.Fatalf("stored home %+v", r)
+	}
+	// AC2: wallpaper and floor are audited with their homeroom reasons, and
+	// the generic economy save wrote only the three pick-ups, no edit.
+	for _, reason := range []string{homeroom.ReasonPlace, homeroom.ReasonWallpaper, homeroom.ReasonFloor} {
+		if got := h.reasons(reason); got != 1 {
+			t.Fatalf("%d %s audit entries, want 1", got, reason)
+		}
+	}
+	if a, e, l := h.count("apply"), h.count("home"), h.count("lock"); a != 3 || e != 5 || l != 1 {
+		t.Fatalf("%d economy saves, %d home edits, %d lock writes; want 3, 5, 1", a, e, l)
 	}
 
 	// A restart: a new home room system built from the store has the same state.
