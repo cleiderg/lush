@@ -30,6 +30,9 @@ func main() {
 		strict    = flag.Bool("strict", false, "exit 1 on any failed connection, lost connection or dropped frame")
 		seedFlag  = flag.Int64("seed", 0, "random seed (0 = time)")
 		waveFirst = flag.Duration("wave-first", 15*time.Second, "each bot's first wave comes within this long of connecting")
+		gatherers = flag.Float64("gatherers", 0.2, "share of bots (0 to 1) that buy a tool, walk to a tree or fishing spot and gather")
+		skillsMap = flag.String("skills-json", "shared/map/skills.json", "skills.json with the tree and fishing spot positions, read at runtime")
+		areasMap  = flag.String("areas-json", "shared/map/areas.json", "areas.json with the shop position, read at runtime")
 		itemFirst = flag.Duration("item-first", 15*time.Second, "each bot's first weapon unequip comes within this long of connecting")
 	)
 	waveEvery := span{20 * time.Second, 40 * time.Second}
@@ -44,6 +47,18 @@ func main() {
 	if *waveFirst < 0 || *itemFirst < 0 {
 		fmt.Fprintln(os.Stderr, "bots: -wave-first and -item-first must not be negative")
 		os.Exit(2)
+	}
+	if *gatherers < 0 || *gatherers > 1 {
+		fmt.Fprintln(os.Stderr, "bots: -gatherers must be between 0 and 1")
+		os.Exit(2)
+	}
+	var gmap *gatherMap
+	if *gatherers > 0 {
+		var err error
+		if gmap, err = loadGatherMap(*skillsMap, *areasMap); err != nil {
+			fmt.Fprintln(os.Stderr, "bots:", err)
+			os.Exit(2)
+		}
 	}
 	mURL := *metrics
 	if mURL == "" {
@@ -62,7 +77,7 @@ func main() {
 	defer stop()
 	sum := run(ctx, config{url: *wsURL, metricsURL: mURL, bots: *count, steady: *steady,
 		ramp: *ramp, radius: *radius, seed: seed, waveEvery: waveEvery, waveFirst: *waveFirst,
-		itemEvery: itemEvery, itemFirst: *itemFirst})
+		itemEvery: itemEvery, itemFirst: *itemFirst, gatherers: *gatherers, gmap: gmap})
 
 	data, _ := json.MarshalIndent(sum, "", "  ")
 	data = append(data, '\n')
@@ -90,25 +105,30 @@ type config struct {
 	waveFirst       time.Duration
 	itemEvery       span
 	itemFirst       time.Duration
+	gatherers       float64    // share of bots that gather
+	gmap            *gatherMap // nil when no bot gathers
 }
 
 // summary is the JSON document the bots write. CI reads these field names.
 type summary struct {
-	Bots                    int             `json:"bots"`
-	ConnectedAtEnd          int             `json:"connected_at_end"`
-	FailedToConnect         int             `json:"failed_to_connect"`
-	DisconnectedEarly       int             `json:"disconnected_early"`
-	DownloadKBPerSPerPlayer float64         `json:"download_kb_per_s_per_player"`
-	RTTMsP50                float64         `json:"rtt_ms_p50"`
-	RTTMsP99                float64         `json:"rtt_ms_p99"`
-	SteadySeconds           float64         `json:"steady_seconds"`
-	SnapshotsReceived       uint64          `json:"snapshots_received"`
-	ChatsReceived           uint64          `json:"chats_received"`
-	WavesSent               uint64          `json:"waves_sent"`
-	ItemActionsSent         uint64          `json:"item_actions_sent"`
-	InventoryStatesReceived uint64          `json:"inventory_states_received"`
-	ServerMaxDroppedPerS    float64         `json:"server_max_dropped_per_s"`
-	Server                  json.RawMessage `json:"server"`
+	Bots                    int               `json:"bots"`
+	ConnectedAtEnd          int               `json:"connected_at_end"`
+	FailedToConnect         int               `json:"failed_to_connect"`
+	DisconnectedEarly       int               `json:"disconnected_early"`
+	DownloadKBPerSPerPlayer float64           `json:"download_kb_per_s_per_player"`
+	RTTMsP50                float64           `json:"rtt_ms_p50"`
+	RTTMsP99                float64           `json:"rtt_ms_p99"`
+	SteadySeconds           float64           `json:"steady_seconds"`
+	SnapshotsReceived       uint64            `json:"snapshots_received"`
+	ChatsReceived           uint64            `json:"chats_received"`
+	WavesSent               uint64            `json:"waves_sent"`
+	ItemActionsSent         uint64            `json:"item_actions_sent"`
+	InventoryStatesReceived uint64            `json:"inventory_states_received"`
+	SkillActionsSent        uint64            `json:"skill_actions_sent"`
+	SkillResultsReceived    uint64            `json:"skill_results_received"`
+	SkillResultsByCode      map[string]uint64 `json:"skill_results_by_code"`
+	ServerMaxDroppedPerS    float64           `json:"server_max_dropped_per_s"`
+	Server                  json.RawMessage   `json:"server"`
 }
 
 func (s *summary) problems(want int) []string {
@@ -204,8 +224,10 @@ func run(ctx context.Context, cfg config) *summary {
 		DisconnectedEarly: int(st.lost.Load()), SteadySeconds: steadySecs,
 		SnapshotsReceived: snaps1 - snaps0, ChatsReceived: st.chats.Load(),
 		WavesSent: st.waves.Load(), ItemActionsSent: st.items.Load(), InventoryStatesReceived: st.invStates.Load(),
+		SkillActionsSent:     st.skillActs.Load(),
 		ServerMaxDroppedPerS: maxDrop, Server: raw,
 	}
+	sum.SkillResultsByCode, sum.SkillResultsReceived = st.skillResults()
 	if steadySecs > 0 && connected > 0 {
 		sum.DownloadKBPerSPerPlayer = float64(bytes1-bytes0) / 1024 / steadySecs / float64(connected)
 	}
