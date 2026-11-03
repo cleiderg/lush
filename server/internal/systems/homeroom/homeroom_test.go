@@ -258,7 +258,7 @@ func TestInventoryMoves(t *testing.T) {
 	o := f.player(1, "stool", "white_wallpaper", "cream_wallpaper", "dark_boards_floor")
 	f.want(homeroom.EnterCommand{Player: 1, Home: home1}, homeroom.Ok)
 	before := totals(f, o)
-	stool, w1, w2, fl := f.item("stool"), f.item("white_wallpaper"), f.item("cream_wallpaper"), f.item("dark_boards_floor")
+	stool, w1, w2 := f.item("stool"), f.item("white_wallpaper"), f.item("cream_wallpaper")
 
 	f.want(homeroom.PlaceCommand{Player: 1, Slot: 0, At: housing.Placement{X: 2, Y: 2}}, homeroom.Ok)
 	if !o.Inv.Slots[0].Empty() || count(o, stool) != 0 {
@@ -288,8 +288,8 @@ func TestInventoryMoves(t *testing.T) {
 	if len(o.PendingEconomy()) != events {
 		t.Error("refused remove wrote to the outbox")
 	}
-	// A swap still works with a full inventory.
-	f.want(homeroom.SetFloorCommand{Player: 1, Slot: 3}, homeroom.BadItem) // slot 3 holds a mug now? floor was taken
+	// Slot 3 is now a mug, not a floor covering.
+	f.want(homeroom.SetFloorCommand{Player: 1, Slot: 3}, homeroom.BadItem)
 	o.Inv.Slots[5] = world.Stack{}
 	f.want(homeroom.RemoveCommand{Player: 1, Placed: 1}, homeroom.Ok)
 	if count(o, stool) != 1 {
@@ -309,7 +309,6 @@ func TestInventoryMoves(t *testing.T) {
 			t.Fatalf("outbox reasons = %v, want %v", reasons, want)
 		}
 	}
-	_ = fl
 }
 
 // TestBroadcast covers AC5.
