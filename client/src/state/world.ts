@@ -52,8 +52,9 @@ export class GameState {
   readonly gains = new GainTracker();
   /** Pending trade request, open trade window and last trade result; subscribe for changes. */
   readonly trade = new TradeStore();
-  /** Houses, the player's own house and the current home; subscribe for changes. */
+  /** The player's group and pending group invitation; subscribe for changes. */
   readonly groups = new GroupStore();
+  /** Houses, the player's own house and the current home; subscribe for changes. */
   readonly housing = new HousingStore();
   readonly workbench = new WorkbenchStore();
   /** True once a HousingState has arrived since the last Welcome (the first one is the login warning). */
