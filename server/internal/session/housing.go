@@ -328,10 +328,12 @@ func (s *Server) commitAuction(req housing.CommitRequest) {
 			moved[stored[rf.Player]] += rf.Gold
 		}
 		r.write = func(ctx context.Context) error {
+			had := s.movingGold(away)
 			if _, err := s.auctions.PlaceAuctionBid(ctx, b); err != nil {
+				s.movedGold(away, had, nil)
 				return err
 			}
-			s.movedGold(away, moved)
+			s.movedGold(away, had, moved)
 			return nil
 		}
 		r.done = resolve
@@ -340,8 +342,10 @@ func (s *Server) commitAuction(req housing.CommitRequest) {
 		f := store.FinishAuction{PlotID: plot, RentCost: int64(req.Rent), Rent: req.PaidUntil.Sub(now), Now: now}
 		var res store.AuctionResult
 		r.write = func(ctx context.Context) error {
+			had := s.movingGold(away)
 			var err error
 			if res, err = s.auctions.FinishAuction(ctx, f); err != nil {
+				s.movedGold(away, had, nil)
 				return err
 			}
 			moved := map[int64]int{}
@@ -353,7 +357,7 @@ func (s *Server) commitAuction(req housing.CommitRequest) {
 					moved[res.Winner] -= int(res.Bid+res.Rent) - b.Held
 				}
 			}
-			s.movedGold(away, moved)
+			s.movedGold(away, had, moved)
 			if res.Winner != 0 {
 				// Committed; a failure to read the new home back only delays it until restart.
 				for id, sid := range stored {
@@ -394,26 +398,54 @@ type goldMove struct {
 	gold int
 }
 
-// movedGold records the gold a committed auction moved for each stored
-// player, keeping what the players in away must still be given: through
-// their guest, or, without one, by reading them from the store again when
-// they join (see handshake). Saver goroutine.
-func (s *Server) movedGold(away map[int64]bool, moved map[int64]int) {
+// movingGold marks an auction write about to start for the stored players in
+// away, and returns the guests they have now: each was read from the store
+// before the write. A player without one gets no guest until the write is
+// done (see handshake), so a guest never misses or doubles the gold it
+// moves. Saver goroutine.
+func (s *Server) movingGold(away map[int64]bool) map[int64]*guest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	had := map[int64]*guest{}
+	for sid := range away {
+		if g := s.guests[sid]; g != nil {
+			had[sid] = g
+			continue
+		}
+		if s.goldPending == nil {
+			s.goldPending = map[int64]int{}
+		}
+		s.goldPending[sid]++
+	}
+	return had
+}
+
+// movedGold ends the auction write that movingGold started, with moved the
+// gold it moved in the store for each stored player (nil if it failed). The
+// players in away must still be given theirs: through the guest they had
+// when it started, or, without one, by reading them from the store again
+// when they join (see handshake). Saver goroutine.
+func (s *Server) movedGold(away map[int64]bool, had map[int64]*guest, moved map[int64]int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.goldSeq++
-	for sid, gold := range moved {
-		if !away[sid] || gold == 0 {
+	for sid := range away {
+		gold := moved[sid]
+		if g := had[sid]; g != nil {
+			if gold != 0 {
+				s.goldMoves = append(s.goldMoves, goldMove{g, gold})
+			}
 			continue
 		}
-		if g := s.guests[sid]; g != nil {
-			s.goldMoves = append(s.goldMoves, goldMove{g, gold})
-			continue
+		if s.goldPending[sid]--; s.goldPending[sid] <= 0 {
+			delete(s.goldPending, sid)
 		}
-		if s.goldMoved == nil {
-			s.goldMoved = map[int64]uint64{}
+		if gold != 0 {
+			if s.goldMoved == nil {
+				s.goldMoved = map[int64]uint64{}
+			}
+			s.goldMoved[sid] = s.goldSeq
 		}
-		s.goldMoved[sid] = s.goldSeq
 	}
 }
 

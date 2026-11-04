@@ -197,14 +197,17 @@ type Server struct {
 	// Gold that auction commits moved in the store for players out of the
 	// world when the commit started (see movedGold). goldSeq counts those
 	// commits; goldMoved is the last one for each player who had no guest.
-	goldSeq   uint64
-	goldMoved map[int64]uint64
-	goldMoves []goldMove
-	auctions  store.Auctions           // nil if the player store keeps no auctions
-	keep      map[int64]world.PlayerID // owners of houses: their session ids are never reused
-	idle      *list.List               // offline guests, longest offline first
-	ops       []op
-	conns     map[transport.Conn]struct{}
+	// goldPending counts the auction writes in flight for each player who
+	// had no guest when it started.
+	goldSeq     uint64
+	goldMoved   map[int64]uint64
+	goldPending map[int64]int
+	goldMoves   []goldMove
+	auctions    store.Auctions           // nil if the player store keeps no auctions
+	keep        map[int64]world.PlayerID // owners of houses: their session ids are never reused
+	idle        *list.List               // offline guests, longest offline first
+	ops         []op
+	conns       map[transport.Conn]struct{}
 
 	saver *saver
 
@@ -420,11 +423,20 @@ func (s *Server) handshake(ctx context.Context, c transport.Conn) *guest {
 	}
 
 	s.mu.Lock()
-	for s.guests[sp.ID] == nil && s.goldMoved[sp.ID] > seq {
-		// An auction moved the player's gold in the store after sp was
-		// read: read it again.
+	for s.guests[sp.ID] == nil && (s.goldPending[sp.ID] > 0 || s.goldMoved[sp.ID] > seq) {
+		// An auction is moving the player's gold in the store, or moved it
+		// after sp was read: read it again once it is done.
+		pending := s.goldPending[sp.ID] > 0
 		seq = s.goldSeq
 		s.mu.Unlock()
+		if pending {
+			select {
+			case <-hctx.Done():
+				s.log.Error("resolve guest: auction write in flight", "err", hctx.Err())
+				return nil
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
 		if sp, _, _, err = s.resolve(hctx, token); err != nil {
 			s.log.Error("resolve guest", "err", err)
 			return nil

@@ -403,3 +403,57 @@ func TestAuctionBidQueuedAfterEarlierWrites(t *testing.T) {
 		t.Fatalf("stored gold %d, want 300 (1000 + 500 - 1200)", g)
 	}
 }
+
+// AC2 (#601): a bidder with no guest who connects while the bid that outbids
+// them is being written gets their refund once: neither the gold read before
+// the write nor the gold read after it is given the refund again.
+func TestAuctionOutbidWhileJoiningRefundsOnce(t *testing.T) {
+	h := newHousingRigOn(t, nil, nil, map[string]int64{"a": 1000, "b": 1000}, openAuction1(""))
+	ca, _, _ := h.join("a")
+	ca.send(auctionBidMsg(1, 300))
+	h.bidResult(ca)
+	h.flush()
+
+	h2 := newHousingRigOn(t, h.st, nil, nil, nil)
+	cb, _, _ := h2.join("b")
+	committed, release := make(chan struct{}), make(chan struct{})
+	h2.st.mu.Lock()
+	h2.st.afterBid = func() { close(committed); <-release }
+	h2.st.mu.Unlock()
+	cb.send(auctionBidMsg(1, 400))
+	for i := 0; ; i++ {
+		select {
+		case <-committed:
+		default:
+			if i > 1000 {
+				t.Fatal("the bid was never written")
+			}
+			h2.w.Tick()
+			time.Sleep(time.Millisecond)
+			continue
+		}
+		break
+	}
+	h2.st.mu.Lock()
+	h2.st.afterBid = nil
+	h2.st.mu.Unlock()
+	// a connects after the store has the refund and before the session hears
+	// of it.
+	ca2 := h2.dial(hello(uint16(protocol.ProtocolVersionCurrent), "a"))
+	time.Sleep(100 * time.Millisecond)
+	close(release)
+	pid, _ := h2.expectWelcome(ca2)
+	if got := h2.bidResult(cb); got != protocol.AuctionResultCodeOk {
+		t.Fatalf("b bids: %v", got)
+	}
+	for range 20 {
+		h2.w.Tick()
+	}
+	if g := h2.w.Player(world.PlayerID(pid)).Inv.Gold; g != 1000 {
+		t.Fatalf("a's gold %d, want 1000", g)
+	}
+	h2.flush()
+	if g := h2.gold("a"); g != 1000 {
+		t.Fatalf("a's stored gold %d, want 1000", g)
+	}
+}

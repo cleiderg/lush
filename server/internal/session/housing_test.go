@@ -25,8 +25,9 @@ var housingStart = time.Unix(1_700_000_000, 0)
 // housingStore is the in-memory store whose ClaimPlot and PayRent can fail.
 type housingStore struct {
 	*store.Memory
-	mu   sync.Mutex
-	fail bool
+	mu       sync.Mutex
+	fail     bool
+	afterBid func() // if set, runs once a PlaceAuctionBid has committed
 }
 
 func (s *housingStore) setFail(v bool) { s.mu.Lock(); s.fail = v; s.mu.Unlock() }
@@ -43,7 +44,14 @@ func (s *housingStore) PlaceAuctionBid(ctx context.Context, b store.PlaceAuction
 	if s.failing() {
 		return store.Auction{}, errors.New("db down")
 	}
-	return s.Memory.PlaceAuctionBid(ctx, b)
+	a, err := s.Memory.PlaceAuctionBid(ctx, b)
+	s.mu.Lock()
+	after := s.afterBid
+	s.mu.Unlock()
+	if err == nil && after != nil {
+		after()
+	}
+	return a, err
 }
 
 func (s *housingStore) FinishAuction(ctx context.Context, f store.FinishAuction) (store.AuctionResult, error) {
