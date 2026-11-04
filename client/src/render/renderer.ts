@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { WorldScene } from './scene';
 import { showAttribution } from './attribution';
-import { PostChain, supportsPost } from './post';
+import { BLOOM_SCALE, PostChain, supportsPost } from './post';
 import { RetroPass } from './retro';
 import type { QualityPreset } from './quality';
 import type { WorldView } from './worldView';
@@ -107,6 +107,9 @@ export function createRenderer(canvas: HTMLCanvasElement): GameRenderer {
       if (preset === world.quality) return;
       world.setQuality(preset);
       const on = preset !== 'low';
+      // Bloom: half resolution on Medium, none on Low. Grade and vignette stay on every preset.
+      if (on) post?.setBloomScale(BLOOM_SCALE[preset]);
+      post?.setBloom(on);
       if (renderer.shadowMap.enabled !== on) {
         renderer.shadowMap.enabled = on;
         // Shadow code is compiled into the materials, so they build again with the new setting.
