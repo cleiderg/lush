@@ -70,7 +70,7 @@ func TestGameSystemsRegisterItemsShopTradeRegenBeforeSession(t *testing.T) {
 			t.Errorf("%s every %d ticks, want %d", s.sys.Name(), s.every, want)
 		}
 	}
-	want := []string{"movement", "gather", "cook", "npc", "emote", "chat", "items", "talk", "quest_events", "shop", "trade", "bank", "cardroom", "housing", "homeroom", "grounditems",
+	want := []string{"movement", "gather", "cook", "npc", "emote", "chat", "items", "shop", "trade", "bank", "cardroom", "housing", "homeroom", "grounditems",
 		"pvp_combat", "pve_combat", "spawner", "regen", "session"}
 	if !slices.Equal(names, want) {
 		t.Fatalf("systems = %v, want %v", names, want)
@@ -107,13 +107,6 @@ func TestFirstTickSpawnsEveryNPCPopulation(t *testing.T) {
 	for _, n := range w.NPCs() {
 		count[n.Type]++
 	}
-	// The talking NPCs (#654) stand at fixed spots, one each, outside the spawner's areas.
-	for _, tk := range data.Talkers {
-		if got := count[world.NPCTypeID(tk.ID)]; got != 1 {
-			t.Errorf("%s: %d standing after the first tick, want 1", tk.Key, got)
-		}
-		delete(count, world.NPCTypeID(tk.ID))
-	}
 	for _, typ := range data.NPCs {
 		want := typ.Population
 		if typ.MaxAlive > 0 && want > typ.MaxAlive {
@@ -124,9 +117,6 @@ func TestFirstTickSpawnsEveryNPCPopulation(t *testing.T) {
 		}
 	}
 	for _, n := range w.NPCs() {
-		if slices.ContainsFunc(data.Talkers, func(d gamedata.NPCType) bool { return world.NPCTypeID(d.ID) == n.Type }) {
-			continue
-		}
 		typ := data.NPCs[slices.IndexFunc(data.NPCs, func(d gamedata.NPCType) bool { return world.NPCTypeID(d.ID) == n.Type })]
 		if got := lookup.AreaAt(n.Pos); got != area[typ.Area] || n.HP != typ.HP {
 			t.Errorf("%s NPC %d at %v is in %v with %d HP, want %v with %d HP", typ.Key, n.ID, n.Pos, got, n.HP, area[typ.Area], typ.HP)
