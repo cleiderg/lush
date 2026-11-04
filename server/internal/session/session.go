@@ -233,7 +233,7 @@ type Server struct {
 	quests    *questevents.System      // set by SetQuests; nil without quests
 	talk      *talk.System             // set by SetQuests
 	questEng  *quest.Engine            // set by SetQuests
-	questDone []questDone              // quests finished in dialogue since the last flushQuests
+	questFull []world.PlayerID         // players whose quest completion failed for lack of room; guarded by mu
 	furn      *furniture.System        // set by SetFurniture; nil without furniture
 	rooms     *homeRooms               // set by SetHomeRooms; nil without home rooms
 	furnCraft bool                     // the furniture command being handled is a craft
@@ -1214,6 +1214,9 @@ func (s *Server) appendEconomy(dst []econReq, g *guest, p *world.Player) []econR
 		}
 		if ev.Reason == bank.ReasonDeposit || ev.Reason == bank.ReasonWithdraw {
 			continue // saved by the transfer's own transaction (CommitBank)
+		}
+		if ev.Reason == talk.ReasonHandIn || ev.Reason == talk.ReasonReward {
+			continue // saved by the quest's own transaction (CommitQuest)
 		}
 		if ev.Reason == housing.ReasonClaim || ev.Reason == housing.ReasonRent {
 			continue // saved by the house's own transaction (CommitHousing)

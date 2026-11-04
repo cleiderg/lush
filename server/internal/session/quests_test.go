@@ -289,6 +289,7 @@ func questCompletionSurvives(t *testing.T, players store.Players) {
 	q1.dialogue(c)
 	c.send(replyFrame(0)) // "Here you go.": hands the book in and completes
 	q1.waitFor(c, protocol.MessageDialogueClose)
+	q1.waitFor(c, protocol.MessageQuestCompleted) // the store has committed it
 	if p.Inv.Count(book.ID) != 0 {
 		t.Fatal("book not handed in")
 	}
