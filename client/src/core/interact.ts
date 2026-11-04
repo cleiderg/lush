@@ -13,6 +13,10 @@ export interface InteractActions {
   openBank: () => void;
   /** Opens the card table panel for that table (CardTablePanel.open). */
   openCardTable: (tableId: number) => void;
+  /** Opens the Campus Thrift panel (thrift ShopPanel.open). */
+  openThrift: () => void;
+  /** Opens the workbench panel (WorkbenchPanel.open). */
+  openWorkbench: () => void;
   /** Opens the house panel for that house (HousePanel.open). */
   openHouse: (houseId: number) => void;
   /** Sends SkillAction (Session.sendSkillAction) for a tree, a fishing spot or the grill. */
@@ -45,6 +49,8 @@ export function interact(game: GameState, now: number, stall: Point, actions: In
   else if (target?.type === 'fishingSpot') skillAction(game, actions, SkillTarget.FishingSpot, target.id);
   else if (target?.type === 'cardTable') actions.openCardTable(target.id);
   else if (target?.type === 'door') actions.openHouse(target.id);
+  else if (target?.type === 'thrift') actions.openThrift();
+  else if (target?.type === 'workbench') actions.openWorkbench();
   else if (target?.type === 'pickUp') actions.sendPickUp(target.id);
   else if (target?.type === 'attack') actions.sendAttackTarget(target.id);
   else if (target?.type === 'trade') actions.sendTradeRequest(target.id);
@@ -86,6 +92,10 @@ export function interactPromptText(game: GameState, target: InteractTarget | nul
       const door = HOUSE_DOORS.find((d) => d.id === target.id);
       return { verb: 'Open', name: door ? `${door.areaName} house ${door.number}` : 'house' };
     }
+    case 'thrift':
+      return { verb: 'Open', name: 'Campus Thrift' };
+    case 'workbench':
+      return { verb: 'Use', name: 'Workbench' };
     case 'pickUp': {
       const g = game.items.groundItems.find((i) => i.id === target.id);
       return { verb: 'Pick up', name: (g && game.items.item(g.itemId)?.name) || 'item' };
