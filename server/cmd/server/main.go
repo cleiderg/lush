@@ -318,6 +318,15 @@ func housingSystem(data *gamedata.Data, tileSize float64, clock world.Clock, ses
 			return nil, fmt.Errorf("load plots: %w", err)
 		}
 	}
+	var auctions []store.Auction
+	if a, ok := players.(store.Auctions); ok {
+		ctx, cancel := context.WithTimeout(context.Background(), dbStartTimeout)
+		defer cancel()
+		var err error
+		if auctions, err = a.LoadAuctions(ctx); err != nil {
+			return nil, fmt.Errorf("load auctions: %w", err)
+		}
+	}
 	plots := make([]housing.Plot, len(stored))
 	for i, sp := range stored {
 		plots[i] = housing.Plot{ID: housing.HouseID(sp.ID), Door: world.Vec2{X: sp.X, Y: sp.Z}, PaidUntil: sp.RentPaidUntil}
@@ -327,6 +336,18 @@ func housingSystem(data *gamedata.Data, tileSize float64, clock world.Clock, ses
 				return nil, fmt.Errorf("no session id left for the owner of plot %d", sp.ID)
 			}
 			plots[i].Owner = id
+		}
+	}
+	for _, a := range auctions {
+		for i, sp := range stored {
+			if sp.ID != a.PlotID {
+				continue
+			}
+			auction, err := sess.AuctionOf(a)
+			if err != nil {
+				return nil, err
+			}
+			plots[i].Auction = auction
 		}
 	}
 	cfg := housing.DefaultConfig()
