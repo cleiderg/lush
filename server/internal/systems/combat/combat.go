@@ -258,7 +258,7 @@ func (s *System) playerTurn(w *world.World, p *world.Player, now time.Time) {
 		return
 	}
 	t, ok := s.data.NPC(gamedata.NPCTypeID(n.Type))
-	if !ok {
+	if !ok || t.Talkable { // talking NPCs can't be attacked (docs/specs/quests.md)
 		delete(s.targets, p.ID)
 		return
 	}
