@@ -20,6 +20,7 @@ import {
   SKILLS_SEED, SKILL_TREES, SKILL_TREE_R, SKILL_TREE_SPACING, SAFE_MARGIN, POND_CENTRE, POND_RADII, POND_POINTS, POND_WOBBLE,
   POND_SHORE, POND_SHIFT, FISHING_SPOTS, STATION_CLEAR,
 } from './skills.mjs';
+import { ALDRICH_HALL_WAY, THRONE_LAYOUT, fitThrone } from './throne.mjs';
 import { LANDMARK_WAYS, HALL_WAYS, LAYOUT, rectCells, fitHall, inPoly, segmentHitsPoly, centroid } from './halls.mjs';
 import { LANGSON_WAY, LIBRARIAN_GAP, GUIDE_OFFSET, COOK_OFFSET, RANGER_TARGET, TALKER_IDS } from './talkers.mjs';
 import { GOOSE_POND, GOOSE_MIN_CELLS, GOOSE_REACH, SOUTH_FIELDS_FAR, FAR_MIN_CELLS } from './spawnareas.mjs';
@@ -287,6 +288,40 @@ function placeHalls() {
   return { version: 1, units: 'decimetres', halls };
 }
 const halls = placeHalls();
+
+// M12 throne room (throne.mjs): open the entrance, throne room and gate cells inside Aldrich Hall; the rest of the
+// footprint stays blocked. Runs after the halls on the same grid.
+function placeThrone() {
+  const L = THRONE_LAYOUT;
+  const dm = (n) => Math.round(n * 10);
+  const b = buildings.find((q) => q.id === ALDRICH_HALL_WAY);
+  if (!b) throw new Error(`Aldrich Hall way ${ALDRICH_HALL_WAY} missing`);
+  const fit = fitThrone(b.p, hallBlocked, hallSpawn);
+  if (!fit) throw new Error('throne room does not fit in Aldrich Hall');
+  const poly = (pts) => pts.flatMap(([u, v]) => { const [x, z] = fit.lattice(u, v); return [dm(x), dm(z)]; });
+  const rectPoly = ([u0, v0, u1, v1]) => poly([[u0, v0], [u1, v0], [u1, v1], [u0, v1]]);
+  const cellsOf = (r) => rectCells(r).map(([u, v]) => fit.cell(u, v));
+  const centres = (r) => cellsOf(r).map(([c, rr]) => [dm(c + 0.5), dm(rr + 0.5)]);
+  const openingCells = fit.passage.map(([u, v]) => fit.cell(u, v));
+  for (const list of [L.throneRoom, L.entrance, L.mainGate, L.sideGate].map(cellsOf).concat([openingCells])) {
+    for (const [c, rr] of list) {
+      const idx = cellIdx(c + 0.5, rr + 0.5);
+      bits[idx >> 3] &= ~(1 << (idx & 7));
+    }
+  }
+  return {
+    version: 1,
+    units: 'decimetres',
+    osm: ALDRICH_HALL_WAY,
+    entrance: rectPoly(L.entrance),
+    throneRoom: rectPoly(L.throneRoom),
+    outerOpening: openingCells.map(([c, rr]) => [dm(c + 0.5), dm(rr + 0.5)]),
+    mainGate: centres(L.mainGate),
+    sideGate: centres(L.sideGate),
+    dais: rectPoly(L.dais),
+  };
+}
+const throne = placeThrone();
 
 // Header (22 bytes, little-endian) then the packed bits. See README.md.
 const header = Buffer.alloc(22);
@@ -1159,6 +1194,7 @@ writeFileSync(outDir + '/skills.json', JSON.stringify(skills) + '\n');
 writeFileSync(outDir + '/housing.json', JSON.stringify(housing) + '\n');
 writeFileSync(outDir + '/talkers.json', JSON.stringify(talkers) + '\n');
 writeFileSync(outDir + '/halls.json', JSON.stringify(halls) + '\n');
+writeFileSync(outDir + '/throne.json', JSON.stringify(throne) + '\n');
 writeFileSync(outDir + '/spawnareas.json', JSON.stringify(spawnAreas) + '\n');
 if (nature) writeFileSync(outDir + '/parknature.json', JSON.stringify(nature) + '\n');
 console.log(`buildings=${buildings.length} paths=${paths.length} plazas=${plazas.length} green=${green.length} grid=${width}x${height} fountain=${fountain.x / 10},${fountain.z / 10} props=${placed.length} skillTrees=${skills.trees.length} nature=${nature ? nature.items.length : 'off'}`);
