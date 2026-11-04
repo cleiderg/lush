@@ -294,7 +294,8 @@ describe('decode + GameState: NPC catalog', () => {
   it('looks NPC types up by id and replaces the catalog', () => {
     const game = setup();
     feed(game, npcCatalog([[1, 'Rat', 2], [4, 'Anteater', 15]]));
-    expect(game.items.npc(4)).toEqual({ id: 4, name: 'Anteater', combatLevel: 15 });
+    expect(game.items.npc(4)).toEqual({ id: 4, name: 'Anteater', combatLevel: 15, talkable: false });
+    expect(game.items.talkableNpcTypes().size).toBe(0);
     expect(game.items.npc(1)?.name).toBe('Rat');
     expect(game.items.npc(2)).toBeUndefined();
     feed(game, npcCatalog([[2, 'Goose', 5]]));

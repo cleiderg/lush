@@ -57,6 +57,8 @@ export interface InteractEntity {
   x: number;
   z: number;
   kind: EntityKind | undefined;
+  /** The NPC type (EntityInfo.npcType) for NPC entities. */
+  npcType?: number;
 }
 
 /** A ground item: its ground item id and position in metres. */
@@ -91,12 +93,15 @@ export interface InteractInput {
   thrifts?: readonly Station[];
   /** Workbenches; WORKBENCHES when omitted. */
   workbenches?: readonly Station[];
+  /** NPC types that can be talked to (NpcDef.talkable); none when omitted. */
+  talkableTypes?: ReadonlySet<number>;
   pvpZones?: readonly Polygon[];
 }
 
 export type InteractTarget =
   | { type: 'shop' }
   | { type: 'bank' }
+  | { type: 'talk'; id: number }
   | { type: 'grill' }
   | { type: 'tree'; id: number; kind: string }
   | { type: 'fishingSpot'; id: number; kind: string }
@@ -141,6 +146,9 @@ function nearest<T extends { id: number; x: number; z: number }>(pos: Point, lis
 /** Reach in tiles, diagonals included, for the grill, trees and fishing spots (skills spec, Interact button). */
 export const SKILL_RANGE_TILES = 1;
 
+/** Talk range in tiles, diagonals included (quests spec, Talking NPCs). */
+export const TALK_RANGE_TILES = 2;
+
 /** The nearest resource within SKILL_RANGE_TILES of pos (trees before spots, then the lower id on a tie); null if none. */
 function nearestResource(pos: Point, list: readonly SkillResource[]): SkillResource | null {
   let best: SkillResource | null = null;
@@ -166,13 +174,20 @@ export function nearestCardTable(
 
 /**
  * What the Interact button does (gameplay spec, Interact button): the shop stall within shop
- * distance; else the bank booth within 2 tiles (open the bank); else the grill within 1 tile while carrying raw fish (cook); else the nearest usable tree or fishing spot within 1 tile (chop, fish); else the nearest card table within reach (open its panel); else the nearest ground item within pick-up range (pick up); else the nearest of a house door within 3 tiles (open its panel), a Campus Thrift stall or a workbench within shop distance (open its panel; after pick-up so an item dropped by a door can still be taken); else the nearest NPC within attack range (attack); else the nearest player within
+ * distance; else the bank booth within 2 tiles (open the bank); else the nearest talking NPC within 2 tiles (talk); else the grill within 1 tile while carrying raw fish (cook); else the nearest usable tree or fishing spot within 1 tile (chop, fish); else the nearest card table within reach (open its panel); else the nearest ground item within pick-up range (pick up); else the nearest of a house door within 3 tiles (open its panel), a Campus Thrift stall or a workbench within shop distance (open its panel; after pick-up so an item dropped by a door can still be taken); else the nearest NPC within attack range (attack); else the nearest player within
  * trade distance (a trade request outside the PvP zone, an attack inside it). Null: nothing.
  */
 export function pickInteractTarget(input: InteractInput): InteractTarget | null {
   const { pos } = input;
   if (nearShop(pos, input.stall)) return { type: 'shop' };
   if (nearBank(pos, input.bank ?? BANK_BOOTH)) return { type: 'bank' };
+  const talkable = input.talkableTypes;
+  const isTalkable = (e: InteractEntity): boolean => e.npcType !== undefined && !!talkable?.has(e.npcType);
+  const talker = nearest(
+    pos,
+    input.entities.filter((e) => e.kind === EntityKind.Npc && isTalkable(e) && tileDistance(pos, e) <= TALK_RANGE_TILES),
+  );
+  if (talker) return { type: 'talk', id: talker.id };
   if (input.skill?.hasRawFish && tileDistance(pos, input.grill ?? GRILL) <= SKILL_RANGE_TILES) return { type: 'grill' };
   const res = nearestResource(pos, input.skill?.resources ?? []);
   if (res) return { type: res.type, id: res.id, kind: res.kind };
@@ -191,7 +206,7 @@ export function pickInteractTarget(input: InteractInput): InteractTarget | null 
   if (bench && bench.dist === best) return { type: 'workbench' };
   const npc = nearest(
     pos,
-    input.entities.filter((e) => e.kind === EntityKind.Npc && tileDistance(pos, e) <= ATTACK_RANGE_TILES),
+    input.entities.filter((e) => e.kind === EntityKind.Npc && !isTalkable(e) && tileDistance(pos, e) <= ATTACK_RANGE_TILES),
   );
   if (npc) return { type: 'attack', id: npc.id };
   const reach = TRADE_DISTANCE_TILES * TILE_METRES;

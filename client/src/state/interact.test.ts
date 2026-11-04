@@ -52,6 +52,42 @@ describe('interact distances match the server rules (AC1)', () => {
   });
 });
 
+describe('talking NPCs (#670)', () => {
+  const TALK = new Set([30]);
+  const talker = (id: number, x: number, z: number): InteractEntity => ({ id, x, z, kind: EntityKind.Npc, npcType: 30 });
+  const at = (entities: InteractEntity[], extra = {}) =>
+    pickInteractTarget({ pos: FAR, stall: STALL, entities, talkableTypes: TALK, ...extra });
+
+  it('AC1: talks to the nearest talkable NPC within 2 tiles, diagonals included', () => {
+    expect(at([talker(1, 102.5, 102.5), talker(2, 101.5, 100.5), npc(3, 100.6, 100.5)])).toEqual({ type: 'talk', id: 2 });
+    expect(at([talker(1, 102.5, 102.5)])).toEqual({ type: 'talk', id: 1 });
+    expect(at([talker(1, 103.5, 100.5)])).toBeNull();
+  });
+
+  it('AC2: shop and bank win over a talker; a talker wins over grill, ground item and attackable NPC', () => {
+    const shopPos = { x: 0.5, z: 0.5 };
+    expect(pickInteractTarget({ pos: shopPos, stall: STALL, entities: [talker(1, 1.5, 0.5)], talkableTypes: TALK })).toEqual({ type: 'shop' });
+    const bankPos = { x: BANK_BOOTH.x + 1, z: BANK_BOOTH.z };
+    expect(pickInteractTarget({
+      pos: bankPos, stall: STALL, entities: [talker(1, bankPos.x + 1, bankPos.z)], talkableTypes: TALK,
+    })).toEqual({ type: 'bank' });
+    const all = at([talker(1, 101.5, 100.5), npc(2, 100.5, 100.5)], {
+      groundItems: [ground(5, 100.5, 100.5)],
+      skill: { hasRawFish: true, resources: [] },
+      grill: FAR,
+    });
+    expect(all).toEqual({ type: 'talk', id: 1 });
+  });
+
+  it('AC3: a talker is never attacked, even alone in attack range', () => {
+    expect(at([talker(1, 100.9, 100.5)])).toEqual({ type: 'talk', id: 1 });
+    // Out of talk range of nothing: with no talkable set the same NPC is an attack target.
+    expect(pickInteractTarget({ pos: FAR, stall: STALL, entities: [talker(1, 100.9, 100.5)] })).toEqual({ type: 'attack', id: 1 });
+    // Talkers never fall through to attack once the talk branch is skipped.
+    expect(at([talker(1, 100.9, 100.5), npc(2, 101.5, 100.5)])).toEqual({ type: 'talk', id: 1 });
+  });
+});
+
 describe('pickInteractTarget (AC1)', () => {
   it('picks the shop near the stall, before an NPC or player in range', () => {
     const pos = { x: 0.5, z: 0.5 };

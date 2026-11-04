@@ -63,7 +63,7 @@ describe('nearest wins (AC2)', () => {
 describe('Interact opens the panels (AC3)', () => {
   const actions = (): InteractActions => ({
     openShop: vi.fn(), openBank: vi.fn(), openCardTable: vi.fn(), openHouse: vi.fn(), openThrift: vi.fn(), openWorkbench: vi.fn(),
-    sendPickUp: vi.fn(), sendAttackTarget: vi.fn(), sendTradeRequest: vi.fn(), sendSkillAction: vi.fn(),
+    sendPickUp: vi.fn(), sendAttackTarget: vi.fn(), sendTradeRequest: vi.fn(), sendTalk: vi.fn(), sendSkillAction: vi.fn(),
   });
   const gameAt = (pos: { x: number; z: number }): GameState => {
     const g = new GameState();

@@ -24,12 +24,16 @@ export interface InteractActions {
   sendPickUp: (groundItemId: number) => void;
   sendAttackTarget: (targetId: number) => void;
   sendTradeRequest: (targetId: number) => void;
+  sendTalk: (npcId: number) => void;
 }
 
 /** The Interact target for the predicted local player and the interpolated entities at `now`. */
 export function interactTarget(game: GameState, now: number, stall: Point): InteractTarget | null {
-  const entities = game.remotes(now).map((r) => ({ id: r.id, x: r.x, z: r.z, kind: game.items.entityInfo(r.id)?.kind }));
-  return pickInteractTarget({ pos: game.prediction.pos, stall, entities, groundItems: game.items.groundItems,
+  const entities = game.remotes(now).map((r) => {
+    const info = game.items.entityInfo(r.id);
+    return { id: r.id, x: r.x, z: r.z, kind: info?.kind, npcType: info?.npcType };
+  });
+  return pickInteractTarget({ pos: game.prediction.pos, stall, entities, talkableTypes: game.items.talkableNpcTypes(), groundItems: game.items.groundItems,
     skill: { hasRawFish: hasRawFish(game.items), resources: usableResources(game.items, game.skills) },
   });
 }
@@ -44,6 +48,7 @@ export function interact(game: GameState, now: number, stall: Point, actions: In
   const target = interactTarget(game, now, stall);
   if (target?.type === 'shop') actions.openShop();
   else if (target?.type === 'bank') actions.openBank();
+  else if (target?.type === 'talk') actions.sendTalk(target.id);
   else if (target?.type === 'grill') skillAction(game, actions, SkillTarget.Grill, 0);
   else if (target?.type === 'tree') skillAction(game, actions, SkillTarget.Tree, target.id);
   else if (target?.type === 'fishingSpot') skillAction(game, actions, SkillTarget.FishingSpot, target.id);
@@ -78,6 +83,8 @@ export function interactPromptText(game: GameState, target: InteractTarget | nul
       return { verb: 'Open', name: SHOP_NAME };
     case 'bank':
       return { verb: 'Open', name: BANK_NAME };
+    case 'talk':
+      return { verb: 'Talk', name: game.items.npc(game.items.entityInfo(target.id)?.npcType ?? -1)?.name || 'NPC' };
     case 'grill':
       return { verb: 'Cook' };
     case 'tree':

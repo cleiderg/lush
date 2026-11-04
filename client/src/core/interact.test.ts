@@ -72,6 +72,7 @@ function setup(
       sendPickUp: (id) => session.sendPickUp(id),
       sendAttackTarget: (id) => session.sendAttackTarget(id),
       sendTradeRequest: (id) => session.sendTradeRequest(id),
+      sendTalk: (id) => session.sendTalk(id),
     });
   return { game, t, attack, trade, pickUp, press, shop, cardTable };
 }
@@ -213,7 +214,7 @@ describe('Interact at a house door (AC2)', () => {
     const d = HOUSE_DOORS[1];
     const { game } = setup({ x: d.x, z: d.z }, []);
     const openHouse = vi.fn();
-    const actions = { openHouse, openThrift: vi.fn(), openWorkbench: vi.fn(), openShop: vi.fn(), openBank: vi.fn(), openCardTable: vi.fn(), sendSkillAction: vi.fn(), sendPickUp: vi.fn(), sendAttackTarget: vi.fn(), sendTradeRequest: vi.fn() };
+    const actions = { openHouse, openThrift: vi.fn(), openWorkbench: vi.fn(), openShop: vi.fn(), openBank: vi.fn(), openCardTable: vi.fn(), sendSkillAction: vi.fn(), sendPickUp: vi.fn(), sendAttackTarget: vi.fn(), sendTradeRequest: vi.fn(), sendTalk: vi.fn() };
     const target = interact(game, NOW, { x: 1e6, z: 1e6 }, actions);
     expect(target).toEqual({ type: 'door', id: 2 });
     expect(openHouse).toHaveBeenCalledWith(2);

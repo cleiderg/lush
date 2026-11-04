@@ -147,6 +147,8 @@ export interface NpcInfo {
   id: number;
   name: string;
   combatLevel: number;
+  /** Whether Interact can talk to this NPC type (NpcDef.talkable). */
+  talkable: boolean;
 }
 
 /** One offered item in a trade. */
@@ -831,7 +833,7 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
       const d = new NpcDef();
       for (let i = 0; i < m.npcsLength(); i++) {
         m.npcs(i, d);
-        npcs.push({ id: d.id(), name: d.name() ?? '', combatLevel: d.combatLevel() });
+        npcs.push({ id: d.id(), name: d.name() ?? '', combatLevel: d.combatLevel(), talkable: d.talkable() });
       }
       return { type: 'npcCatalog', npcs };
     }
