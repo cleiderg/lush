@@ -393,6 +393,9 @@ func (s *System) offer(p *world.Player, index, qty int) {
 	if slot.Empty() {
 		return
 	}
+	if it, ok := s.data.Item(slot.Item); ok && it.QuestItem {
+		return // quest items can't be traded
+	}
 	me, _ := t.of(p.ID)
 	at := -1
 	for i, it := range me.offer.Items {

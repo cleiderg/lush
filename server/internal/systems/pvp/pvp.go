@@ -113,12 +113,12 @@ func SplitOnDeath(d *gamedata.Data, inv world.Inventory) DeathSplit {
 	}
 	srcs := make([]source, 0, len(wornOrder)+len(inv.Slots))
 	for i, s := range wornOrder {
-		if id := inv.Equipment.Get(s); id != 0 {
+		if id := inv.Equipment.Get(s); id != 0 && !isQuest(d, id) {
 			srcs = append(srcs, source{Piece{Item: id, Qty: 1, Worn: s, Slot: -1}, value(d, id), i})
 		}
 	}
 	for i, st := range inv.Slots {
-		if !st.Empty() && st.Qty > 0 {
+		if !st.Empty() && st.Qty > 0 && !isQuest(d, st.Item) {
 			srcs = append(srcs, source{Piece{Item: st.Item, Qty: st.Qty, Slot: i}, value(d, st.Item), len(wornOrder) + i})
 		}
 	}
@@ -168,8 +168,14 @@ func ApplyDeath(d *gamedata.Data, inv *world.Inventory) ([]world.Stack, []world.
 	}
 	split := SplitOnDeath(d, *inv)
 	work := inv.Clone()
+	// Quest items are lost on any death: removed, never dropped, never kept.
+	questLost, err := work.RemoveQuestItems(d)
+	if err != nil {
+		return nil, nil, fmt.Errorf("pvp death: %w", err)
+	}
 	dropped := make([]world.Stack, 0, len(split.Dropped))
-	changes := make([]world.Change, 0, len(split.Dropped))
+	changes := make([]world.Change, 0, len(split.Dropped)+len(questLost))
+	changes = append(changes, questLost...)
 	for _, p := range split.Dropped {
 		var ch []world.Change
 		var err error
@@ -189,6 +195,11 @@ func ApplyDeath(d *gamedata.Data, inv *world.Inventory) ([]world.Stack, []world.
 	}
 	*inv = work
 	return dropped, changes, nil
+}
+
+func isQuest(d *gamedata.Data, id gamedata.ItemID) bool {
+	it, ok := d.Item(id)
+	return ok && it.QuestItem
 }
 
 func value(d *gamedata.Data, id gamedata.ItemID) int {

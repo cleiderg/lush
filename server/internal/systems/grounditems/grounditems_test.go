@@ -470,3 +470,30 @@ func BenchmarkTick(b *testing.B) {
 		s.Tick(nil, 0)
 	}
 }
+
+func TestQuestItemStaysPrivate(t *testing.T) {
+	d := gameData(t)
+	clock := world.NewFakeClock(t0)
+	s := grounditems.New(d, clock, tileSize)
+	book := itemID(t, d, "overdue_book")
+	id := mustSpawn(t, s, book, 1, world.Vec2{}, 1, t0)
+
+	clock.Advance(d.Rules.DropReservation() + time.Second)
+	if d.Rules.DropReservation()+time.Second >= d.Rules.DropDespawn() {
+		t.Fatal("test needs the despawn later than the reservation")
+	}
+	other := newPlayer(d, 2, world.Vec2{})
+	if err := s.PickUp(other, id); !errors.Is(err, grounditems.ErrReserved) {
+		t.Fatalf("other player's PickUp = %v, want ErrReserved", err)
+	}
+	if other.Inv.Count(book) != 0 || s.Len() != 1 {
+		t.Fatal("refused pick-up changed something")
+	}
+	owner := newPlayer(d, 1, world.Vec2{})
+	if err := s.PickUp(owner, id); err != nil {
+		t.Fatalf("owner's PickUp = %v", err)
+	}
+	if owner.Inv.Count(book) != 1 {
+		t.Fatal("owner did not get the book")
+	}
+}

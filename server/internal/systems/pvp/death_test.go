@@ -203,6 +203,9 @@ func TestApplyDeathConserves(t *testing.T) {
 		for i := range inv.Slots {
 			if r.IntN(4) != 0 {
 				it := d.Items[r.IntN(len(d.Items))]
+				for it.QuestItem { // quest items are removed on death, not split
+					it = d.Items[r.IntN(len(d.Items))]
+				}
 				qty := 1
 				if it.Stackable() {
 					qty = 1 + r.IntN(20)
@@ -299,5 +302,40 @@ func BenchmarkApplyDeath(b *testing.B) {
 	for b.Loop() {
 		inv := clone(base)
 		_, _, _ = pvp.ApplyDeath(d, &inv)
+	}
+}
+
+// TestApplyDeathQuestItems: an Overdue book is removed, never dropped and
+// never one of the kept items, and the removal is a recorded change.
+func TestApplyDeathQuestItems(t *testing.T) {
+	d := loadData(t)
+	book := id(t, d, "overdue_book")
+	plating, helmet := id(t, d, "robot_plating"), id(t, d, "bike_helmet")
+	stick := id(t, d, "wooden_stick")
+	inv := world.NewInventory(d)
+	inv.Slots[0] = world.Stack{Item: book, Qty: 1}
+	inv.Slots[1] = world.Stack{Item: plating, Qty: 1}
+	inv.Slots[2] = world.Stack{Item: helmet, Qty: 1}
+	inv.Slots[3] = world.Stack{Item: stick, Qty: 1}
+
+	dropped, changes, err := pvp.ApplyDeath(d, &inv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inv.Count(book) != 0 {
+		t.Error("book still held")
+	}
+	// Kept (3): all three valuable items stay; nothing is dropped.
+	if len(dropped) != 0 {
+		t.Errorf("dropped = %+v, want nothing", dropped)
+	}
+	for _, it := range []gamedata.ItemID{plating, helmet, stick} {
+		if inv.Count(it) != 1 {
+			t.Errorf("item %d not kept", it)
+		}
+	}
+	want := []world.Change{{Kind: world.ChangeRemove, Item: book, Qty: 1}}
+	if !reflect.DeepEqual(changes, want) {
+		t.Errorf("changes = %+v, want %+v", changes, want)
 	}
 }
