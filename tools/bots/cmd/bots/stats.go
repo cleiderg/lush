@@ -1,11 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/cleiderg/lush/tools/bots/internal/protocol"
 )
 
 // stats is shared by all bots.
@@ -13,10 +16,12 @@ type stats struct {
 	bytes     atomic.Uint64 // bytes received
 	snapshots atomic.Uint64
 	chats     atomic.Uint64
-	waves     atomic.Uint64 // wave emotes sent
-	items     atomic.Uint64 // ItemActions sent
-	invStates atomic.Uint64 // InventoryState messages received
-	lost      atomic.Uint64 // bots that lost an established connection
+	waves     atomic.Uint64     // wave emotes sent
+	items     atomic.Uint64     // ItemActions sent
+	invStates atomic.Uint64     // InventoryState messages received
+	skillActs atomic.Uint64     // SkillActions sent
+	skillRes  [16]atomic.Uint64 // SkillResults received, by code
+	lost      atomic.Uint64     // bots that lost an established connection
 
 	mu   sync.Mutex
 	rtts []time.Duration
@@ -43,4 +48,31 @@ func percentileMs(d []time.Duration, p int) float64 {
 	sort.Slice(d, func(i, j int) bool { return d[i] < d[j] })
 	i := int(math.Ceil(float64(p)/100*float64(len(d)))) - 1
 	return float64(d[max(i, 0)]) / float64(time.Millisecond)
+}
+
+// noteSkillResult counts a SkillResult by its code.
+func (s *stats) noteSkillResult(c protocol.SkillResultCode) {
+	if int(c) < len(s.skillRes) {
+		s.skillRes[c].Add(1)
+	}
+}
+
+// skillResults returns the SkillResults received by code name, and the total.
+func (s *stats) skillResults() (map[string]uint64, uint64) {
+	by := map[string]uint64{}
+	var total uint64
+	for c := range s.skillRes {
+		if n := s.skillRes[c].Load(); n > 0 {
+			by[codeName(protocol.SkillResultCode(c))] = n
+			total += n
+		}
+	}
+	return by, total
+}
+
+func codeName(c protocol.SkillResultCode) string {
+	if n, ok := protocol.EnumNamesSkillResultCode[c]; ok {
+		return n
+	}
+	return fmt.Sprintf("Code%d", c)
 }

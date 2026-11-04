@@ -1,8 +1,9 @@
-import { type EquipSlot, type ItemActionKind, ShedColour, type SkillTarget } from '../protocol';
+import { type EquipSlot, type ItemActionKind, ShedColour, ShopKind, type SkillTarget } from '../protocol';
 import {
   decode, encodeAttackTarget, encodeBankClose, encodeBankDeposit, encodeBankDepositEquipment, encodeBankDepositInventory,
   encodeBankOpen, encodeBankWithdraw, encodeCardTableLeave, encodeCardTableReady, encodeCardTableSit, encodeChat, encodeHello, encodeItemAction, encodePickUp, encodeShedDraw, encodeShedPlay,
-  encodeShopBuy, encodeShopSell, encodeSkillAction, encodeTradeAccept, encodeTradeCancel, encodeTradeOffer, encodeTradeRemove, encodeTradeRequest, encodeTradeSetGold,
+  encodeHomeEnter, encodeHomeLeave, encodeHomeMove, encodeHomePlace, encodeHomeRemove, encodeHomeRotate, encodeHomeSetFloor,
+  encodeHomeSetOpen, encodeHomeSetWallpaper, type HomePlacement, encodeAuctionBid, encodeHouseClaim, encodeRentPay, encodeShopBuy, encodeShopSell, encodeWorkbenchCraft, encodeSkillAction, encodeTradeAccept, encodeTradeCancel, encodeTradeOffer, encodeTradeRemove, encodeTradeRequest, encodeTradeSetGold,
   type ServerMessage, type ShedCardValue,
 } from './codec';
 import type { Transport, TransportFactory } from './transport';
@@ -40,6 +41,8 @@ export interface SessionOptions {
   factory: TransportFactory;
   store: TokenStore;
   onMessage: (msg: ServerMessage) => void;
+  /** Called when HomeLeave is sent, so state can drop the home once the server confirms. */
+  onHomeLeave?: () => void;
   onReload?: () => void;
   onStatus?: (connected: boolean) => void;
   setTimer?: (fn: () => void, ms: number) => unknown;
@@ -87,12 +90,16 @@ export class Session {
     this.send(encodeItemAction(action, slot, equipSlot));
   }
 
-  sendShopBuy(itemId: number, quantity: number): void {
-    this.send(encodeShopBuy(itemId, quantity));
+  sendShopBuy(itemId: number, quantity: number, shop: ShopKind = ShopKind.Market): void {
+    this.send(encodeShopBuy(itemId, quantity, shop));
   }
 
-  sendShopSell(slot: number, quantity: number): void {
-    this.send(encodeShopSell(slot, quantity));
+  sendShopSell(slot: number, quantity: number, shop: ShopKind = ShopKind.Market): void {
+    this.send(encodeShopSell(slot, quantity, shop));
+  }
+
+  sendWorkbenchCraft(outputItemId: number): void {
+    this.send(encodeWorkbenchCraft(outputItemId));
   }
 
   sendPickUp(groundItemId: number): void {
@@ -101,6 +108,61 @@ export class Session {
 
   sendAttackTarget(targetId: number): void {
     this.send(encodeAttackTarget(targetId));
+  }
+
+  /** Claim an empty house. */
+  sendHouseClaim(houseId: number): void {
+    this.send(encodeHouseClaim(houseId));
+  }
+
+  /** Prepay months of rent on your own house. */
+  sendRentPay(houseId: number, months: number): void {
+    this.send(encodeRentPay(houseId, months));
+  }
+
+  /** Bid gold on a house in auction. */
+  sendAuctionBid(houseId: number, amount: number): void {
+    this.send(encodeAuctionBid(houseId, amount));
+  }
+
+  /** Enter a home. */
+  sendHomeEnter(houseId: number): void {
+    this.send(encodeHomeEnter(houseId));
+  }
+
+  /** Leave the current home. */
+  sendHomeLeave(): void {
+    this.opts.onHomeLeave?.();
+    this.send(encodeHomeLeave());
+  }
+
+  /** Lock or unlock the home to visitors. */
+  sendHomeSetOpen(open: boolean): void {
+    this.send(encodeHomeSetOpen(open));
+  }
+
+  sendHomePlace(inventorySlot: number, p: HomePlacement): void {
+    this.send(encodeHomePlace(inventorySlot, p));
+  }
+
+  sendHomeMove(placedId: number, p: HomePlacement): void {
+    this.send(encodeHomeMove(placedId, p));
+  }
+
+  sendHomeRotate(placedId: number, rotation: number): void {
+    this.send(encodeHomeRotate(placedId, rotation));
+  }
+
+  sendHomeRemove(placedId: number): void {
+    this.send(encodeHomeRemove(placedId));
+  }
+
+  sendHomeSetWallpaper(inventorySlot: number): void {
+    this.send(encodeHomeSetWallpaper(inventorySlot));
+  }
+
+  sendHomeSetFloor(inventorySlot: number): void {
+    this.send(encodeHomeSetFloor(inventorySlot));
   }
 
   /** Ask targetId to trade, or accept their pending request. */

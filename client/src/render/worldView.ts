@@ -1,3 +1,5 @@
+import type { RoomDescription } from './roomView';
+
 /** Read-only snapshot of what the renderer needs. src/state provides it; render never mutates it. */
 export interface PlayerView {
   readonly id: number;
@@ -33,6 +35,11 @@ export interface HitView {
   readonly attacker?: number;
   readonly damage: number;
   readonly died: boolean;
+}
+
+/** A level-up on an entity; nearby players see an effect over it. Positions come from the entity's player or NPC view. */
+export interface LevelUpView {
+  readonly entityId: number;
 }
 
 /** An item lying on the ground. Positions are metres from the map origin. */
@@ -84,6 +91,8 @@ export interface WorldView {
   readonly entities?: EntityLookup;
   /** Hits that arrived since the last frame, oldest first. Missing means none. */
   readonly hits?: readonly HitView[];
+  /** Level-ups that arrived since the last frame, by entity id. Missing means none. */
+  readonly levelUps?: readonly LevelUpView[];
   /** Items on the ground in view; missing means none are drawn and no marker mesh is added. */
   readonly groundItems?: readonly GroundItemView[];
   /** NPCs in view; missing means none are drawn and no NPC mesh is added. */
@@ -102,4 +111,6 @@ export interface WorldView {
   readonly activeResource?: string;
   /** Progress of the current attempt, 0 to 1, shown by the indicator over `activeResource`. */
   readonly resourceProgress?: number;
+  /** A home room to draw instead of the campus, framed by the camera; missing draws the campus. Update it in place between frames. */
+  readonly home?: RoomDescription;
 }

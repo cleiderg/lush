@@ -1,10 +1,10 @@
 // Converts the committed OSM snapshot into the compact map file, the collision grid, the gameplay areas, the card tables,
-// the props, the M9 skill objects and the Aldrich Park nature.
+// the M8 fountain, the props, the M9 skill objects, the M10 housing and the Aldrich Park nature.
 //   node shared/map/build.mjs [outDir] [--no-nature]      (default: this directory; --no-nature skips parknature.json)
 // Deterministic: same input -> byte-identical output. No Math.random, no timestamps.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { BBOX, ORIGIN, CHUNK_SIZE, CELL_SIZE } from './config.mjs';
+import { BBOX, ORIGIN, CHUNK_SIZE, CELL_SIZE, HOUSING, HOUSES_PER_AREA, WORKBENCH_DIST } from './config.mjs';
 import {
   ALDRICH_PARK_WAY, SPAWN, SAFE_RADIUS, SHOP, SOUTH_FIELDS, PVP_ZONE, CARD_PLAZA, CARD_TABLES, STUDENT_CENTER_WAY, CAFE,
 } from './areas.mjs';
@@ -20,12 +20,14 @@ import {
   SKILLS_SEED, SKILL_TREES, SKILL_TREE_R, SKILL_TREE_SPACING, SAFE_MARGIN, POND_CENTRE, POND_RADII, POND_POINTS, POND_WOBBLE,
   POND_SHORE, POND_SHIFT, FISHING_SPOTS, STATION_CLEAR,
 } from './skills.mjs';
+import { FOUNTAIN_R, FOUNTAIN_PATH_CLEAR, FOUNTAIN_CLEAR, FOUNTAIN_STEP } from './fountain.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const args = process.argv.slice(2);
 const outDir = args.find((a) => !a.startsWith('--')) ?? here;
 const withNature = !args.includes('--no-nature');
 const src = JSON.parse(readFileSync(here + 'source/osm-central.json', 'utf8'));
+const housingSrc = JSON.parse(readFileSync(here + 'source/osm-housing.json', 'utf8'));
 
 const M_PER_DEG = 111320;
 const cosLat = Math.cos((ORIGIN.lat * Math.PI) / 180);
@@ -77,7 +79,30 @@ const plazas = [];
 const green = [];
 const GREEN_KIND = { grass: 0, wood: 1, water: 2, pitch: 3 };
 
-for (const w of src.ways) {
+// M10: from the housing snapshot, only ways wholly inside a housing outline, plus the listed connecting paths. Ways
+// already in the central snapshot keep their central copy, so nothing on central campus changes.
+const centralIds = new Set(src.ways.map((w) => w.id));
+const pointInPoly = (p, [lat, lon]) => {
+  let r = false;
+  for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+    if (p[i][1] > lon !== p[j][1] > lon && lat < ((p[j][0] - p[i][0]) * (lon - p[i][1])) / (p[j][1] - p[i][1]) + p[i][0]) r = !r;
+  }
+  return r;
+};
+const outlinePolys = HOUSING.areas.map((a) => {
+  const w = housingSrc.ways.find((x) => x.id === a.outline);
+  if (!w) throw new Error(`housing outline way ${a.outline} (${a.id}) missing`);
+  return w.pts;
+});
+const outlineIds = new Set(HOUSING.areas.map((a) => a.outline));
+const housingWays = housingSrc.ways.filter((w) => {
+  if (centralIds.has(w.id) || outlineIds.has(w.id)) return false;
+  if (HOUSING.connecting.includes(w.id)) return true;
+  return outlinePolys.some((o) => w.pts.every((pt) => pointInPoly(o, pt)));
+});
+for (const id of HOUSING.connecting) if (!housingWays.some((w) => w.id === id)) throw new Error(`connecting path ${id} missing`);
+
+for (const w of [...src.ways, ...housingWays]) {
   const t = w.tags;
   if (t.building) {
     const p = flat(w.pts, true);
@@ -106,10 +131,12 @@ for (const w of src.ways) {
   }
 }
 
-// Bounds in whole chunks around the bbox.
+// Bounds in whole chunks around the bbox and the housing outlines.
 const corner = (lat, lon) => project([lat, lon]);
-const sw = corner(BBOX.south, BBOX.west);
-const ne = corner(BBOX.north, BBOX.east);
+const allPts = [[BBOX.south, BBOX.west], [BBOX.north, BBOX.east], ...outlinePolys.flat()];
+const lats = allPts.map((p) => p[0]), lons = allPts.map((p) => p[1]);
+const sw = corner(Math.min(...lats), Math.min(...lons));
+const ne = corner(Math.max(...lats), Math.max(...lons));
 const chunkDm = CHUNK_SIZE * 10;
 const minX = Math.floor(sw[0] / chunkDm) * chunkDm;
 const maxX = Math.ceil(ne[0] / chunkDm) * chunkDm;
@@ -251,6 +278,76 @@ const cardTables = {
   tables: CARD_TABLES.map((t) => ({ id: t.id, ...cellCentre(t, `card table ${t.id}`) })),
 };
 
+// The M8 fountain (fountain.mjs): one round basin in the paved plaza nearest the spawn, clear of the safe-circle places,
+// paths and buildings. Its cells are blocked (water is not walkable) before anything else is placed, so props and nature avoid it.
+function placeFountain() {
+  const spots = [cellCentre(SPAWN, 'spawn'), cellCentre(SHOP, 'shop'), cellCentre(BANK_BOOTH, 'bank booth'), cellCentre(GRILL, 'grill')]
+    .map((c) => ({ x: c.x / 10, z: c.z / 10 }));
+  const cardPlazaDm = dm(CARD_PLAZA);
+  const edges = (p) => Array.from({ length: p.length / 2 }, (_, i) => {
+    const j = (i + 1) % (p.length / 2);
+    return [p[2 * i] / 10, p[2 * i + 1] / 10, p[2 * j] / 10, p[2 * j + 1] / 10];
+  });
+  const segD = ([x0, z0, x1, z1], x, z) => {
+    const dx = x1 - x0, dz = z1 - z0, len2 = dx * dx + dz * dz;
+    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - x0) * dx + (z - z0) * dz) / len2));
+    return Math.hypot(x0 + t * dx - x, z0 + t * dz - z);
+  };
+  const polyDist = (p, x, z) => (insideDm(x, z, p) ? 0 : Math.min(...edges(p).map((e) => segD(e, x, z))));
+  const pathSegs = paths.flatMap((w) => Array.from({ length: w.p.length / 2 - 1 }, (_, i) => ({
+    e: [w.p[2 * i] / 10, w.p[2 * i + 1] / 10, w.p[2 * i + 2] / 10, w.p[2 * i + 3] / 10], h: w.w / 20,
+  })));
+  const walls = buildings.flatMap((b) => edges(b.p));
+  const R = FOUNTAIN_R, pad = FOUNTAIN_PATH_CLEAR;
+  // Plazas by distance from the spawn (then id), skipping any too close to the safe-circle places.
+  const order = plazas
+    .map((q) => ({ q, d: polyDist(q.p, spots[0].x, spots[0].z) }))
+    .sort((a, b) => a.d - b.d || a.q.id - b.q.id);
+  for (const { q } of order) {
+    const e = edges(q.p);
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity, cx = 0, cz = 0;
+    for (const [x, z] of e) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); cx += x; cz += z; }
+    cx /= e.length; cz /= e.length;
+    const segs = pathSegs.filter((s) => Math.min(s.e[0], s.e[2]) - s.h < x1 + R + pad && Math.max(s.e[0], s.e[2]) + s.h > x0 - R - pad &&
+      Math.min(s.e[1], s.e[3]) - s.h < z1 + R + pad && Math.max(s.e[1], s.e[3]) + s.h > z0 - R - pad);
+    const near = walls.filter((w) => Math.min(w[0], w[2]) < x1 + R + pad && Math.max(w[0], w[2]) > x0 - R - pad &&
+      Math.min(w[1], w[3]) < z1 + R + pad && Math.max(w[1], w[3]) > z0 - R - pad);
+    let best = null;
+    const step = FOUNTAIN_STEP;
+    for (let z = Math.ceil(z0 / step) * step; z <= z1; z += step) {
+      for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) {
+        if (!insideDm(x, z, q.p) || e.some((s) => segD(s, x, z) < R + pad)) continue;
+        if (segs.some((s) => segD(s.e, x, z) - s.h < R + pad) || near.some((w) => segD(w, x, z) < R + pad)) continue;
+        if (blockedAt(x, z) || inBuilding(x, z)) continue;
+        if (spots.some((c) => Math.hypot(x - c.x, z - c.z) < R + FOUNTAIN_CLEAR) || polyDist(cardPlazaDm, x, z) < R + FOUNTAIN_CLEAR) continue;
+        const d = Math.hypot(x - cx, z - cz);
+        if (!best || d < best.d - 1e-9) best = { x, z, d };
+      }
+    }
+    if (best) {
+      // Snap to a cell centre so the blocked disk is symmetric on the grid.
+      const c = cellCentre(best, 'fountain');
+      const out = { version: 1, units: 'decimetres', plaza: q.id, x: c.x, z: c.z, r: Math.round(R * 10) };
+      fillDisk(c.x, c.z, out.r);
+      return out;
+    }
+  }
+  throw new Error('no plaza has room for the fountain');
+}
+/** Block every cell whose centre is within r (decimetres) of (x, z). */
+function fillDisk(x, z, r) {
+  for (let row = 0; row < height; row++) {
+    const cz = minZ + (row + 0.5) * cellDm;
+    if (Math.abs(cz - z) > r) continue;
+    for (let col = 0; col < width; col++) {
+      const cx = minX + (col + 0.5) * cellDm;
+      if (Math.hypot(cx - x, cz - z) > r) continue;
+      const idx = row * width + col;
+      bits[idx >> 3] |= 1 << (idx & 7);
+    }
+  }
+}
+
 // Props (props.mjs): visual only, kept clear of the M9 bank booth and grill (skills.mjs), so they never change collision.bin. Placed with one seeded generator in a fixed order.
 const blockedAt = (x, z) => {
   const c = Math.floor((x * 10 - minX) / cellDm);
@@ -285,6 +382,8 @@ function walkableShare(x0, z0, size) {
   return free / (size * size);
 }
 
+// The fountain's basin is blocked here, before the props, skill objects and nature are placed.
+const fountain = placeFountain();
 const spawnM = { x: areas.spawn.x / 10, z: areas.spawn.z / 10 };
 const shopM = { x: areas.shop.x / 10, z: areas.shop.z / 10 };
 const tablesM = cardTables.tables.map((t) => ({ x: t.x / 10, z: t.z / 10 }));
@@ -796,12 +895,104 @@ function placeNature() {
   };
 }
 
+// M10 housing (housing.json): per area the HOUSES_PER_AREA largest buildings wholly inside the outline, each with a door
+// on the walkable cell next to its footprint, plus a Campus Thrift stall and a workbench on open ground. Runs last, on the
+// final collision grid, so every point is on a cell that is walkable in collision.bin.
+function placeHousing() {
+  const walk = (c, r) => c >= 0 && r >= 0 && c < width && r < height && !((bits[(r * width + c) >> 3] >> ((r * width + c) & 7)) & 1);
+  const cellOf = (v, min) => Math.floor((v - min) / cellDm);
+  const centre = (c, r) => ({ x: minX + c * cellDm + cellDm / 2, z: minZ + r * cellDm + cellDm / 2 });
+  const polyArea = (p) => {
+    let a = 0;
+    for (let i = 0, n = p.length / 2; i < n; i++) { const j = (i + 1) % n; a += p[2 * i] * p[2 * j + 1] - p[2 * j] * p[2 * i + 1]; }
+    return Math.abs(a) / 2;
+  };
+  const edgeDm = (p, x, z) => {
+    let best = Infinity;
+    for (let i = 0, n = p.length / 2; i < n; i++) {
+      const j = (i + 1) % n, ax = p[2 * i], az = p[2 * i + 1], dx = p[2 * j] - ax, dz = p[2 * j + 1] - az;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+      best = Math.min(best, Math.hypot(x - (ax + t * dx), z - (az + t * dz)));
+    }
+    return best;
+  };
+  const openAround = (c, r, k) => { for (let a = -k; a <= k; a++) for (let b = -k; b <= k; b++) if (!walk(c + a, r + b)) return false; return true; };
+  const inDm = (x, z, p) => insideDm(x / 10, z / 10, p);
+  const nbrs = (c, r) => [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([a, b]) => walk(c + a, r + b)).length;
+  const areasOut = [];
+  const houses = [];
+  const doorCells = new Set();
+  HOUSING.areas.forEach((a, ai) => {
+    const o = flat(outlinePolys[ai], true);
+    const ob = (() => { const xs = o.filter((_, i) => i % 2 === 0), zs = o.filter((_, i) => i % 2 === 1); return [Math.min(...xs), Math.min(...zs), Math.max(...xs), Math.max(...zs)]; })();
+    const cands = buildings.filter((b) => b.p.every((_, i) => i % 2 || inDm(b.p[i], b.p[i + 1], o)))
+      .sort((p, q) => polyArea(q.p) - polyArea(p.p) || p.id - q.id);
+    const chosen = [];
+    for (const b of cands) {
+      if (chosen.length === HOUSES_PER_AREA) break;
+      // Door: walkable, inside the outline, within 1.5 m of the footprint, not outside any other building; the best
+      // connected cell nearest the wall, then north-west first.
+      const bx = b.p.filter((_, i) => i % 2 === 0), bz = b.p.filter((_, i) => i % 2 === 1);
+      const c0 = cellOf(Math.min(...bx) - 20, minX), c1 = cellOf(Math.max(...bx) + 20, minX);
+      const r0 = cellOf(Math.min(...bz) - 20, minZ), r1 = cellOf(Math.max(...bz) + 20, minZ);
+      let best = null;
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+        if (!walk(c, r) || doorCells.has(r * width + c)) continue;
+        const p = centre(c, r);
+        const d = edgeDm(b.p, p.x, p.z);
+        if (d > 15 || !inDm(p.x, p.z, o) || inDm(p.x, p.z, b.p)) continue;
+        const key = [Math.round(d), -nbrs(c, r), r, c];
+        if (!best || key.find((v, i) => v !== best.key[i]) < best.key[key.findIndex((v, i) => v !== best.key[i])]) best = { c, r, key };
+      }
+      if (!best) continue;
+      doorCells.add(best.r * width + best.c);
+      chosen.push(b);
+      houses.push({ id: `${a.id}-${chosen.length}`, area: a.id, osm: b.id, ...centre(best.c, best.r) });
+    }
+    if (chosen.length < HOUSES_PER_AREA) throw new Error(`${a.id}: only ${chosen.length} houses fit`);
+    // Thrift stall: the open cell (3 cells of walkable ground each way) inside the outline, nearest the middle of the
+    // houses' doors, at least 3 m from every door. The workbench is the next open cell 1.5 to 2.5 m from it.
+    const mine = houses.filter((h) => h.area === a.id);
+    const mx = mine.reduce((s, h) => s + h.x, 0) / mine.length, mz = mine.reduce((s, h) => s + h.z, 0) / mine.length;
+    const farFromDoors = (p) => mine.every((h) => Math.hypot(h.x - p.x, h.z - p.z) >= 30);
+    const open = [];
+    for (let r = cellOf(ob[1], minZ); r <= cellOf(ob[3], minZ); r++) for (let c = cellOf(ob[0], minX); c <= cellOf(ob[2], minX); c++) {
+      if (!walk(c, r)) continue;
+      const p = centre(c, r);
+      if (inDm(p.x, p.z, o) && openAround(c, r, 1)) open.push({ c, r, ...p });
+    }
+    const byMiddle = open.filter(farFromDoors).sort((p, q) => Math.hypot(p.x - mx, p.z - mz) - Math.hypot(q.x - mx, q.z - mz) || p.r - q.r || p.c - q.c);
+    const openSet = new Map(open.map((q) => [`${q.c},${q.r}`, q]));
+    const near = (s) => {
+      const reach = Math.ceil(WORKBENCH_DIST[1]) + 1;
+      const found = [];
+      for (let r = s.r - reach; r <= s.r + reach; r++) for (let c = s.c - reach; c <= s.c + reach; c++) {
+        const q = openSet.get(`${c},${r}`);
+        const d = q && Math.hypot(q.x - s.x, q.z - s.z);
+        if (q && d >= WORKBENCH_DIST[0] * 10 && d <= WORKBENCH_DIST[1] * 10 && farFromDoors(q)) found.push(q);
+      }
+      return found.sort((p, q) => p.r - q.r || p.c - q.c)[0];
+    };
+    let stall = null, bench = null;
+    for (const s of byMiddle) {
+      const w = openSet.get(`${s.c},${s.r}`) && near(s);
+      if (w) { stall = s; bench = w; break; }
+    }
+    if (!stall) throw new Error(`${a.id}: no room for the thrift stall and workbench`);
+    areasOut.push({ id: a.id, name: a.name, p: o, thrift: { x: stall.x, z: stall.z }, workbench: { x: bench.x, z: bench.z } });
+  });
+  return { version: 1, units: 'decimetres', areas: areasOut, houses };
+}
+const housing = placeHousing();
+
 mkdirSync(outDir, { recursive: true });
 writeFileSync(outDir + '/campus.json', JSON.stringify(campus) + '\n');
 writeFileSync(outDir + '/collision.bin', Buffer.concat([header, Buffer.from(bits)]));
 writeFileSync(outDir + '/areas.json', JSON.stringify(areas) + '\n');
 writeFileSync(outDir + '/cardtables.json', JSON.stringify(cardTables) + '\n');
+writeFileSync(outDir + '/fountain.json', JSON.stringify(fountain) + '\n');
 writeFileSync(outDir + '/props.json', JSON.stringify(props) + '\n');
 writeFileSync(outDir + '/skills.json', JSON.stringify(skills) + '\n');
+writeFileSync(outDir + '/housing.json', JSON.stringify(housing) + '\n');
 if (nature) writeFileSync(outDir + '/parknature.json', JSON.stringify(nature) + '\n');
-console.log(`buildings=${buildings.length} paths=${paths.length} plazas=${plazas.length} green=${green.length} grid=${width}x${height} props=${placed.length} skillTrees=${skills.trees.length} nature=${nature ? nature.items.length : 'off'}`);
+console.log(`buildings=${buildings.length} paths=${paths.length} plazas=${plazas.length} green=${green.length} grid=${width}x${height} fountain=${fountain.x / 10},${fountain.z / 10} props=${placed.length} skillTrees=${skills.trees.length} nature=${nature ? nature.items.length : 'off'}`);

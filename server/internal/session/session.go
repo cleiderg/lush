@@ -31,9 +31,12 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/cardroom"
 	"github.com/cleiderg/lush/server/internal/systems/chat"
 	"github.com/cleiderg/lush/server/internal/systems/combat"
+	"github.com/cleiderg/lush/server/internal/systems/cook"
 	"github.com/cleiderg/lush/server/internal/systems/emote"
+	"github.com/cleiderg/lush/server/internal/systems/furniture"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/grounditems"
+	"github.com/cleiderg/lush/server/internal/systems/housing"
 	"github.com/cleiderg/lush/server/internal/systems/pvp"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
 	"github.com/cleiderg/lush/server/internal/systems/trade"
@@ -136,6 +139,8 @@ type guest struct {
 	// The player's skill levels as of the last tick, for spotting level-ups;
 	// kept across connections while the player stays in the world.
 	levels [world.NumSkills]int
+	// The map id of the tree or fishing spot the player is gathering at.
+	gatherAt string
 	// What the client last got in EntityInfo, for entities in its view; an
 	// entity leaving view is forgotten, so it gets EntityInfo again on return.
 	known map[world.PlayerID]knownEnt
@@ -169,7 +174,7 @@ type op struct {
 
 // Server is the session layer. It implements world.System, chat.Sink,
 // shop.Sink, trade.Sink, trade.Committer, cardroom.Sink, cardroom.Committer, pvp.HitSink, pvp.DropSink,
-// combat.EventSink and transport.Handler (via ServeConn).
+// combat.EventSink, gather.Sink and transport.Handler (via ServeConn).
 type Server struct {
 	cfg   Config
 	w     *world.World
@@ -181,15 +186,28 @@ type Server struct {
 
 	catalog  []byte                 // encoded ItemCatalog, shared by every connection
 	npcCat   []byte                 // encoded NpcCatalog, shared by every connection
+	benchCat []byte                 // encoded WorkbenchCatalog, shared by every connection
 	cardCat  []byte                 // encoded CardTableCatalog, shared by every connection
 	newToken func() (string, error) // replaced by tests
 
 	mu     sync.Mutex
 	guests map[int64]*guest // by store id; session ids for known players
 	nextID uint32
-	idle   *list.List // offline guests, longest offline first
-	ops    []op
-	conns  map[transport.Conn]struct{}
+	myBids map[world.PlayerID]map[housing.HouseID]int // held bid of each player per house, as last told or loaded
+	// Gold that auction commits moved in the store for players out of the
+	// world when the commit started (see movedGold). goldSeq counts those
+	// commits; goldMoved is the last one for each player who had no guest.
+	// goldPending counts the auction writes in flight for each player who
+	// had no guest when it started.
+	goldSeq     uint64
+	goldMoved   map[int64]uint64
+	goldPending map[int64]int
+	goldMoves   []goldMove
+	auctions    store.Auctions           // nil if the player store keeps no auctions
+	keep        map[int64]world.PlayerID // owners of houses: their session ids are never reused
+	idle        *list.List               // offline guests, longest offline first
+	ops         []op
+	conns       map[transport.Conn]struct{}
 
 	saver *saver
 
@@ -197,29 +215,38 @@ type Server struct {
 	pots  map[cardroom.CommitID]*potRef // open pots by game; saver goroutine
 
 	// Tick-goroutine only.
-	trades   *trade.System       // set by SetTrades; nil without trading
-	cards    *cardroom.System    // set by SetCardRoom; nil without the card room
-	bank     *bank.System        // set by SetBank; nil without the bank
-	pvp      *pvp.Combat         // set by SetPvP; nil without PvP
-	pve      *combat.System      // set by SetPvE; nil without PvE
-	ground   *grounditems.System // set by SetGroundItems; where PvP drops spawn
-	tickHits []hit               // this tick's PvP and PvE swings, sent as CombatHit
-	levelUps []levelUp           // this tick's skill level-ups, sent as LevelUp
-	seen     []hit               // reused: the hits one player can see
-	live     map[world.PlayerID]*guest
-	gone     map[world.PlayerID]*guest // live players with no connection, waiting out the logout lock
-	nextSave time.Time
-	saves    []saveReq
-	econ     []econReq
-	grid     *interest.Grid
-	hits     []interest.Hit
-	ents     []snapEnt
-	npcsIn   map[world.PlayerID]uint64 // NPC ids in grid, with the last tick they were in the world
-	infoLeft int                       // EntityInfo frames the current client may still get this tick
-	healths  []healthEnt               // reused: this tick's EntityHealth entries for one client
-	near     []grounditems.Item        // reused: ground items near one client
-	grounds  []groundEnt               // reused: the ground items one client may see
-	bld      *flatbuffers.Builder
+	trades    *trade.System    // set by SetTrades; nil without trading
+	cards     *cardroom.System // set by SetCardRoom; nil without the card room
+	bank      *bank.System     // set by SetBank; nil without the bank
+	housing   *housing.System  // set by SetHousing; nil without housing
+	homes     store.Housing    // set by SetHousing
+	areaOf    map[housing.HouseID]uint8
+	lapseLog  map[housing.HouseID]bool // houses whose unwired lapse has been logged
+	gather    *skills                  // set by SetGather; nil without gathering
+	cook      *cook.System             // set by SetCook; nil without cooking
+	furn      *furniture.System        // set by SetFurniture; nil without furniture
+	rooms     *homeRooms               // set by SetHomeRooms; nil without home rooms
+	furnCraft bool                     // the furniture command being handled is a craft
+	pvp       *pvp.Combat              // set by SetPvP; nil without PvP
+	pve       *combat.System           // set by SetPvE; nil without PvE
+	ground    *grounditems.System      // set by SetGroundItems; where PvP drops spawn
+	tickHits  []hit                    // this tick's PvP and PvE swings, sent as CombatHit
+	levelUps  []levelUp                // this tick's skill level-ups, sent as LevelUp
+	seen      []hit                    // reused: the hits one player can see
+	live      map[world.PlayerID]*guest
+	gone      map[world.PlayerID]*guest // live players with no connection, waiting out the logout lock
+	nextSave  time.Time
+	saves     []saveReq
+	econ      []econReq
+	grid      *interest.Grid
+	hits      []interest.Hit
+	ents      []snapEnt
+	npcsIn    map[world.PlayerID]uint64 // NPC ids in grid, with the last tick they were in the world
+	infoLeft  int                       // EntityInfo frames the current client may still get this tick
+	healths   []healthEnt               // reused: this tick's EntityHealth entries for one client
+	near      []grounditems.Item        // reused: ground items near one client
+	grounds   []groundEnt               // reused: the ground items one client may see
+	bld       *flatbuffers.Builder
 }
 
 // New creates the Server. Register it on w after the movement, emote and chat systems.
@@ -258,8 +285,8 @@ func New(cfg Config, w *world.World, clock world.Clock, players store.Players, l
 	}
 	banks, _ := players.(store.Bank)
 	return &Server{saver: newSaver(players, log), banks: banks, cfg: cfg, w: w, log: log, clock: clock, store: players,
-		data: data, catalog: encodeItemCatalog(data), npcCat: encodeNpcCatalog(data), cardCat: encodeCardTableCatalog(data), newToken: newToken,
-		pots: map[cardroom.CommitID]*potRef{}, guests: map[int64]*guest{}, idle: list.New(), conns: map[transport.Conn]struct{}{},
+		data: data, catalog: encodeItemCatalog(data), npcCat: encodeNpcCatalog(data), cardCat: encodeCardTableCatalog(data), benchCat: encodeWorkbenchCatalog(data), newToken: newToken,
+		pots: map[cardroom.CommitID]*potRef{}, keep: map[int64]world.PlayerID{}, lapseLog: map[housing.HouseID]bool{}, guests: map[int64]*guest{}, idle: list.New(), conns: map[transport.Conn]struct{}{},
 		live: map[world.PlayerID]*guest{}, gone: map[world.PlayerID]*guest{}, grid: interest.NewGrid(), npcsIn: map[world.PlayerID]uint64{}, bld: flatbuffers.NewBuilder(1024)}
 }
 
@@ -349,7 +376,11 @@ func (s *Server) ServeConn(c transport.Conn) {
 			protocol.MessagePickUp, protocol.MessageCardTableSit, protocol.MessageCardTableLeave,
 			protocol.MessageCardTableReady, protocol.MessageShedPlay, protocol.MessageShedDraw,
 			protocol.MessageBankOpen, protocol.MessageBankClose, protocol.MessageBankDeposit,
-			protocol.MessageBankWithdraw, protocol.MessageBankDepositInventory, protocol.MessageBankDepositEquipment:
+			protocol.MessageBankWithdraw, protocol.MessageBankDepositInventory, protocol.MessageBankDepositEquipment,
+			protocol.MessageSkillAction, protocol.MessageWorkbenchCraft, protocol.MessageHouseClaim, protocol.MessageRentPay, protocol.MessageAuctionBid,
+			protocol.MessageHomeEnter, protocol.MessageHomeLeave, protocol.MessageHomeSetOpen, protocol.MessageHomePlace,
+			protocol.MessageHomeMove, protocol.MessageHomeRotate, protocol.MessageHomeRemove,
+			protocol.MessageHomeSetWallpaper, protocol.MessageHomeSetFloor:
 			if cmd := m.command(g.id); cmd != nil {
 				s.w.Enqueue(cmd)
 			}
@@ -376,6 +407,9 @@ func (s *Server) handshake(ctx context.Context, c transport.Conn) *guest {
 	}
 
 	// Store calls happen here, on the connection goroutine, outside s.mu.
+	s.mu.Lock()
+	seq := s.goldSeq
+	s.mu.Unlock()
 	sp, token, fresh, err := s.resolve(hctx, m.helloTok)
 	if err != nil {
 		s.log.Error("resolve guest", "err", err)
@@ -389,6 +423,26 @@ func (s *Server) handshake(ctx context.Context, c transport.Conn) *guest {
 	}
 
 	s.mu.Lock()
+	for s.guests[sp.ID] == nil && (s.goldPending[sp.ID] > 0 || s.goldMoved[sp.ID] > seq) {
+		// An auction is moving the player's gold in the store, or moved it
+		// after sp was read: read it again once it is done.
+		pending := s.goldPending[sp.ID] > 0
+		seq = s.goldSeq
+		s.mu.Unlock()
+		if pending {
+			select {
+			case <-hctx.Done():
+				s.log.Error("resolve guest: auction write in flight", "err", hctx.Err())
+				return nil
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+		if sp, _, _, err = s.resolve(hctx, token); err != nil {
+			s.log.Error("resolve guest", "err", err)
+			return nil
+		}
+		s.mu.Lock()
+	}
 	known := s.guests[sp.ID] != nil
 	g, err := s.guestLocked(sp, fresh)
 	if err != nil {
@@ -403,6 +457,7 @@ func (s *Server) handshake(ctx context.Context, c transport.Conn) *guest {
 	}
 	if !known {
 		g.bank = bk // a known guest keeps the bank it has
+		delete(s.goldMoved, sp.ID)
 	}
 	g.conns++
 	if g.idle != nil {
@@ -489,10 +544,12 @@ func (s *Server) guestLocked(sp store.Player, fresh bool) (*guest, error) {
 		return nil, fmt.Errorf("load player %d: %w", sp.ID, err)
 	}
 	var id world.PlayerID
-	if int(s.nextID) < s.cfg.MaxGuests {
+	if kept, ok := s.keep[sp.ID]; ok {
+		id = kept
+	} else if int(s.nextID) < s.cfg.MaxGuests {
 		s.nextID++
 		id = world.PlayerID(s.nextID)
-	} else if e := s.idle.Front(); e != nil {
+	} else if e := s.evictable(); e != nil {
 		old := s.idle.Remove(e).(*guest)
 		old.idle = nil
 		delete(s.guests, old.storeID)
@@ -512,6 +569,18 @@ func (s *Server) guestLocked(sp store.Player, fresh bool) (*guest, error) {
 	g := &guest{id: id, storeID: sp.ID, ver: sp.Version, pos: pos, xp: int(sp.XP), skills: skillsFromStore(sp.Skills), inv: inv}
 	s.guests[sp.ID] = g
 	return g, nil
+}
+
+// evictable returns the offline guest, longest offline first, whose session
+// id may be reused: house owners keep theirs, since a house names its owner by
+// session id. Caller holds s.mu.
+func (s *Server) evictable() *list.Element {
+	for e := s.idle.Front(); e != nil; e = e.Next() {
+		if _, owner := s.keep[e.Value.(*guest).storeID]; !owner {
+			return e
+		}
+	}
+	return nil
 }
 
 // skillsToStore converts the world's skill XP to the store's.
@@ -592,6 +661,21 @@ func (s *Server) Handle(cmd world.Command, p *world.Player) {
 			s.pve.Handle(combat.AttackCommand{Player: p.ID, NPC: a.NPC}, p)
 		}
 		return
+	case SkillActionCommand:
+		s.handleSkillAction(a, p)
+		return
+	case HomeCommand:
+		s.handleHome(a.homeCommand(s), p)
+		return
+	case CraftCommand:
+		s.handleFurniture(a.CraftCommand, true, p)
+		return
+	case ThriftBuyCommand:
+		s.handleFurniture(a.BuyCommand, false, p)
+		return
+	case ThriftSellCommand:
+		s.handleFurniture(a.SellCommand, false, p)
+		return
 	case DepositItemCommand:
 		if s.bank != nil {
 			slot := slices.IndexFunc(p.Inv.Slots, func(st world.Stack) bool { return !st.Empty() && st.Item == a.Item })
@@ -670,8 +754,14 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 		if p != nil && s.cards != nil && s.cards.Committing(id) {
 			continue // so must a card room stake, payout or refund
 		}
+		if p != nil && s.housing != nil && p.Inv.Locked() {
+			continue // and a house claim or rent payment's (it locks the inventory)
+		}
 		s.remove(g)
 	}
+
+	s.addClaimedHomes()
+	s.applyMovedGold()
 
 	s.econ = s.econ[:0]
 	for id, g := range s.live {
@@ -864,9 +954,9 @@ func (s *Server) npcRatio(n *world.NPC) uint8 {
 	return healthRatio(n.HP, t.HP)
 }
 
-// playerInfo is p's EntityInfo: combat level and worn equipment.
+// playerInfo is p's EntityInfo: combat level, worn equipment and total level.
 func (s *Server) playerInfo(p *world.Player) entityInfo {
-	return entityInfo{kind: protocol.EntityKindPlayer, level: p.CombatLevel(s.data.Rules), equip: p.Inv.Equipment}
+	return entityInfo{kind: protocol.EntityKindPlayer, level: p.CombatLevel(s.data.Rules), equip: p.Inv.Equipment, total: p.TotalLevel(s.data.Rules)}
 }
 
 // npcInfo is n's EntityInfo: NPC type and the type's combat level.
@@ -969,12 +1059,19 @@ func (s *Server) sendInitial(g *guest, p *world.Player) {
 	g.conn.Send(s.catalog)
 	g.conn.Send(s.npcCat)
 	g.conn.Send(s.cardCat)
+	if s.furn != nil {
+		g.conn.Send(s.benchCat) // only where there is a workbench to use
+	}
 	g.sentStats = statsOf(s.data.Rules, p)
 	g.conn.Send(encodePlayerStats(s.bld, g.sentStats))
 	g.sentInv = cloneInventory(p.Inv)
 	g.conn.Send(encodeInventoryState(s.bld, &p.Inv))
 	g.sentSkills = p.SkillXP
 	g.conn.Send(encodeSkillStats(s.bld, &p.SkillXP))
+	s.sendInitialSkills(g)
+	if s.housing != nil {
+		g.conn.Send(s.housingState(g, s.joinHouses(g)))
+	}
 }
 
 // sendChanged sends PlayerStats, InventoryState and SkillStats if they
@@ -1077,6 +1174,12 @@ func (s *Server) appendEconomy(dst []econReq, g *guest, p *world.Player) []econR
 		if ev.Reason == bank.ReasonDeposit || ev.Reason == bank.ReasonWithdraw {
 			continue // saved by the transfer's own transaction (CommitBank)
 		}
+		if ev.Reason == housing.ReasonClaim || ev.Reason == housing.ReasonRent {
+			continue // saved by the house's own transaction (CommitHousing)
+		}
+		if isAuction(ev.Reason) {
+			continue // saved by the auction's own transaction (CommitHousing)
+		}
 		if isCardRoom(ev.Reason) {
 			continue // saved by the card room's own transaction (CommitCardRoom)
 		}
@@ -1113,6 +1216,7 @@ func (s *Server) collectSaves() []saveReq {
 // world state from the calling goroutine. It returns an error if ctx ends
 // first or any save failed.
 func (s *Server) SaveAll(ctx context.Context) error {
+	s.applyMovedGold()
 	s.econ = s.econ[:0]
 	for id, g := range s.live {
 		if p := s.w.Player(id); p != nil {

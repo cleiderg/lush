@@ -1,7 +1,33 @@
 import type { BankSlotState } from '../net/codec';
+import skills from '../../../shared/map/skills.json';
 import { BankResultCode } from '../protocol';
+import { SHOP_DISTANCE_TILES, TILE_METRES, type Point } from './shop';
 
 export type { BankSlotState };
+
+/** The bank booth from shared/map/skills.json, in metres (the file is in decimetres). */
+export const BANK_BOOTH: Point = { x: skills.bank.x / 10, z: skills.bank.z / 10 };
+
+/**
+ * How close (in tiles) a player must be to the booth to open the bank (skills spec, Bank): the same
+ * distance as the shop stall.
+ */
+export const BANK_DISTANCE_TILES = SHOP_DISTANCE_TILES;
+
+/**
+ * Whether pos (metres) is within BANK_DISTANCE_TILES of the booth, measured in a straight line like the
+ * server's bank reach check (bank.InReach), so the prompt never offers a bank the server would refuse as too far.
+ */
+export function nearBank(pos: Point, booth: Point = BANK_BOOTH): boolean {
+  const reach = BANK_DISTANCE_TILES * TILE_METRES;
+  return Math.hypot(pos.x - booth.x, pos.z - booth.z) <= reach;
+}
+
+/** The slots whose item name (from nameOf) contains query, ignoring case and outer spaces; all of them for an empty query. */
+export function filterBankSlots(slots: readonly BankSlotState[], query: string, nameOf: (itemId: number) => string): BankSlotState[] {
+  const q = query.trim().toLowerCase();
+  return q ? slots.filter((s) => nameOf(s.itemId).toLowerCase().includes(q)) : [...slots];
+}
 
 /** The last BankResult; seq goes up by one per result so a repeated code is still a new result. */
 export interface BankResultState {

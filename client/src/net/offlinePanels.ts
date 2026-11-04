@@ -1,4 +1,4 @@
-import { EquipSlot, ItemKind, ShedColour, ShedSymbol, Skill } from '../protocol';
+import { EquipSlot, HouseState, ItemKind, PlacementKind, ShedColour, ShedSymbol, Skill, ToolSkill } from '../protocol';
 import type { ItemInfo, ServerMessage, ShedCardValue } from './codec';
 import { OFFLINE_PLAYER_ID, seededRandom, type OfflineOptions } from './offline';
 
@@ -11,13 +11,15 @@ import { OFFLINE_PLAYER_ID, seededRandom, type OfflineOptions } from './offline'
 
 /** The bots the panels use: the first offline bots' ids (makeBots numbers them from OFFLINE_PLAYER_ID + 1). */
 const BOT_IDS = [OFFLINE_PLAYER_ID + 1, OFFLINE_PLAYER_ID + 2, OFFLINE_PLAYER_ID + 3];
+/** The offline house the house panel shows: the player's own, in the rent warning. */
+export const OFFLINE_HOUSE_ID = 7;
 /** Card table 1 (shared/map/cardtables.json), where OFFLINE_PLACES.cardtable stands. */
 export const OFFLINE_TABLE_ID = 1;
 
 function item(id: number, name: string, kind: ItemKind, extra: Partial<ItemInfo> = {}): ItemInfo {
   return {
     id, name, kind, equipSlot: EquipSlot.None, levelToEquip: 1, accuracy: 0, strength: 0, defence: 0, attackSpeed: 0, heal: 0,
-    shopBuysFor: 1, shopSells: false, shopSellsFor: 0, ...extra,
+    shopBuysFor: 1, shopSells: false, shopSellsFor: 0, toolSkill: ToolSkill.None, toolLevel: 0, cookingLevel: 0, footprintW: 0, footprintD: 0, placement: 0, surfaceSlots: 0, thriftSellsFor: 0, thriftBuysFor: 0, ...extra,
   };
 }
 
@@ -34,7 +36,16 @@ const CATALOG: readonly ItemInfo[] = [
   item(12, 'Shiny trinket', ItemKind.Loot, { shopBuysFor: 25 }),
   item(13, 'Coyote pelt', ItemKind.Loot, { shopBuysFor: 12 }),
   item(14, 'Scrap metal', ItemKind.Loot, { shopBuysFor: 8 }),
+  item(40, 'Beanbag', ItemKind.Loot, { placement: PlacementKind.Floor }),
+  item(41, 'Study desk', ItemKind.Loot, { placement: PlacementKind.Floor }),
+  item(42, 'Lava lamp', ItemKind.Loot, { placement: PlacementKind.Surface }),
+  item(43, 'Poster', ItemKind.Loot, { placement: PlacementKind.Wall }),
+  item(44, 'Blue wallpaper', ItemKind.Loot, { placement: PlacementKind.Wallpaper }),
+  item(45, 'Wood flooring', ItemKind.Loot, { placement: PlacementKind.Flooring }),
 ];
+
+/** The catalog items before the home furnishings, which only the home-edit panel puts in the inventory. */
+const BASE_ITEMS = CATALOG.slice(0, 11);
 
 /** Inventory slots (PRD: 28). */
 const INVENTORY_SLOTS = 28;
@@ -71,7 +82,7 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
   const slots = Array.from({ length: INVENTORY_SLOTS }, () => ({ itemId: 0, quantity: 0 }));
   const filled = between(rand, 8, 14);
   for (let i = 0; i < filled; i++) {
-    const d = pick(CATALOG);
+    const d = pick(BASE_ITEMS);
     slots[i] = { itemId: d.id, quantity: d.kind === ItemKind.Loot || d.kind === ItemKind.Food ? between(rand, 1, 20) : 1 };
   }
   const maxHp = between(rand, 20, 40);
@@ -113,12 +124,76 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
     msgs.push({ type: 'chat', speakerId: i === CHAT_LINES - 2 ? playerId : pick(BOT_IDS), text: pick(CHAT) });
   }
 
+  if (opts.panel === 'bank') {
+    // Every catalog item banked, so the panel has a list to search; BankState opens the bank.
+    msgs.push({ type: 'bankState', slots: CATALOG.map((d) => ({ itemId: d.id, quantity: between(rand, 1, 400) })) });
+  }
+
+  if (opts.panel === 'house') {
+    // The player's own house, 6 days short of dropping below one month prepaid, and one empty house.
+    const paidUntil = Math.floor(Date.now() / 1000) + 36 * 24 * 3600;
+    msgs.push({
+      type: 'housingState', rentPerMonth: 200, claimMonths: 2, maxPrepaidMonths: 6,
+      houses: [
+        { id: OFFLINE_HOUSE_ID, areaId: 1, ownerName: 'You', mine: true, paidUntil, state: HouseState.Warning, open: true, topBid: 0, auctionEnd: 0, myBid: 0 },
+        { id: 8, areaId: 1, ownerName: '', mine: false, paidUntil: 0, state: HouseState.Empty, open: false, topBid: 0, auctionEnd: 0, myBid: 0 },
+      ],
+    });
+  }
+
+  if (opts.panel === 'house-auction') {
+    // A house in auction: a top bid, three days left and the player's own held bid.
+    const now = Math.floor(Date.now() / 1000);
+    msgs.push({
+      type: 'housingState', rentPerMonth: 200, claimMonths: 2, maxPrepaidMonths: 6,
+      houses: [{ id: OFFLINE_HOUSE_ID, areaId: 1, ownerName: '', mine: false, paidUntil: 0, state: HouseState.Auction, open: false, topBid: 450, auctionEnd: now + 3 * 24 * 3600, myBid: 300 }],
+    });
+  }
+
+  if (opts.panel === 'home') {
+    // Visiting someone else's furnished room: the world view shows it and the Leave button is up.
+    msgs.push(
+      {
+        type: 'housingState', rentPerMonth: 200, claimMonths: 2, maxPrepaidMonths: 6,
+        houses: [{ id: OFFLINE_HOUSE_ID, areaId: 1, ownerName: 'Sam', mine: false, paidUntil: 0, state: HouseState.Owned, open: true, topBid: 0, auctionEnd: 0, myBid: 0 }],
+      },
+      {
+        type: 'homeState', houseId: OFFLINE_HOUSE_ID, ownerName: 'Sam', wallpaperItemId: 0, floorItemId: 0,
+        items: [
+          { placedId: 1, itemId: 41, x: 2, y: 1, rotation: 0, layer: 0, parentPlacedId: 0, slot: 0, side: 0 },
+          { placedId: 2, itemId: 40, x: 4, y: 3, rotation: 1, layer: 0, parentPlacedId: 0, slot: 0, side: 0 },
+        ],
+      },
+    );
+  }
+
+  if (opts.panel === 'home-edit') {
+    // Inside the player's own home with furniture in the inventory and two pieces placed.
+    const paidUntil = Math.floor(Date.now() / 1000) + 90 * 24 * 3600;
+    const free = slots.filter((x) => !x.itemId);
+    [40, 41, 42, 43, 44, 45].forEach((id, i) => { free[i].itemId = id; free[i].quantity = 1; });
+    msgs.push(
+      {
+        type: 'housingState', rentPerMonth: 200, claimMonths: 2, maxPrepaidMonths: 6,
+        houses: [{ id: OFFLINE_HOUSE_ID, areaId: 1, ownerName: 'You', mine: true, paidUntil, state: HouseState.Owned, open: true, topBid: 0, auctionEnd: 0, myBid: 0 }],
+      },
+      { type: 'inventory', slots, equipment: { weapon: 1, head: 0, body: 4, shield: 0 } },
+      {
+        type: 'homeState', houseId: OFFLINE_HOUSE_ID, ownerName: 'You', wallpaperItemId: 0, floorItemId: 0,
+        items: [
+          { placedId: 1, itemId: 41, x: 2, y: 1, rotation: 0, layer: 0, parentPlacedId: 0, slot: 0, side: 0 },
+          { placedId: 2, itemId: 40, x: 4, y: 3, rotation: 1, layer: 0, parentPlacedId: 0, slot: 0, side: 0 },
+        ],
+      },
+    );
+  }
+
   if (opts.panel === 'trade') {
     const mine = slots.filter((s) => s.itemId).slice(0, 2).map((s) => ({ itemId: s.itemId, quantity: Math.min(s.quantity, 3) }));
     msgs.push({
       type: 'tradeState', partnerId: BOT_IDS[0], screen: 1,
       myItems: mine, myGold: between(rand, 0, 50),
-      partnerItems: [{ itemId: pick(CATALOG).id, quantity: 1 }, { itemId: 13, quantity: between(rand, 1, 5) }], partnerGold: between(rand, 5, 100),
+      partnerItems: [{ itemId: pick(BASE_ITEMS).id, quantity: 1 }, { itemId: 13, quantity: between(rand, 1, 5) }], partnerGold: between(rand, 5, 100),
       myAccepted: false, partnerAccepted: true,
     });
   }

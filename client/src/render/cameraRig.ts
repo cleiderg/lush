@@ -45,15 +45,16 @@ export class CameraRig {
     this.zoom = Math.min(CAMERA_ZOOM_MAX, Math.max(CAMERA_ZOOM_MIN, this.zoom * factor));
   }
 
-  follow(x: number, z: number): void {
-    const d = this.distance;
+  /** Look at (x, y, z) from `distance` metres away (default: the zoomed follow distance), at the current yaw and pitch. */
+  follow(x: number, z: number, distance = this.distance, y = TARGET_HEIGHT): void {
+    const d = distance;
     const horizontal = Math.cos(this.pitch) * d;
     this.camera.position.set(
       x - Math.sin(this.yaw) * horizontal,
-      TARGET_HEIGHT + Math.sin(this.pitch) * d,
+      y + Math.sin(this.pitch) * d,
       z - Math.cos(this.yaw) * horizontal,
     );
-    this.camera.lookAt(x, TARGET_HEIGHT, z);
+    this.camera.lookAt(x, y, z);
   }
 
   /**

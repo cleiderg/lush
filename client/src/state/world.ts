@@ -11,6 +11,9 @@ import { ItemState } from './items';
 import { type PendingInput, Prediction, RUN_SPEED, WALK_SPEED } from './prediction';
 import { SkillState } from './skills';
 import { bankResultText, levelUpText, skillResultText } from './skillMessages';
+import { HousingStore, homeResultText, auctionResultText, housingResultText, RENT_WARNING_LOGIN } from './housing';
+import { WorkbenchStore, craftResultText } from './workbench';
+import { GatheringState } from './gathering';
 import { TradeStore } from './trade';
 
 export interface PlayerView {
@@ -46,6 +49,11 @@ export class GameState {
   readonly gains = new GainTracker();
   /** Pending trade request, open trade window and last trade result; subscribe for changes. */
   readonly trade = new TradeStore();
+  /** Houses, the player's own house and the current home; subscribe for changes. */
+  readonly housing = new HousingStore();
+  readonly workbench = new WorkbenchStore();
+  /** True once a HousingState has arrived since the last Welcome (the first one is the login warning). */
+  private housingSeen = false;
   /** Open bank slots and the last bank result; subscribe for changes. */
   readonly bank = new BankStore();
   /** Card table seat and turn state, the local player's seat and the last result; subscribe for changes. */
@@ -54,6 +62,8 @@ export class GameState {
   readonly chat = new ChatStore();
   /** Skill levels and XP, felled trees, fishing spot positions, and LevelUp and SkillResult events to drain. */
   readonly skills = new SkillState();
+  /** The resource the local player is gathering from and the attempt progress. */
+  readonly gathering = new GatheringState();
   /** The server's clock (UTC ms), kept as an offset from the local one; drives the sun. */
   readonly clock = new SharedClock();
 
@@ -79,10 +89,13 @@ export class GameState {
       this.hits.clear();
       this.gains.reset();
       this.trade.clear();
+      this.housing.clear();
+      this.housingSeen = false;
       this.bank.clear();
       this.cardTables.clear();
       this.chat.clearOverheads();
       this.skills.reset();
+      this.gathering.clear();
     } else if (msg.type === 'restartCountdown') {
       this.restartSeconds = msg.seconds;
     } else if (msg.type === 'snapshot') {
@@ -100,6 +113,10 @@ export class GameState {
       this.items.setInventory(msg);
     } else if (msg.type === 'itemCatalog') {
       this.items.setCatalog(msg.items);
+    } else if (msg.type === 'workbenchCatalog') {
+      this.workbench.setRecipes(msg.recipes);
+    } else if (msg.type === 'craftResult') {
+      this.chat.system(craftResultText(msg.code));
     } else if (msg.type === 'entityInfo') {
       this.items.setEntityInfo(msg);
     } else if (msg.type === 'entityHealth') {
@@ -110,6 +127,22 @@ export class GameState {
       this.items.setShopResult(msg.code);
     } else if (msg.type === 'npcCatalog') {
       this.items.setNpcCatalog(msg.npcs);
+    } else if (msg.type === 'housingState') {
+      const first = !this.housingSeen;
+      this.housingSeen = true;
+      this.housing.setHouses(msg.houses, msg);
+      if (first && this.housing.inWarning()) this.chat.system(RENT_WARNING_LOGIN);
+    } else if (msg.type === 'homeState') {
+      this.housing.setHome(msg);
+    } else if (msg.type === 'homeResult') {
+      this.housing.applyHomeResult(msg.code);
+      const text = homeResultText(msg.code);
+      if (text) this.chat.system(text);
+    } else if (msg.type === 'housingResult') {
+      const text = housingResultText(msg.code);
+      if (text) this.chat.system(text);
+    } else if (msg.type === 'auctionResult') {
+      this.chat.system(auctionResultText(msg.code));
     } else if (msg.type === 'tradeRequestNotice') {
       this.trade.setRequest(msg.fromId);
     } else if (msg.type === 'tradeState') {
@@ -136,6 +169,8 @@ export class GameState {
       this.hits.push(msg.tick, msg.hits);
     } else if (msg.type === 'skillStats') {
       this.skills.setStats(msg.skills);
+    } else if (msg.type === 'skillCatalog') {
+      this.skills.setCatalog(msg.trees, msg.fishingSpots);
     } else if (msg.type === 'resourceState') {
       this.skills.setResources(msg.felledTrees, msg.fishingSpots);
     } else if (msg.type === 'levelUp') {
@@ -143,6 +178,7 @@ export class GameState {
       if (msg.entityId === this.playerId) this.chat.system(levelUpText(msg));
     } else if (msg.type === 'skillResult') {
       this.skills.results.push({ skill: msg.skill, code: msg.code, itemId: msg.itemId, level: msg.level });
+      this.gathering.onResult(msg.code, now, (id) => this.skills.fishingSpotCandidate(id));
       this.chat.system(skillResultText(msg, (id) => this.items.item(id)?.name));
     } else if (msg.type === 'chat') {
       this.chat.push(msg.speakerId, msg.text, now);
@@ -151,6 +187,7 @@ export class GameState {
 
   /** Predicts one local input at the walk or run speed; the caller sends it with the matching Run flag. */
   applyMove(moveX: number, moveZ: number, dt: number, running: boolean): PendingInput {
+    if (moveX !== 0 || moveZ !== 0) this.gathering.clear();
     return this.prediction.applyInput(moveX, moveZ, dt, running ? this.runSpeed : this.walkSpeed);
   }
 

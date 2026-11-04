@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 15
+  Current = 18
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -73,6 +73,18 @@ enum EquipSlot : ubyte {
   Head = 2,
   Body = 3,
   Shield = 4
+}
+
+// ItemDef.placement values: where a furniture item can be put in a home.
+enum PlacementKind : ubyte {
+  None = 0,           // not furniture
+  Floor = 1,
+  Rug = 2,
+  Surface = 3,        // sits on a surface piece
+  FloorOrSurface = 4,
+  Wall = 5,
+  Wallpaper = 6,
+  Flooring = 7
 }
 
 // One inventory slot. An empty slot is item_id EmptyItem.Id, quantity 0.
@@ -229,6 +241,12 @@ table ItemDef {
   tool_skill: ToolSkill;   // the skill this item is a tool for; None if not a tool
   tool_level: ubyte;       // skill level needed to use the tool; 0 if not a tool
   cooking_level: ubyte;    // Cooking level to cook it; 0 unless it is a raw fish
+  footprint_w: ubyte;      // furniture width in tiles; 0 when not furniture
+  footprint_d: ubyte;      // furniture depth in tiles; 0 when not furniture
+  placement: PlacementKind; // where it can go in a home; None if not furniture
+  surface_slots: ubyte;    // small items a surface piece holds; 0 if none
+  thrift_sells_for: uint32; // gold the Campus Thrift stall charges; 0 when it doesn't sell the item
+  thrift_buys_for: uint32;  // gold the Campus Thrift stall pays; 0 when it doesn't buy the item
 }
 
 // Server -> client: every item definition, so the client doesn't hard-code
@@ -285,16 +303,24 @@ table PickUp {
   ground_item_id: ushort; // GroundItem.id
 }
 
+// Which shop a ShopBuy or ShopSell talks to.
+enum ShopKind : ubyte {
+  Market = 0,   // the Campus Market; the default, so older messages keep their meaning
+  Thrift = 1    // the Campus Thrift stall
+}
+
 // Client -> server: buy from the NPC shop.
 table ShopBuy {
   item_id: ushort;   // ItemDef.id
   quantity: uint32;
+  shop: ShopKind;    // Market when absent
 }
 
 // Client -> server: sell from an inventory slot to the NPC shop.
 table ShopSell {
   slot: ubyte;       // inventory slot index, 0-based
   quantity: uint32;
+  shop: ShopKind;    // Market when absent
 }
 
 // ShopResult.code values.
@@ -730,6 +756,245 @@ table BankResult {
   code: BankResultCode;
 }
 
+// HouseInfo.state values.
+enum HouseState : ubyte {
+  Empty = 0,    // unowned, can be claimed
+  Owned = 1,
+  Warning = 2,  // owner is under 7 days from falling below one month prepaid
+  Auction = 3
+}
+
+// One house in HousingState.
+table HouseInfo {
+  id: ushort;
+  area_id: ubyte;
+  owner_name: string;   // empty when unowned
+  mine: bool;           // the receiving player owns this house
+  paid_until: int64;    // Unix seconds; 0 when unowned
+  state: HouseState;
+  open: bool;           // true: anyone may visit; false: locked
+  top_bid: uint32;      // highest bid while state is Auction; 0 otherwise or when no bids
+  auction_end: int64;   // Unix seconds the auction closes; 0 when not in auction
+  my_bid: uint32;       // the receiving player's own held bid on this house; 0 if none
+}
+
+// Server -> client: every house. Sent on login and whenever one changes.
+table HousingState {
+  houses: [HouseInfo];
+  rent_per_month: uint32;     // gold per month of rent
+  claim_months: ubyte;        // months of rent paid up front to claim
+  max_prepaid_months: ubyte;  // most months that can be prepaid
+}
+
+// Client -> server: claim an empty house (pays two months' rent up front).
+// The server replies with HousingResult.
+table HouseClaim {
+  house_id: ushort;
+}
+
+// Client -> server: prepay months of rent on the player's own house.
+// The server replies with HousingResult.
+table RentPay {
+  house_id: ushort;
+  months: ubyte;
+}
+
+// HousingResult.code values.
+enum HousingResultCode : ubyte {
+  Ok = 0,
+  AlreadyOwned = 1,   // the house belongs to someone
+  OwnsAnother = 2,    // the player already owns a house
+  NotEnoughGold = 3,
+  TooFar = 4,
+  TooManyMonths = 5,  // would pass 6 months prepaid
+  NotOwner = 6,
+  SaveFailed = 7      // couldn't be saved and nothing changed
+}
+
+// Server -> client: the outcome of a HouseClaim or RentPay.
+table HousingResult {
+  code: HousingResultCode;
+}
+
+// One placed item inside HomeState.
+table PlacedItem {
+  placed_id: uint32;
+  item_id: ushort;       // ItemDef.id
+  x: ubyte;
+  y: ubyte;
+  rotation: ubyte;       // 0..3, in quarter turns
+  layer: ubyte;          // room.go Layer bit values: 1 floor, 2 rug, 4 surface, 8 wall
+  parent_placed_id: uint32; // 0 unless stacked on a surface piece
+  slot: ubyte;           // surface slot index on the parent (surface items)
+  side: ubyte;           // wall items: 0 North, 1 East, 2 South, 3 West; x is the position along the wall
+}
+
+// Server -> client: one home's room.
+table HomeState {
+  house_id: ushort;
+  owner_name: string;
+  wallpaper_item_id: ushort;  // EmptyItem.Id when none
+  floor_item_id: ushort;      // EmptyItem.Id when none
+  items: [PlacedItem];
+}
+
+// Wall side for wall items (room.go Side). For a wall item, x is the position
+// along the wall: west to east on North and South, north to south on East and
+// West, and y is unused.
+enum WallSide : ubyte {
+  North = 0,
+  East = 1,
+  South = 2,
+  West = 3
+}
+
+// Client -> server: enter a home. The server replies with HomeState, or
+// HomeResult on refusal.
+table HomeEnter {
+  house_id: ushort;
+}
+
+// Client -> server: leave the home the player is in.
+table HomeLeave {}
+
+// Client -> server: place an inventory item in the room. rotation is in
+// quarter turns. parent_placed_id and slot are for surface items; side (a
+// WallSide) is for wall items, with x the position along the wall.
+// The server replies with HomeResult.
+table HomePlace {
+  inventory_slot: ubyte;
+  x: ubyte;
+  y: ubyte;
+  rotation: ubyte;
+  parent_placed_id: uint32;
+  slot: ubyte;
+  side: ubyte;
+}
+
+// Client -> server: move a placed item (same placement fields as HomePlace).
+table HomeMove {
+  placed_id: uint32;
+  x: ubyte;
+  y: ubyte;
+  rotation: ubyte;
+  parent_placed_id: uint32;
+  slot: ubyte;
+  side: ubyte;
+}
+
+// Client -> server: rotate a placed item in place, in quarter turns.
+table HomeRotate {
+  placed_id: uint32;
+  rotation: ubyte;
+}
+
+// Client -> server: pick a placed item back up into the inventory.
+table HomeRemove {
+  placed_id: uint32;
+}
+
+// Client -> server: apply a wallpaper item from the inventory.
+table HomeSetWallpaper {
+  inventory_slot: ubyte;
+}
+
+// Client -> server: apply a flooring item from the inventory.
+table HomeSetFloor {
+  inventory_slot: ubyte;
+}
+
+// Client -> server: set whether visitors may enter (owner only).
+table HomeSetOpen {
+  open: bool;
+}
+
+// Outcome of a home operation. The first block mirrors room.go's Result.
+enum HomeResultCode : ubyte {
+  Ok = 0,
+  OutOfBounds,    // the placement is outside the room grid
+  Overlap,        // it overlaps another item on the same layer
+  BadRotation,    // the rotation is not a quarter turn in range
+  BadLayer,       // the item can't go where the placement asks
+  NotSurfaceItem, // the item can't sit on a surface
+  NoSurface,      // the parent is missing or has no surface slots
+  SurfaceFull,    // no free surface slot, or the requested slot is taken
+  HasItems,       // the surface item still holds items; remove them first
+  NotFound,       // no such placed item
+  NotOwner,       // only the owner may do this
+  Locked,         // the home is locked to visitors
+  Full,           // the home already has the maximum number of players
+  TooFar,         // the player is not close enough to the house door
+  NotInInventory, // the inventory slot is empty or holds the wrong item
+  InventoryFull,  // no room in the inventory for the removed item
+  NotInHome,      // the player is not inside a home
+  RateLimited,    // too many edits too quickly
+  SaveFailed      // the change could not be saved; nothing changed
+}
+
+// Server -> client: result of a home operation.
+table HomeResult {
+  code: HomeResultCode;
+}
+
+// Client -> server: bid on a house in auction. The server replies with
+// AuctionResult.
+table AuctionBid {
+  house_id: ushort;
+  amount: uint32;   // gold
+}
+
+// AuctionResult.code values.
+enum AuctionResultCode : ubyte {
+  Ok = 0,             // the bid is now the top bid and its gold is held
+  NotAuction = 1,     // the house isn't in auction
+  TooFar = 2,         // the player isn't close enough to the house
+  PreviousOwner = 3,  // the previous owner can't bid on their own lapsed house
+  BidTooLow = 4,      // not above the top bid or the minimum
+  NotEnoughGold = 5,  // the player doesn't have the gold to hold the bid
+  OwnsAnother = 6,    // the player already owns a house
+  SaveFailed = 7      // couldn't be saved and nothing changed
+}
+
+// Server -> client: the outcome of an AuctionBid.
+table AuctionResult {
+  code: AuctionResultCode;
+}
+
+// One workbench recipe.
+table WorkbenchRecipe {
+  output_item_id: ushort;       // ItemDef.id
+  input_item_ids: [ushort];     // ItemDef.id, parallel to input_quantities
+  input_quantities: [uint32];
+  gold: uint32;                 // gold the craft costs
+}
+
+// Server -> client: every workbench recipe. Sent on login.
+table WorkbenchCatalog {
+  recipes: [WorkbenchRecipe];
+}
+
+// Client -> server: craft one of an item at the workbench. The server
+// replies with CraftResult.
+table WorkbenchCraft {
+  output_item_id: ushort;   // WorkbenchRecipe.output_item_id
+}
+
+// CraftResult.code values.
+enum CraftResultCode : ubyte {
+  Ok = 0,
+  TooFar = 1,         // the player isn't close enough to a workbench
+  UnknownRecipe = 2,
+  MissingInputs = 3,
+  NotEnoughGold = 4,
+  InventoryFull = 5,
+  SaveFailed = 6      // couldn't be saved and nothing changed
+}
+
+// Server -> client: the outcome of a WorkbenchCraft.
+table CraftResult {
+  code: CraftResultCode;
+}
+
 union Message {
   Hello,
   Welcome,
@@ -788,7 +1053,27 @@ union Message {
   BankDepositInventory,
   BankDepositEquipment,
   BankResult,
-  SkillCatalog
+  SkillCatalog,
+  HousingState,
+  HouseClaim,
+  RentPay,
+  HousingResult,
+  HomeState,
+  HomeEnter,
+  HomeLeave,
+  HomePlace,
+  HomeMove,
+  HomeRotate,
+  HomeRemove,
+  HomeSetWallpaper,
+  HomeSetFloor,
+  HomeSetOpen,
+  HomeResult,
+  AuctionBid,
+  AuctionResult,
+  WorkbenchCatalog,
+  WorkbenchCraft,
+  CraftResult
 }
 
 table Envelope {

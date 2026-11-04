@@ -28,3 +28,14 @@ The JSON summary has `connected_at_end`, `failed_to_connect`,
 own position from each Snapshot. `waves_sent`, `item_actions_sent` (unequips
 and equips) and `inventory_states_received` count the whole run, summed over
 all bots.
+
+## Gatherers
+
+`-gatherers` (default `0.2`) is the share of bots that gather. Such a bot walks
+to the shop stall, buys a bronze hatchet (even ids) or a small net (odd ids),
+walks to the nearest standing tree or active net spot, and sends `SkillAction`
+once within 1 tile. Positions come from `shared/map/skills.json` and
+`shared/map/areas.json`, read at runtime (`-skills-json`, `-areas-json`; the
+defaults work from the repo root). Tree ids are positions in the file; spot ids
+and candidates come from `ResourceState`. The summary adds `skill_actions_sent`,
+`skill_results_received` and `skill_results_by_code`.

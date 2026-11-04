@@ -12,6 +12,7 @@ import {
   makePartGeometry,
   makePartMaterial,
   poseRoll,
+  skillPoseAngle,
   smoothSpeed,
   swingAngle,
 } from './character';
@@ -117,7 +118,9 @@ export class RemotePlayers {
       for (let k = 0; k < PARTS.length; k++) {
         const part = PARTS[k];
         const roll = poseRoll(part, p.animation ?? 0);
+        const skill = moving ? undefined : skillPoseAngle(part, p.animation ?? 0, time);
         if (pose && pose.attack !== 0 && part.name === ATTACK_ARM) this.qs.setFromAxisAngle(this.axisX, pose.attack);
+        else if (skill !== undefined) this.qs.setFromAxisAngle(this.axisX, skill);
         else if (roll !== 0) this.qs.setFromAxisAngle(this.axisZ, roll);
         else this.qs.setFromAxisAngle(this.axisX, swingAngle(t.phase, part, running));
         // world = root(pos, yaw, flinch tilt) * pivot translate * swing rotation * breathing scale
