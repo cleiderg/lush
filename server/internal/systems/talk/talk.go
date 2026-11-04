@@ -586,7 +586,9 @@ func (s *System) finish(w *world.World, r resolution) {
 	inv := c.inv
 	inv.SetLocked(false)
 	p.Inv = inv
-	if st, err := s.eng.Decode(c.post); err == nil {
+	// Only the completed quest's record comes from the saved state, so
+	// progress other systems made meanwhile (kills, items) is kept.
+	if st, err := s.eng.Decode(withRecord(s.State(p.ID).Encode(), c.req.Quest, c.post)); err == nil {
 		s.SetState(p.ID, st)
 	}
 	if len(c.req.HandIn) > 0 {

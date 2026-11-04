@@ -446,6 +446,12 @@ func TestTalkWhilePendingSendsNoSecondRequest(t *testing.T) {
 	if len(f.cm.reqs) != 1 {
 		t.Fatalf("requests = %d, want 1", len(f.cm.reqs))
 	}
+	// The pending commit stops the talk, not the inventory lock.
+	for _, r := range f.sink.results {
+		if r == InventoryFull {
+			t.Fatalf("results = %v", f.sink.results)
+		}
+	}
 	f.sys.Resolve(f.cm.reqs[0].ID, true)
 	f.sys.Resolve(f.cm.reqs[0].ID, true) // repeated id ignored
 	f.w.Tick()
@@ -515,5 +521,34 @@ func BenchmarkTick(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		w.Tick()
+	}
+}
+
+// Progress made in another quest while a completion is being saved (a kill
+// counted on the shared state) survives Resolve.
+func TestResolveKeepsOtherQuestProgress(t *testing.T) {
+	f := setup(t)
+	f.p.AddXP(f.d.Rules, 1_000_000)
+	ct, _ := f.d.QuestByKey("coyote_trouble")
+	st := f.sys.State(f.p.ID)
+	if _, err := f.eng.Start(st, ct.ID, env{f.p, f.d}); err != nil {
+		t.Fatal(err)
+	}
+	ranger, _ := f.d.NPCByKey("park_ranger")
+	f.eng.Talk(st, ranger.ID, env{f.p, f.d})
+	f.finishOverdue()
+	if len(f.cm.reqs) != 1 {
+		t.Fatalf("requests = %d", len(f.cm.reqs))
+	}
+	coyote, _ := f.d.NPCByKey("coyote")
+	f.eng.Kill(f.sys.State(f.p.ID), coyote.ID, env{f.p, f.d})
+	f.sys.Resolve(f.cm.reqs[0].ID, true)
+	f.w.Tick()
+	q, _ := f.d.QuestByKey("overdue")
+	if got := f.sys.State(f.p.ID).Get(q.ID); got.Status != quest.Complete {
+		t.Fatalf("overdue %+v", got)
+	}
+	if got := f.sys.State(f.p.ID).Get(ct.ID); got.Status != quest.InProgress || got.Step != 1 || got.Count != 1 {
+		t.Fatalf("coyote trouble %+v, want step 1 count 1", got)
 	}
 }
