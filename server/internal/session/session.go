@@ -38,7 +38,10 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/grounditems"
 	"github.com/cleiderg/lush/server/internal/systems/housing"
 	"github.com/cleiderg/lush/server/internal/systems/pvp"
+	"github.com/cleiderg/lush/server/internal/systems/quest"
+	"github.com/cleiderg/lush/server/internal/systems/questevents"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
+	"github.com/cleiderg/lush/server/internal/systems/talk"
 	"github.com/cleiderg/lush/server/internal/systems/trade"
 	"github.com/cleiderg/lush/server/internal/transport"
 	"github.com/cleiderg/lush/server/internal/world"
@@ -124,9 +127,10 @@ type guest struct {
 	xp      int                  // combat XP, restored on resume
 	skills  [world.NumSkills]int // skill XP in tenths, restored on resume
 	inv     world.Inventory
-	bank    world.Bank    // the player's bank, as loaded or as of the last removal from the world
-	conns   int           // connections that completed the handshake and have not ended
-	idle    *list.Element // in Server.idle while conns == 0 and out of the world
+	quests  []quest.Record // the player's quest state, as loaded or as of the last removal from the world
+	bank    world.Bank     // the player's bank, as loaded or as of the last removal from the world
+	conns   int            // connections that completed the handshake and have not ended
+	idle    *list.Element  // in Server.idle while conns == 0 and out of the world
 
 	// Tick-goroutine only.
 	conn    transport.Conn
@@ -184,11 +188,13 @@ type Server struct {
 	banks store.Bank // the bank store; nil if the player store keeps no banks
 	data  *gamedata.Data
 
-	catalog  []byte                 // encoded ItemCatalog, shared by every connection
-	npcCat   []byte                 // encoded NpcCatalog, shared by every connection
-	benchCat []byte                 // encoded WorkbenchCatalog, shared by every connection
-	cardCat  []byte                 // encoded CardTableCatalog, shared by every connection
-	newToken func() (string, error) // replaced by tests
+	catalog    []byte                 // encoded ItemCatalog, shared by every connection
+	questCat   []byte                 // encoded QuestCatalog, set by SetQuests
+	questStore store.Quests           // the quest store; nil if the player store keeps no quests
+	npcCat     []byte                 // encoded NpcCatalog, shared by every connection
+	benchCat   []byte                 // encoded WorkbenchCatalog, shared by every connection
+	cardCat    []byte                 // encoded CardTableCatalog, shared by every connection
+	newToken   func() (string, error) // replaced by tests
 
 	mu     sync.Mutex
 	guests map[int64]*guest // by store id; session ids for known players
@@ -224,6 +230,9 @@ type Server struct {
 	lapseLog  map[housing.HouseID]bool // houses whose unwired lapse has been logged
 	gather    *skills                  // set by SetGather; nil without gathering
 	cook      *cook.System             // set by SetCook; nil without cooking
+	quests    *questevents.System      // set by SetQuests; nil without quests
+	talk      *talk.System             // set by SetQuests
+	questEng  *quest.Engine            // set by SetQuests
 	furn      *furniture.System        // set by SetFurniture; nil without furniture
 	rooms     *homeRooms               // set by SetHomeRooms; nil without home rooms
 	furnCraft bool                     // the furniture command being handled is a craft
@@ -284,7 +293,8 @@ func New(cfg Config, w *world.World, clock world.Clock, players store.Players, l
 		data = d
 	}
 	banks, _ := players.(store.Bank)
-	return &Server{saver: newSaver(players, log), banks: banks, cfg: cfg, w: w, log: log, clock: clock, store: players,
+	questStore, _ := players.(store.Quests)
+	return &Server{saver: newSaver(players, log), banks: banks, questStore: questStore, cfg: cfg, w: w, log: log, clock: clock, store: players,
 		data: data, catalog: encodeItemCatalog(data), npcCat: encodeNpcCatalog(data), cardCat: encodeCardTableCatalog(data), benchCat: encodeWorkbenchCatalog(data), newToken: newToken,
 		pots: map[cardroom.CommitID]*potRef{}, keep: map[int64]world.PlayerID{}, lapseLog: map[housing.HouseID]bool{}, guests: map[int64]*guest{}, idle: list.New(), conns: map[transport.Conn]struct{}{},
 		live: map[world.PlayerID]*guest{}, gone: map[world.PlayerID]*guest{}, grid: interest.NewGrid(), npcsIn: map[world.PlayerID]uint64{}, bld: flatbuffers.NewBuilder(1024)}
@@ -380,7 +390,8 @@ func (s *Server) ServeConn(c transport.Conn) {
 			protocol.MessageSkillAction, protocol.MessageWorkbenchCraft, protocol.MessageHouseClaim, protocol.MessageRentPay, protocol.MessageAuctionBid,
 			protocol.MessageHomeEnter, protocol.MessageHomeLeave, protocol.MessageHomeSetOpen, protocol.MessageHomePlace,
 			protocol.MessageHomeMove, protocol.MessageHomeRotate, protocol.MessageHomeRemove,
-			protocol.MessageHomeSetWallpaper, protocol.MessageHomeSetFloor:
+			protocol.MessageHomeSetWallpaper, protocol.MessageHomeSetFloor,
+			protocol.MessageTalk, protocol.MessageDialogueReply:
 			if cmd := m.command(g.id); cmd != nil {
 				s.w.Enqueue(cmd)
 			}
@@ -422,6 +433,12 @@ func (s *Server) handshake(ctx context.Context, c transport.Conn) *guest {
 		return nil
 	}
 
+	qs, err := s.loadQuests(hctx, sp.ID)
+	if err != nil {
+		s.log.Error("load quests", "err", err)
+		return nil
+	}
+
 	s.mu.Lock()
 	for s.guests[sp.ID] == nil && (s.goldPending[sp.ID] > 0 || s.goldMoved[sp.ID] > seq) {
 		// An auction is moving the player's gold in the store, or moved it
@@ -457,6 +474,7 @@ func (s *Server) handshake(ctx context.Context, c transport.Conn) *guest {
 	}
 	if !known {
 		g.bank = bk // a known guest keeps the bank it has
+		g.quests = qs
 		delete(s.goldMoved, sp.ID)
 	}
 	g.conns++
@@ -736,6 +754,8 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 			s.leave(o.g, o.conn)
 		}
 	}
+
+	s.flushQuests()
 
 	now := s.clock.Now()
 	lock := s.data.Rules.LogoutCombatLock()
@@ -1045,6 +1065,14 @@ func (s *Server) join(g *guest, c transport.Conn, token string) {
 		return
 	}
 	s.live[g.id] = g
+	if s.quests != nil {
+		s.mu.Lock()
+		recs := g.quests
+		s.mu.Unlock()
+		if err := s.quests.Load(p, recs); err != nil {
+			s.log.Error("load quests", "player", g.id, "err", err)
+		}
+	}
 	for sk := range world.NumSkills {
 		g.levels[sk] = p.SkillLevel(sk) // the loaded levels are not level-ups
 	}
@@ -1059,6 +1087,10 @@ func (s *Server) sendInitial(g *guest, p *world.Player) {
 	g.conn.Send(s.catalog)
 	g.conn.Send(s.npcCat)
 	g.conn.Send(s.cardCat)
+	if s.quests != nil {
+		g.conn.Send(s.questCat)
+		s.sendQuestLog(g, s.quests.Records(g.id))
+	}
 	if s.furn != nil {
 		g.conn.Send(s.benchCat) // only where there is a workbench to use
 	}
@@ -1111,8 +1143,12 @@ func (s *Server) leave(g *guest, c transport.Conn) {
 
 // remove takes a disconnected player out of the world and saves it.
 func (s *Server) remove(g *guest) {
+	s.flushQuests() // the player's last quest changes, while they are still live
 	s.mu.Lock()
 	if p := s.w.Player(g.id); p != nil {
+		if s.quests != nil {
+			g.quests = s.quests.Records(g.id)
+		}
 		g.pos, g.xp, g.skills, g.inv, g.bank = p.Pos, p.XP, p.SkillXP, cloneInventory(p.Inv), p.Bank.Clone()
 	}
 	req := saveReq{storeID: g.storeID, x: g.pos.X, z: g.pos.Y, xp: int64(g.xp), skills: skillsToStore(g.skills), ver: g.ver}
@@ -1125,6 +1161,10 @@ func (s *Server) remove(g *guest) {
 		s.saver.submitEconomy(s.appendEconomy(nil, g, p)...)
 	}
 	s.saver.submit([]saveReq{req})
+	if s.quests != nil {
+		s.quests.Forget(g.id)
+		s.talk.Forget(g.id)
+	}
 	s.w.RemovePlayer(g.id)
 	s.grid.Remove(g.id)
 	delete(s.live, g.id)
