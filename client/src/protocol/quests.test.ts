@@ -39,10 +39,12 @@ describe('quest protocol', () => {
     ]);
     const steps = QuestDef.createStepsVector(b, [b.createString('Find the book.'), b.createString('Return it.')]);
     const rw = rewards(b);
+    const qn = b.createString('Overdue');
+    const qd = b.createString('Return the book.');
     QuestDef.startQuestDef(b);
     QuestDef.addId(b, 1);
-    QuestDef.addName(b, b.createString('Overdue'));
-    QuestDef.addDescription(b, b.createString('Return the book.'));
+    QuestDef.addName(b, qn);
+    QuestDef.addDescription(b, qd);
     QuestDef.addRequirements(b, reqs);
     QuestDef.addSteps(b, steps);
     QuestDef.addRewards(b, rw);
@@ -95,10 +97,12 @@ describe('quest protocol', () => {
   it('round-trips QuestCompleted and QuestResult', () => {
     let b = new flatbuffers.Builder(256);
     const rw = rewards(b);
+    const pn = b.createString('Cleider');
+    const qn = b.createString('Overdue');
     QuestCompleted.startQuestCompleted(b);
-    QuestCompleted.addPlayerName(b, b.createString('Cleider'));
+    QuestCompleted.addPlayerName(b, pn);
     QuestCompleted.addQuestId(b, 1);
-    QuestCompleted.addQuestName(b, b.createString('Overdue'));
+    QuestCompleted.addQuestName(b, qn);
     QuestCompleted.addRewards(b, rw);
     const buf = finish(b, Message.QuestCompleted, QuestCompleted.endQuestCompleted(b));
     const m = open(buf, Message.QuestCompleted, new QuestCompleted());

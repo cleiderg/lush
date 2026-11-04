@@ -773,7 +773,7 @@ describe('protocol', () => {
       Message.BankOpen, Message.BankClose, Message.BankState, Message.BankDeposit, Message.BankWithdraw,
       Message.BankDepositInventory, Message.BankDepositEquipment, Message.BankResult,
     ]).toEqual([50, 51, 52, 53, 54, 55, 56, 57]);
-    expect(Object.values(Message).filter((v) => typeof v === 'number')).toHaveLength(79);
+    expect(Object.values(Message).filter((v) => typeof v === 'number')).toHaveLength(87);
   });
 
   it('round-trips the bank messages with no fields', () => {
