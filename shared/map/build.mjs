@@ -20,6 +20,7 @@ import {
   SKILLS_SEED, SKILL_TREES, SKILL_TREE_R, SKILL_TREE_SPACING, SAFE_MARGIN, POND_CENTRE, POND_RADII, POND_POINTS, POND_WOBBLE,
   POND_SHORE, POND_SHIFT, FISHING_SPOTS, STATION_CLEAR,
 } from './skills.mjs';
+import { LANDMARK_WAYS, HALL_WAYS, LAYOUT, rectCells, fitHall, inPoly, segmentHitsPoly, centroid } from './halls.mjs';
 import { LANGSON_WAY, LIBRARIAN_GAP, GUIDE_OFFSET, COOK_OFFSET, RANGER_TARGET, TALKER_IDS } from './talkers.mjs';
 import { GOOSE_POND, GOOSE_MIN_CELLS, GOOSE_REACH, SOUTH_FIELDS_FAR, FAR_MIN_CELLS } from './spawnareas.mjs';
 import { FOUNTAIN_R, FOUNTAIN_PATH_CLEAR, FOUNTAIN_CLEAR, FOUNTAIN_STEP } from './fountain.mjs';
@@ -231,6 +232,61 @@ const inRect = (x, z, [x0, z0, x1, z1]) => x >= x0 && x < x1 && z >= z0 && z < z
   if (!outside) throw new Error('café door does not lead to a walkable cell outside');
   for (const i of open) bits[i >> 3] &= ~(1 << (i & 7));
 }
+
+// M12 group halls (halls.mjs): open each hall's room floors and door cells inside its building; every other cell of
+// the footprint stays blocked, so the walls are the building's own cells. Runs on the café-adjusted grid.
+const hallBlocked = (x, z) => Boolean(cellBit(x, z));
+const hallSpawn = { x: SPAWN.x, z: SPAWN.z };
+const parkPoly = green.find((g) => g.id === ALDRICH_PARK_WAY)?.p;
+if (!parkPoly) throw new Error(`Aldrich Park way ${ALDRICH_PARK_WAY} missing`);
+function hallValid(b) {
+  if (LANDMARK_WAYS.includes(b.id)) return false;
+  const c = centroid(b.p);
+  if (inPoly(parkPoly, c.x, c.z)) return false;
+  return !buildings.some((o) => o.id !== b.id && segmentHitsPoly(o.p, SPAWN.x * 10, SPAWN.z * 10, c.x, c.z));
+}
+function placeHalls() {
+  if (HALL_WAYS.length !== 6) throw new Error('HALL_WAYS must list exactly 6 building ways');
+  const L = LAYOUT;
+  const dm = (n) => Math.round(n * 10);
+  const halls = [];
+  const opens = [];
+  HALL_WAYS.forEach((way, i) => {
+    const b = buildings.find((q) => q.id === way);
+    if (!b) throw new Error(`hall building way ${way} missing`);
+    if (!hallValid(b)) throw new Error(`building ${way} is not a valid hall (landmark, in the park, or hidden from the spawn)`);
+    const fit = fitHall(b.p, hallBlocked, hallSpawn);
+    if (!fit) throw new Error(`hall interior does not fit in building ${way}`);
+    const poly = (pts) => pts.flatMap(([u, v]) => { const [x, z] = fit.lattice(u, v); return [dm(x), dm(z)]; });
+    const rectPoly = ([u0, v0, u1, v1]) => poly([[u0, v0], [u1, v0], [u1, v1], [u0, v1]]);
+    const cellsOf = (r) => rectCells(r).map(([u, v]) => fit.cell(u, v));
+    const centres = (r) => cellsOf(r).map(([c, rr]) => [dm(c + 0.5), dm(rr + 0.5)]);
+    const [e0, e1, e2, e3] = L.entrance, [a0, , a2] = L.archway;
+    const entrance = poly([[e0, e1], [a0, e1], [a0, e1 - 1], [a2, e1 - 1], [a2, e1], [e2, e1], [e2, e3], [e0, e3]]);
+    const outer = L.outerDoors.map(centres);
+    const inner = centres(L.innerDoor);
+    for (const r of [L.main, L.vaultRoom, L.entrance, L.archway, L.innerDoor, ...L.outerDoors]) opens.push(...cellsOf(r));
+    const [vu, vv] = L.vault;
+    const [vx, vz] = fit.lattice(vu, vv);
+    halls.push({
+      id: `hall-${i + 1}`,
+      osm: way,
+      entrance,
+      main: rectPoly(L.main),
+      vaultRoom: rectPoly(L.vaultRoom),
+      outerDoors: outer,
+      innerDoor: inner,
+      vault: { x: dm(vx), z: dm(vz) },
+      banner: { x: dm(fit.banner[0] + 0.5), z: dm(fit.banner[1] + 0.5) },
+    });
+  });
+  for (const [c, r] of opens) {
+    const idx = cellIdx(c + 0.5, r + 0.5);
+    bits[idx >> 3] &= ~(1 << (idx & 7));
+  }
+  return { version: 1, units: 'decimetres', halls };
+}
+const halls = placeHalls();
 
 // Header (22 bytes, little-endian) then the packed bits. See README.md.
 const header = Buffer.alloc(22);
@@ -1102,6 +1158,7 @@ writeFileSync(outDir + '/props.json', JSON.stringify(props) + '\n');
 writeFileSync(outDir + '/skills.json', JSON.stringify(skills) + '\n');
 writeFileSync(outDir + '/housing.json', JSON.stringify(housing) + '\n');
 writeFileSync(outDir + '/talkers.json', JSON.stringify(talkers) + '\n');
+writeFileSync(outDir + '/halls.json', JSON.stringify(halls) + '\n');
 writeFileSync(outDir + '/spawnareas.json', JSON.stringify(spawnAreas) + '\n');
 if (nature) writeFileSync(outDir + '/parknature.json', JSON.stringify(nature) + '\n');
 console.log(`buildings=${buildings.length} paths=${paths.length} plazas=${plazas.length} green=${green.length} grid=${width}x${height} fountain=${fountain.x / 10},${fountain.z / 10} props=${placed.length} skillTrees=${skills.trees.length} nature=${nature ? nature.items.length : 'off'}`);
