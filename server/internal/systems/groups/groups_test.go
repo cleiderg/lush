@@ -152,6 +152,21 @@ func TestInviteAndJoin(t *testing.T) {
 	if g, _ := s.GroupOf(5); g != id {
 		t.Error("player moved groups")
 	}
+	// Invited by two groups at once: accepting the second is refused.
+	s.Invite(1, 7)
+	if c := s.Invite(10, 7); c != OK {
+		t.Fatalf("second invite = %v", c)
+	}
+	s.Accept(7, id)
+	if c := s.Accept(7, other); c != AlreadyInGroup {
+		t.Errorf("accept second group = %v", c)
+	}
+	if g, _ := s.Group(other); len(g.Members) != 1 {
+		t.Errorf("other group members %v", g.Members)
+	}
+	if g, _ := s.GroupOf(7); g != id {
+		t.Error("player moved groups")
+	}
 }
 
 func TestMaxMembers(t *testing.T) {
@@ -344,6 +359,22 @@ func TestLeaveCooldown(t *testing.T) {
 			t.Errorf("accept = %v", c)
 		}
 	})
+	t.Run("invite from another group can't be used in cooldown", func(t *testing.T) {
+		s, clk := newSys(t)
+		id := found(t, s)
+		other := s.Found(10, 500, "Other", 2).GroupID
+		s.Invite(1, 3)
+		s.Invite(10, 3)
+		s.Accept(3, id)
+		s.Leave(3)
+		if c := s.Accept(3, other); c != OnCooldown {
+			t.Errorf("accept during cooldown = %v", c)
+		}
+		clk.Advance(24 * time.Hour)
+		if c := s.Accept(3, other); c != OK {
+			t.Errorf("accept at 24h = %v", c)
+		}
+	})
 }
 
 func TestLeaderCannotLeave(t *testing.T) {
@@ -415,7 +446,9 @@ func TestInactiveLeader(t *testing.T) {
 	t.Run("tie goes to earliest joined", func(t *testing.T) {
 		s, clk := newSys(t)
 		id := found(t, s)
-		join(t, s, id, 2, 3) // 2 joins before 3
+		join(t, s, id, 2, 2) // 2 joins a day before 3
+		clk.Advance(day)
+		join(t, s, id, 3, 3)
 		// Promote both to officer within the same instant.
 		for _, p := range []world.PlayerID{3, 2} {
 			s.Promote(1, p)
