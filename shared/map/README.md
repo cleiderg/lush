@@ -6,7 +6,7 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 |---|---|
 | `source/osm-central.json` | Committed OSM snapshot of central campus (`node shared/map/fetch.mjs central` refreshes it; needs network) |
 | `source/osm-housing.json` | Committed OSM snapshot of the Mesa Court and Middle Earth housing areas (`node shared/map/fetch.mjs housing` refreshes it) |
-| `build.mjs` | `node shared/map/build.mjs [outDir] [--no-nature]` writes `campus.json`, `collision.bin`, `areas.json`, `cardtables.json`, `fountain.json`, `props.json`, `skills.json`, `housing.json`, `talkers.json`, `spawnareas.json` and `parknature.json` (skipped with `--no-nature`). Offline and deterministic |
+| `build.mjs` | `node shared/map/build.mjs [outDir] [--no-nature]` writes `campus.json`, `collision.bin`, `areas.json`, `cardtables.json`, `fountain.json`, `props.json`, `skills.json`, `housing.json`, `talkers.json`, `spawnareas.json`, `halls.json` and `parknature.json` (skipped with `--no-nature`). Offline and deterministic |
 | `campus.json` | Compact map for rendering |
 | `collision.bin` | Collision grid for client and server |
 | `areas.mjs` | Gameplay places (spawn, shop, area polygons, card tables) in metres; edit here, then rebuild |
@@ -25,6 +25,8 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 | `talkers.json` | The four talking NPC spots, for client and server |
 | `spawnareas.mjs` | M11 monster spawn polygons (`goose_pond`, `south_fields_far`); edit here, then rebuild |
 | `spawnareas.json` | Monster spawn polygons that are not in `areas.json`, for client and server |
+| `halls.mjs` | M12 group hall buildings (`HALL_WAYS`), the shared interior layout and the fitting code; edit here, then rebuild |
+| `halls.json` | The six group halls with rooms, doors, vault and banner spot, for client and server |
 | `config.mjs` | Bounding box, fixed origin, housing outline and connecting path ids, chunk size, cell size |
 
 ## Housing areas (M10)
@@ -191,6 +193,25 @@ M11 monster spawn polygons (`docs/specs/quests.md`: More monsters) that are not 
   - `south_fields_far`: the west (far) end of `south_fields`; every cell in it is farther from the spawn than the `south_fields` centroid, and it holds at least 4 walkable cells.
 
 Polygons come from `spawnareas.mjs`; `build.mjs` checks them and fails if a rule isn't met.
+
+## `halls.json`
+
+M12 group halls (`docs/specs/groups.md`: Group halls, Doors, Group vault). Same units: integer decimetres, x east, z south. Kept out of `areas.json`, whose parser rejects unknown ids.
+
+`{version, units, halls}`
+
+- `version`: 1.
+- `halls[]`: exactly 6, ids `hall-1` to `hall-6`, in file order:
+  - `osm`: OSM way id of the building (`campus.json` `buildings`).
+  - `entrance`, `main`, `vaultRoom`: closed polygons `[x0,z0,...]` (last point not repeated) of the walkable floor of the entrance hall (including the 2-cell archway to the main room), the main room and the vault room.
+  - `outerDoors[]`: 1 or 2 doors from outside into the entrance hall; each door is a list of cells `[[x,z],...]` (cell centres) cut through the front wall.
+  - `innerDoor`: the cells `[[x,z],...]` of the one door between the main room and the vault room.
+  - `vault`: `{x, z}`, a cell-centre inside `vaultRoom`.
+  - `banner`: `{x, z}`, a walkable cell-centre outside the footprint, in front of the entrance.
+
+**Collision rule for hall interiors.** In `collision.bin` the floor cells of `entrance`, `main` and `vaultRoom` and all door cells are walkable; every other cell of the building footprint stays blocked, so the walls are the building's own cells and the vault room can only be entered through `innerDoor`. A door cell is walkable in the grid; the server blocks it while the door is closed or locked (server-world). Every hall has the same layout (`LAYOUT` in `halls.mjs`, a 10 x 14 m block turned so its entrance faces the way that puts the outer doors nearest the spawn).
+
+`build.mjs` takes the six ways in `HALL_WAYS` (none of the four landmarks; none inside the park; each with no other building on the straight line from the spawn to its centroid; the block wholly inside the footprint with walkable ground in front of each outer door) and fails if a rule isn't met. Deterministic: byte-identical on every build.
 
 ## `parknature.json`
 
