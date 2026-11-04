@@ -192,6 +192,13 @@ func TestPGGroupMembership(t *testing.T) {
 	if err := s.SetLastLogin(ctx, ids[2], login); err != nil {
 		t.Fatal(err)
 	}
+	leadLogin := groupT0.Add(50 * time.Hour)
+	if err := s.SetLastLogin(ctx, ids[1], leadLogin); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetLastLogin(ctx, ids[3]+100, login); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("unknown player last login err = %v, want ErrNotFound", err)
+	}
 
 	// kick with cooldown.
 	until := t2.Add(24 * time.Hour)
@@ -226,7 +233,7 @@ func TestPGGroupMembership(t *testing.T) {
 	if old.Player != ids[0] || old.Rank != store.RankOfficer || !old.RankSince.Equal(t3) || !old.JoinedAt.Equal(groupT0) {
 		t.Fatalf("old leader = %+v", old)
 	}
-	if lead.Player != ids[1] || lead.Rank != store.RankLeader || !lead.RankSince.Equal(t3) || !lead.JoinedAt.Equal(t1) {
+	if lead.Player != ids[1] || lead.Rank != store.RankLeader || !lead.RankSince.Equal(t3) || !lead.JoinedAt.Equal(t1) || !lead.LastLogin.Equal(leadLogin) {
 		t.Fatalf("new leader = %+v", lead)
 	}
 	if gs[1].ID != other.ID || gs[1].Permissions != (store.GroupPermissions{}) {
