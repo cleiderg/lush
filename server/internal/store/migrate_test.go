@@ -784,7 +784,7 @@ func TestMigrateGroupsDownUp(t *testing.T) {
 	mustExec("INSERT INTO groups (name, banner) VALUES ('Anteaters', 0)")
 	mustExec("INSERT INTO groups (name, banner) VALUES ('Second', 1)")
 	mustExec("INSERT INTO group_permissions (group_id) SELECT group_id FROM groups")
-	mustExec("INSERT INTO group_members (player_id, group_id, rank, joined_at, rank_since) SELECT $1, group_id, 4, now(), now() FROM groups", p1)
+	mustExec("INSERT INTO group_members (player_id, group_id, rank, joined_at, rank_since) SELECT $1, group_id, 4, now(), now() FROM groups WHERE name = 'Anteaters'", p1)
 
 	for _, tc := range []struct {
 		name string
