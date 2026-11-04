@@ -20,6 +20,8 @@ type Memory struct {
 	banks map[int64]map[int32]int64 // player id -> item id -> banked qty
 
 	housing *memHousing
+
+	quests *memQuests
 }
 
 var _ Players = (*Memory)(nil)

@@ -15,7 +15,7 @@ import (
 )
 
 // latestMigration is the version of the newest file in db/migrations.
-const latestMigration = 9
+const latestMigration = 10
 
 // progressMigration is the version of 00003_player_progress.sql.
 const progressMigration = 3
@@ -45,7 +45,7 @@ func TestMigrate(t *testing.T) {
 	defer pool.Close()
 
 	// Start from an empty database.
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS player_quests, house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -82,7 +82,7 @@ func TestMigrateProgressDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS player_quests, house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Migrate(ctx, pool); err != nil {
@@ -161,7 +161,7 @@ func TestMigrateCardPotsDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS player_quests, house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Migrate(ctx, pool); err != nil {
@@ -228,7 +228,7 @@ func TestMigrateBankDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS player_quests, house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Migrate(ctx, pool); err != nil {
@@ -308,7 +308,7 @@ func TestMigrateSkillXPDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS player_quests, house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Migrate(ctx, pool); err != nil {
@@ -393,7 +393,7 @@ func TestMigrateHousingDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS player_quests, house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Migrate(ctx, pool); err != nil {
@@ -480,7 +480,7 @@ func TestMigrateHomeRoomsDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS player_quests, house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Migrate(ctx, pool); err != nil {
@@ -547,7 +547,7 @@ func TestMigrateHouseAuctionsDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS player_quests, house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Migrate(ctx, pool); err != nil {
@@ -645,4 +645,73 @@ func schemaPool(ctx context.Context, t *testing.T, url string) (*pgxpool.Pool, e
 	}
 	cfg.ConnConfig.RuntimeParams["search_path"] = schema
 	return pgxpool.NewWithConfig(ctx, cfg)
+}
+
+// questsMigration is the version of 00010_player_quests.sql.
+const questsMigration = 10
+
+// TestMigrateQuestsDownUp rolls the quests migration back and applies it
+// again, then checks its constraints.
+func TestMigrateQuestsDownUp(t *testing.T) {
+	url := os.Getenv("LUSH_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("LUSH_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := schemaPool(ctx, t, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatalf("up: %v", err)
+	}
+	db := stdlib.OpenDBFromPool(pool)
+	defer db.Close()
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.DownTo(ctx, questsMigration-1); err != nil {
+		t.Fatalf("down to %d: %v", questsMigration-1, err)
+	}
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM information_schema.tables
+		WHERE table_schema = current_schema() AND table_name = 'player_quests'`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("player_quests after down = %d, err %v; want 0", n, err)
+	}
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+	if v, err := provider.GetDBVersion(ctx); err != nil || v != latestMigration {
+		t.Fatalf("version after up again = %d, err %v; want %d", v, err, latestMigration)
+	}
+
+	var id int64
+	if err := pool.QueryRow(ctx, "INSERT INTO players (token_hash) VALUES ('p') RETURNING id").Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	var points int64
+	if err := pool.QueryRow(ctx, "SELECT quest_points FROM players WHERE id = $1", id).Scan(&points); err != nil || points != 0 {
+		t.Fatalf("default quest points = %d, err %v", points, err)
+	}
+	const ins = "INSERT INTO player_quests (player_id, quest_id, state, step, count) VALUES ($1, $2, $3, $4, $5)"
+	if _, err := pool.Exec(ctx, ins, id, "q", 1, 2, 3); err != nil {
+		t.Fatalf("valid row: %v", err)
+	}
+	for name, args := range map[string][]any{
+		"duplicate":      {id, "q", 1, 0, 0},
+		"bad state":      {id, "r", 3, 0, 0},
+		"negative step":  {id, "r", 1, -1, 0},
+		"negative count": {id, "r", 1, 0, -1},
+		"empty id":       {id, "", 1, 0, 0},
+		"unknown player": {id + 1, "r", 1, 0, 0},
+	} {
+		if _, err := pool.Exec(ctx, ins, args...); err == nil {
+			t.Errorf("%s: insert succeeded", name)
+		}
+	}
+	if _, err := pool.Exec(ctx, "UPDATE players SET quest_points = -1 WHERE id = $1", id); err == nil {
+		t.Error("negative quest points accepted")
+	}
 }

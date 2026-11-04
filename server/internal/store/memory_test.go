@@ -57,3 +57,10 @@ func TestMemoryBank(t *testing.T) {
 		}
 	})
 }
+
+func TestMemoryQuests(t *testing.T) {
+	storetest.RunQuests(t, func(*testing.T) (storetest.QuestStore, func() []store.Entry) {
+		m := store.NewMemory()
+		return m, m.AuditEntries
+	})
+}
