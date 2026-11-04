@@ -2,10 +2,13 @@ package talk
 
 import (
 	"bytes"
+	"encoding/json"
+	"io/fs"
 	"math"
 	"os"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
 	"github.com/cleiderg/lush/server/internal/systems/quest"
@@ -51,6 +54,11 @@ func setup(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return setupData(t, d)
+}
+
+func setupData(t *testing.T, d *gamedata.Data) *fixture {
+	t.Helper()
 	eng := quest.New(d)
 	sk := &sink{}
 	cm := &committer{}
@@ -380,6 +388,37 @@ func TestCompletionInventoryFull(t *testing.T) {
 	}
 }
 
+// The room check counts what the step takes: with every slot full, the book
+// handed in frees the slot the Library card goes into.
+func TestCompletionRoomFromHandIn(t *testing.T) {
+	f := setup(t)
+	book, card := f.item("overdue_book"), f.item("library_card")
+	lib := f.atLastStep("overdue", "librarian")
+	if _, err := f.p.Inv.Add(f.d, book, 1); err != nil {
+		t.Fatal(err)
+	}
+	filler := f.item("trout")
+	for {
+		if _, err := f.p.Inv.Add(f.d, filler, 1); err != nil {
+			break
+		}
+	}
+	probe := f.p.Inv.Clone()
+	if _, err := probe.Add(f.d, card, 1); err == nil {
+		t.Fatal("inventory not full")
+	}
+	f.talk(lib)
+	f.reply(0)
+	if len(f.cm.reqs) != 1 {
+		t.Fatalf("requests = %d, results %v", len(f.cm.reqs), f.sink.results)
+	}
+	f.sys.Resolve(f.cm.reqs[0].ID, true)
+	f.w.Tick()
+	if f.p.Inv.Count(card) != 1 || f.p.Inv.Count(book) != 0 {
+		t.Fatalf("card %d book %d", f.p.Inv.Count(card), f.p.Inv.Count(book))
+	}
+}
+
 func TestCompletionCommitRequest(t *testing.T) {
 	f := setup(t)
 	q, _ := f.d.QuestByKey("overdue")
@@ -424,7 +463,7 @@ func TestResolveSuccessAndFailure(t *testing.T) {
 		got := f.sys.State(f.p.ID).Get(q.ID)
 		if ok {
 			if got.Status != quest.Complete || f.p.Inv.Count(f.item("overdue_book")) != 0 ||
-				f.p.Inv.Count(f.item("library_card")) != 1 || f.p.Inv.Gold != 150 ||
+				f.p.Inv.Count(f.item("library_card")) != 1 || f.p.Inv.Gold != 150 || f.p.XP != 500 ||
 				len(f.sink.completed) != 1 || f.sink.completed[0].Quest != q.ID {
 				t.Fatalf("success not applied: %+v gold %d", got, f.p.Inv.Gold)
 			}
@@ -550,5 +589,97 @@ func TestResolveKeepsOtherQuestProgress(t *testing.T) {
 	}
 	if got := f.sys.State(f.p.ID).Get(ct.ID); got.Status != quest.InProgress || got.Step != 1 || got.Count != 1 {
 		t.Fatalf("coyote trouble %+v, want step 1 count 1", got)
+	}
+}
+
+// withLateFees is the default data plus a quest that, like Overdue, ends with
+// a hand-in to the librarian: 5 trout for 1000 gold.
+func withLateFees(t *testing.T) *gamedata.Data {
+	t.Helper()
+	const dir = "../gamedata/data"
+	files := fstest.MapFS{}
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ents {
+		b, err := os.ReadFile(dir + "/" + e.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[e.Name()] = &fstest.MapFile{Data: b}
+	}
+	var qs []json.RawMessage
+	if err := json.Unmarshal(files[gamedata.QuestsFile].Data, &qs); err != nil {
+		t.Fatal(err)
+	}
+	qs = append(qs, json.RawMessage(`{"id": 99, "key": "late_fees", "name": "Late Fees", "description": "Pay the fine.",
+		"requirements": {}, "steps": [{"kind": "talk", "npc": "librarian"},
+		{"kind": "bring_items", "npc": "librarian", "items": [{"item": "trout", "quantity": 5}]}],
+		"rewards": {"quest_points": 1, "gold": 1000}}`))
+	b, err := json.Marshal(qs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files[gamedata.QuestsFile] = &fstest.MapFile{Data: b}
+	d, err := gamedata.Load(fs.FS(files))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+// One reply that finishes two quests commits only the first, with only its
+// own hand-in and rewards; the other quest, its items and its rewards are
+// left for the next talk, so nothing is given or taken twice.
+func TestOneCompletionPerCommit(t *testing.T) {
+	f := setupData(t, withLateFees(t))
+	overdue, _ := f.d.QuestByKey("overdue")
+	fees, _ := f.d.QuestByKey("late_fees")
+	lib := f.atLastStep("overdue", "librarian")
+	f.atLastStep("late_fees", "librarian")
+	book, trout := f.item("overdue_book"), f.item("trout")
+	if _, err := f.p.Inv.Add(f.d, book, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.p.Inv.Add(f.d, trout, 5); err != nil {
+		t.Fatal(err)
+	}
+	f.talk(lib)
+	f.reply(0)
+	if len(f.cm.reqs) != 1 {
+		t.Fatalf("requests = %d", len(f.cm.reqs))
+	}
+	r := f.cm.reqs[0]
+	gold := 0
+	for _, c := range r.Reward {
+		gold += c.Gold
+	}
+	if r.Quest != overdue.ID || r.Gold != 150 || gold != 150 || len(r.Take) != 1 || r.Take[0].Item != book {
+		t.Fatalf("request = %+v", r)
+	}
+	for _, c := range r.HandIn {
+		if c.Item == trout {
+			t.Fatalf("hand-in takes the other quest's trout: %+v", r.HandIn)
+		}
+	}
+	f.sys.Resolve(r.ID, true)
+	f.w.Tick()
+	st := f.sys.State(f.p.ID)
+	if st.Get(overdue.ID).Status != quest.Complete || f.p.Inv.Gold != 150 || f.p.Inv.Count(trout) != 5 {
+		t.Fatalf("after resolve: overdue %+v gold %d trout %d", st.Get(overdue.ID), f.p.Inv.Gold, f.p.Inv.Count(trout))
+	}
+	if got := st.Get(fees.ID); got.Status != quest.InProgress || got.Step != 1 {
+		t.Fatalf("late fees %+v, want still on its last step", got)
+	}
+	// The next hand-in finishes the other quest in a commit of its own.
+	lt, _ := f.d.NPCByKey("librarian")
+	if code := f.sys.act(f.p, func(st *quest.State, e quest.Env) (quest.Result, error) {
+		return f.eng.FinishTalk(st, lt.ID, e), nil
+	}); code != Ok || len(f.cm.reqs) != 2 {
+		t.Fatalf("code %v, requests %d", code, len(f.cm.reqs))
+	}
+	if r := f.cm.reqs[1]; r.Quest != fees.ID || r.Gold != 1000 || len(r.Take) != 1 || r.Take[0].Item != trout {
+		t.Fatalf("second request = %+v", r)
 	}
 }

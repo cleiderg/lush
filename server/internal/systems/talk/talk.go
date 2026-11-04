@@ -472,6 +472,16 @@ func (s *System) act(p *world.Player, f func(*quest.State, quest.Env) (quest.Res
 		}
 		return NotTalkable
 	}
+	var post []quest.Record // quest state once a completion commits
+	if len(res.Completed) > 0 {
+		// One completion per commit: keep only the first quest's change and
+		// the items its own step takes. Any other quest the event moved goes
+		// back as it was, items and rewards included; the next talk moves it.
+		c := res.Completed[0]
+		post = withRecord(snap, c.Quest, st.Encode())
+		rollback()
+		res = quest.Result{Advanced: true, Take: s.stepTake(c.Quest, snap), Completed: res.Completed[:1]}
+	}
 	inv := p.Inv.Clone()
 	var hand, reward []world.Change
 	take := func(list []gamedata.ItemAmount, into *[]world.Change) error {
@@ -511,7 +521,7 @@ func (s *System) act(p *world.Player, f func(*quest.State, quest.Env) (quest.Res
 		}
 	}
 	if len(res.Completed) > 0 {
-		s.beginCommit(p, snap, rollback, res, inv, hand, reward)
+		s.beginCommit(p, post, res, inv, hand, reward)
 		return Ok
 	}
 	p.Inv = inv
@@ -527,11 +537,11 @@ func (s *System) act(p *world.Player, f func(*quest.State, quest.Env) (quest.Res
 	return Ok
 }
 
-// beginCommit holds a finished quest back: the quest state returns to its last
-// step and the inventory locks until the store confirms. inv, hand and reward
-// are the inventory and economy changes the completion would make. Only the
-// first completion is committed; the caller's talk repeats for any other.
-func (s *System) beginCommit(p *world.Player, snap []quest.Record, rollback func(), res quest.Result,
+// beginCommit holds a finished quest back: the quest state stays on its last
+// step and the inventory locks until the store confirms. res holds the one
+// completion; post is the quest state and inv, hand and reward are the
+// inventory and economy changes once it commits.
+func (s *System) beginCommit(p *world.Player, post []quest.Record, res quest.Result,
 	inv world.Inventory, hand, reward []world.Change) {
 	c := res.Completed[0]
 	remove := append([]gamedata.ItemAmount(nil), c.Remove...)
@@ -539,12 +549,6 @@ func (s *System) beginCommit(p *world.Player, snap []quest.Record, rollback func
 		if d, ok := s.data.Item(it.Item); ok && d.QuestItem {
 			remove = append(remove, it)
 		}
-	}
-	post := s.State(p.ID).Encode()
-	rollback()
-	// Keep only the first completed quest in the post state.
-	for _, o := range res.Completed[1:] {
-		post = withRecord(post, o.Quest, snap)
 	}
 	s.nextID++
 	req := CommitRequest{ID: s.nextID, Player: p.ID, Quest: c.Quest, QuestPoints: c.QuestPoints, Gold: c.Gold,
@@ -554,10 +558,31 @@ func (s *System) beginCommit(p *world.Player, snap []quest.Record, rollback func
 	s.commits[req.ID] = &inflight{req: req, player: p, inv: inv, post: post, done: c}
 	s.committing[p.ID] = req.ID
 	p.Inv.SetLocked(true)
+	// The Committer gets its own copies, so nothing it does reaches what is
+	// applied on Resolve.
 	out := req
+	out.Items, out.XP = append([]gamedata.ItemAmount(nil), req.Items...), append([]gamedata.SkillXP(nil), req.XP...)
+	out.Take, out.Remove = append([]gamedata.ItemAmount(nil), req.Take...), append([]gamedata.ItemAmount(nil), req.Remove...)
 	out.HandIn = append([]world.Change(nil), hand...)
 	out.Reward = append([]world.Change(nil), reward...)
 	s.cm.CommitQuest(out)
+}
+
+// stepTake returns the items quest q's step in recs takes: the bring step's
+// items, or none for a talk step or a quest not yet started.
+func (s *System) stepTake(q gamedata.QuestID, recs []quest.Record) []gamedata.ItemAmount {
+	qd, ok := s.data.Quest(q)
+	if !ok {
+		return nil
+	}
+	for _, r := range recs {
+		if r.Quest == q && r.Status == quest.InProgress && r.Step < len(qd.Steps) {
+			if st := qd.Steps[r.Step]; st.Kind == gamedata.StepBringItems {
+				return append([]gamedata.ItemAmount(nil), st.Items...)
+			}
+		}
+	}
+	return nil
 }
 
 // withRecord sets quest q in recs to its record in orig, or drops it.
