@@ -233,6 +233,7 @@ const remotePositions = () => game.remotes(performance.now());
 const bigMap = new BigMap({
   parent: document.body,
   data: campusMapData(),
+  houses: () => game.housing.houses,
   position: () => game.prediction.pos,
   remotes: remotePositions,
   onOpen: () => {
@@ -247,6 +248,7 @@ const bigMap = new BigMap({
 const minimap = new Minimap({
   parent: document.body,
   data: campusMapData(),
+  houses: () => game.housing.houses,
   position: () => game.prediction.pos,
   yaw: () => renderer.world.rig.yaw,
   remotes: remotePositions,
