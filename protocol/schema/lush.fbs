@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 18
+  Current = 19
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -247,6 +247,7 @@ table ItemDef {
   surface_slots: ubyte;    // small items a surface piece holds; 0 if none
   thrift_sells_for: uint32; // gold the Campus Thrift stall charges; 0 when it doesn't sell the item
   thrift_buys_for: uint32;  // gold the Campus Thrift stall pays; 0 when it doesn't buy the item
+  quest_item: bool;        // given only on a quest step; can't be traded or dropped
 }
 
 // Server -> client: every item definition, so the client doesn't hard-code
@@ -357,6 +358,7 @@ table NpcDef {
   id: ushort;          // NPC type id, as in EntityInfo.npc_type
   name: string;
   combat_level: ubyte;
+  talkable: bool;      // true: Talk opens a dialogue with this NPC
 }
 
 // Server -> client: every NPC type, so the client doesn't hard-code NPC
@@ -995,6 +997,134 @@ table CraftResult {
   code: CraftResultCode;
 }
 
+// ---- Quests, talking NPCs and the quest log (docs/specs/quests.md) ----
+
+// Skill a quest gives XP in or asks a level of. Values are Skill + 1, so
+// Combat is 0.
+enum QuestSkill : ubyte {
+  Combat = 0,
+  Woodcutting = 1,
+  Fishing = 2,
+  Cooking = 3
+}
+
+// QuestRequirement.kind values.
+enum QuestRequirementKind : ubyte {
+  Level = 0,  // skill at level
+  Quest = 1   // quest_id complete
+}
+
+// One requirement to start a quest.
+table QuestRequirement {
+  kind: QuestRequirementKind;
+  skill: QuestSkill;   // for Level
+  level: ubyte;        // for Level
+  quest_id: ushort;    // for Quest
+}
+
+// An item given as a quest reward.
+table QuestItemReward {
+  item_id: ushort;
+  count: ushort;
+}
+
+// XP given as a quest reward.
+table QuestXpReward {
+  skill: QuestSkill;
+  xp: uint32;          // whole XP points
+}
+
+// What a quest gives on completion.
+table QuestRewards {
+  quest_points: ubyte;
+  gold: uint32;
+  items: [QuestItemReward];
+  xp: [QuestXpReward];
+}
+
+// One quest in the catalog.
+table QuestDef {
+  id: ushort;
+  name: string;
+  description: string;
+  requirements: [QuestRequirement];
+  steps: [string];          // one sentence per step, in order
+  rewards: QuestRewards;
+  start_npc: ushort;        // NPC type id that starts the quest
+  finish_npc: ushort;       // NPC type id that finishes the quest
+}
+
+// Server -> client: every quest, so the client doesn't hard-code them.
+table QuestCatalog {
+  quests: [QuestDef];
+}
+
+// QuestProgress.state values.
+enum QuestState : ubyte {
+  NotStarted = 0,
+  InProgress = 1,
+  Complete = 2
+}
+
+// The player's state in one quest.
+table QuestProgress {
+  quest_id: ushort;
+  state: QuestState;
+  step: ubyte;         // index into QuestDef.steps; only while InProgress
+  count: ushort;       // progress within the step (kills, items); else 0
+}
+
+// Server -> client: the player's quests. Sent on join and on any change.
+table QuestLog {
+  quests: [QuestProgress];
+  quest_points: ushort;
+}
+
+// Client -> server: talk to a nearby NPC. The server replies with Dialogue
+// or QuestResult.
+table Talk {
+  npc_id: ushort;      // NPC entity id
+}
+
+// Client -> server: pick a reply in the open dialogue.
+table DialogueReply {
+  index: ubyte;        // 0-based index into Dialogue.replies
+}
+
+// Server -> client: open or update a dialogue. Up to 4 replies; with none,
+// the client shows a continue button that sends DialogueReply index 0.
+table Dialogue {
+  npc_id: ushort;      // NPC entity id
+  lines: [string];
+  replies: [string];
+}
+
+// Server -> client: close the dialogue panel.
+table DialogueClose {
+}
+
+// Server -> client: a player completed a quest. Sent to the player (for the
+// completion scroll) and to players nearby (for the chat message).
+table QuestCompleted {
+  player_name: string;
+  quest_id: ushort;
+  quest_name: string;
+  rewards: QuestRewards;
+}
+
+enum QuestResultCode : ubyte {
+  Ok = 0,
+  TooFar = 1,              // too far from the NPC
+  NotTalkable = 2,         // the entity isn't a talking NPC
+  RequirementsNotMet = 3,
+  InventoryFull = 4        // no room for a quest item or reward
+}
+
+// Server -> client: the outcome of a Talk or DialogueReply that failed.
+table QuestResult {
+  code: QuestResultCode;
+}
+
 union Message {
   Hello,
   Welcome,
@@ -1073,7 +1203,15 @@ union Message {
   AuctionResult,
   WorkbenchCatalog,
   WorkbenchCraft,
-  CraftResult
+  CraftResult,
+  QuestCatalog,
+  QuestLog,
+  Talk,
+  DialogueReply,
+  Dialogue,
+  DialogueClose,
+  QuestCompleted,
+  QuestResult
 }
 
 table Envelope {

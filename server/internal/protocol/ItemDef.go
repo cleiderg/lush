@@ -293,8 +293,20 @@ func (rcv *ItemDef) MutateThriftBuysFor(n uint32) bool {
 	return rcv._tab.MutateUint32Slot(46, n)
 }
 
+func (rcv *ItemDef) QuestItem() bool {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(48))
+	if o != 0 {
+		return rcv._tab.GetBool(o + rcv._tab.Pos)
+	}
+	return false
+}
+
+func (rcv *ItemDef) MutateQuestItem(n bool) bool {
+	return rcv._tab.MutateBoolSlot(48, n)
+}
+
 func ItemDefStart(builder *flatbuffers.Builder) {
-	builder.StartObject(22)
+	builder.StartObject(23)
 }
 func ItemDefAddId(builder *flatbuffers.Builder, id uint16) {
 	builder.PrependUint16Slot(0, id, 0)
@@ -361,6 +373,9 @@ func ItemDefAddThriftSellsFor(builder *flatbuffers.Builder, thriftSellsFor uint3
 }
 func ItemDefAddThriftBuysFor(builder *flatbuffers.Builder, thriftBuysFor uint32) {
 	builder.PrependUint32Slot(21, thriftBuysFor, 0)
+}
+func ItemDefAddQuestItem(builder *flatbuffers.Builder, questItem bool) {
+	builder.PrependBoolSlot(22, questItem, false)
 }
 func ItemDefEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
