@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { EntityKind, SkillResultCode, SkillTarget } from '../protocol';
+import { EntityKind, QuestState, SkillResultCode, SkillTarget } from '../protocol';
 import skillsMap from '../../../shared/map/skills.json';
 import { ATTEMPT_MS } from '../state/gathering';
 import { FLOAT_TEXT_MS } from '../render/floatText';
@@ -349,5 +349,53 @@ describe('buildWorldView skills', () => {
     expect(buildWorldView(g, 50).activeResource).toBe('grill');
     g.applyMove(1, 0, 0.05, false);
     expect(buildWorldView(g, 100).activeResource).toBeUndefined();
+  });
+});
+
+describe('#671 quest markers', () => {
+  const LIBRARIAN = 5;
+  const GUIDE = 7;
+  const PLAIN = 9;
+
+  function world(): GameState {
+    const g = new GameState();
+    g.handle({ type: 'welcome', playerId: 1, tickRate: 20, spawn: { x: 0, z: 0 } } as never, 0);
+    g.quests.setCatalog([{
+      id: 1, name: 'Overdue', description: '', requirements: [], steps: ['Find the book', 'Return it'],
+      rewards: {}, startNpc: LIBRARIAN, finishNpc: LIBRARIAN,
+    }] as never);
+    const npc = (id: number, npcType: number) =>
+      g.items.setEntityInfo({ id, kind: EntityKind.Npc, npcType, combatLevel: 0, totalLevel: 0, equipment: {} } as never);
+    npc(2, LIBRARIAN);
+    npc(3, GUIDE);
+    npc(4, PLAIN);
+    g.handle({
+      type: 'snapshot', tick: 1, lastInputSeq: 0,
+      entities: [1, 2, 3, 4].map((id) => ({ id, x: id, z: id, heading: 0 })),
+    } as never, 0);
+    return g;
+  }
+  const log = (g: GameState, state: QuestState, step: number) =>
+    g.quests.setLog([{ questId: 1, state, step, count: 0 }], 0);
+
+  it('AC1: the Librarian gets start for a new player', () => {
+    expect(buildWorldView(world(), 0).npcMarkers?.get(2)).toBe('start');
+  });
+
+  it('AC2: finish on the last step, cleared after completion', () => {
+    const g = world();
+    log(g, QuestState.InProgress, 0);
+    expect(buildWorldView(g, 0).npcMarkers?.has(2)).toBe(false);
+    log(g, QuestState.InProgress, 1);
+    expect(buildWorldView(g, 0).npcMarkers?.get(2)).toBe('finish');
+    log(g, QuestState.Complete, 1);
+    expect(buildWorldView(g, 0).npcMarkers?.has(2)).toBe(false);
+  });
+
+  it('AC3: other NPCs and the Guide never get a marker', () => {
+    const m = buildWorldView(world(), 0).npcMarkers!;
+    expect(m.has(3)).toBe(false);
+    expect(m.has(4)).toBe(false);
+    expect([...m.keys()]).toEqual([2]);
   });
 });
