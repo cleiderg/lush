@@ -6,7 +6,7 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 |---|---|
 | `source/osm-central.json` | Committed OSM snapshot of central campus (`node shared/map/fetch.mjs central` refreshes it; needs network) |
 | `source/osm-housing.json` | Committed OSM snapshot of the Mesa Court and Middle Earth housing areas (`node shared/map/fetch.mjs housing` refreshes it) |
-| `build.mjs` | `node shared/map/build.mjs [outDir] [--no-nature]` writes `campus.json`, `collision.bin`, `areas.json`, `cardtables.json`, `fountain.json`, `props.json`, `skills.json`, `housing.json`, `talkers.json`, `spawnareas.json`, `halls.json` and `parknature.json` (skipped with `--no-nature`). Offline and deterministic |
+| `build.mjs` | `node shared/map/build.mjs [outDir] [--no-nature]` writes `campus.json`, `collision.bin`, `areas.json`, `cardtables.json`, `fountain.json`, `props.json`, `skills.json`, `housing.json`, `talkers.json`, `spawnareas.json`, `halls.json`, `throne.json` and `parknature.json` (skipped with `--no-nature`). Offline and deterministic |
 | `campus.json` | Compact map for rendering |
 | `collision.bin` | Collision grid for client and server |
 | `areas.mjs` | Gameplay places (spawn, shop, area polygons, card tables) in metres; edit here, then rebuild |
@@ -27,6 +27,8 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 | `spawnareas.json` | Monster spawn polygons that are not in `areas.json`, for client and server |
 | `halls.mjs` | M12 group hall buildings (`HALL_WAYS`), the shared interior layout and the fitting code; edit here, then rebuild |
 | `halls.json` | The six group halls with rooms, doors, vault and banner spot, for client and server |
+| `throne.mjs` | M12 throne room layout in Aldrich Hall (`ALDRICH_HALL_WAY`, `THRONE_LAYOUT`) and the fitting code; edit here, then rebuild |
+| `throne.json` | The throne room inside Aldrich Hall with entrance, gates and dais, for client and server |
 | `config.mjs` | Bounding box, fixed origin, housing outline and connecting path ids, chunk size, cell size |
 
 ## Housing areas (M10)
@@ -212,6 +214,20 @@ M12 group halls (`docs/specs/groups.md`: Group halls, Doors, Group vault). Same 
 **Collision rule for hall interiors.** In `collision.bin` the floor cells of `entrance`, `main` and `vaultRoom` and all door cells are walkable; every other cell of the building footprint stays blocked, so the walls are the building's own cells and the vault room can only be entered through `innerDoor`. A door cell is walkable in the grid; the server blocks it while the door is closed or locked (server-world). Every hall has the same layout (`LAYOUT` in `halls.mjs`, a 10 x 14 m block turned so its entrance faces the way that puts the outer doors nearest the spawn).
 
 `build.mjs` takes the six ways in `HALL_WAYS` (none of the four landmarks; none inside the park; each with no other building on the straight line from the spawn to its centroid; the block wholly inside the footprint with walkable ground in front of each outer door) and fails if a rule isn't met. Deterministic: byte-identical on every build.
+
+## `throne.json`
+
+M12 throne room inside Aldrich Hall (`docs/specs/groups.md`: The weekly siege and the throne). Same units: integer decimetres, x east, z south.
+
+`{version, units, osm, entrance, throneRoom, outerOpening, mainGate, sideGate, dais}`
+
+- `version`: 1. `osm`: OSM way id of Aldrich Hall, 62646030 (`campus.json` `buildings`).
+- `entrance`, `throneRoom`, `dais`: closed polygons `[x0,z0,...]` (last point not repeated). `entrance` is the area reached from outside, `throneRoom` the walkable floor behind the gates, `dais` the throne platform, wholly inside `throneRoom`.
+- `outerOpening`, `mainGate`, `sideGate`: lists of cells `[[x,z],...]` (cell centres). `outerOpening` is the opening from outside into the entrance, cut through the front wall and on through the rest of the footprint (a passage up to `MAX_PASSAGE` cells long, since the walls are not square to the layout); `mainGate` (4 cells wide) and `sideGate` (2 cells wide) are the only connections between `entrance` and `throneRoom`.
+
+**Collision rule.** In `collision.bin` the floor cells of `entrance` and `throneRoom` and the cells of `outerOpening`, `mainGate` and `sideGate` are walkable; every other cell of the Aldrich Hall footprint stays blocked. Gate cells are walkable in the grid; the server blocks them while a gate stands (server-world). With both gates' cells blocked there is no path from outside to the dais.
+
+`build.mjs` fits the layout (`THRONE_LAYOUT` in `throne.mjs`, four turns, nearest the spawn) wholly inside the footprint and fails if it doesn't fit. It runs after the halls. Deterministic: byte-identical on every build.
 
 ## `parknature.json`
 

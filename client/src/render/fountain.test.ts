@@ -107,7 +107,7 @@ describe('fountain map data (AC1)', () => {
       }
     }
     expect(inside).toBeGreaterThanOrEqual(12);
-    // With the basin cells cleared, the grid is the one committed before the fountain (with the #403 café and the #686 halls opened), grown to the housing areas (#523).
+    // With the basin cells cleared, the grid is the one committed before the fountain (with the #403 café and the #686 halls and #687 throne room opened), grown to the housing areas (#523).
     const raw = new Uint8Array(readFileSync(join(mapDir, 'collision.bin')));
     const bits = raw.subarray(22);
     for (let row = 0; row < grid.height; row++) {
@@ -118,7 +118,7 @@ describe('fountain map data (AC1)', () => {
         bits[i >> 3] &= ~(1 << (i & 7));
       }
     }
-    expect(sha256(raw)).toBe('4f03b048d30efa7f2907126494c35f522afa5b1d94b7316330c953ba0565267d');
+    expect(sha256(raw)).toBe('5b485e3d60fa476cff7c041c10754069702c4d5aeaa1bbecd4c358c5ea764e10');
   });
 
   it('still lets a player walk from the spawn to the shop, the card tables, the fountain and every gameplay area', () => {
