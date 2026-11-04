@@ -83,6 +83,8 @@ export interface ItemInfo {
   thriftSellsFor: number;
   /** Gold the Campus Thrift stall pays; 0 when it doesn't buy the item. */
   thriftBuysFor: number;
+  /** Quest items can't be traded, dropped or sold; false when the flag is absent. */
+  questItem?: boolean;
 }
 
 /** One workbench recipe: inputs are parallel arrays of item ids and quantities. */
@@ -694,6 +696,7 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
           surfaceSlots: d.surfaceSlots(),
           thriftSellsFor: d.thriftSellsFor(),
           thriftBuysFor: d.thriftBuysFor(),
+          questItem: d.questItem(),
         });
       }
       return { type: 'itemCatalog', items };

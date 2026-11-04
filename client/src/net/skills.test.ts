@@ -145,6 +145,16 @@ describe('decode catalog fields', () => {
     ]);
   });
 
+  it('decodes ItemDef.quest_item, false by default', () => {
+    const b = new flatbuffers.Builder(256);
+    const def = (id: number, name: string, quest: boolean) =>
+      ItemDef.createItemDef(b, id, b.createString(name), ItemKind.Loot, EquipSlot.None, 0, 0, 0, 0, 0, 0, 1, false, 0, ToolSkill.None, 0, 0, 0, 0, 0, 0, 0, 0, quest);
+    const v = ItemCatalog.createItemsVector(b, [def(1, 'Overdue book', true), def(2, 'Rock', false)]);
+    const msg = decode(finish(b, Message.ItemCatalog, ItemCatalog.createItemCatalog(b, v)));
+    if (msg?.type !== 'itemCatalog') throw new Error('wrong type');
+    expect(msg.items.map((i) => i.questItem)).toEqual([true, false]);
+  });
+
   it('decodes EntityInfo total level', () => {
     const b = new flatbuffers.Builder(64);
     const m = decode(finish(b, Message.EntityInfo, EntityInfo.createEntityInfo(b, 3, EntityKind.Player, 0, 7, 0, 0, 0, 0, 52)));
