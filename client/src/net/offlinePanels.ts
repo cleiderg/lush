@@ -129,6 +129,24 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
     msgs.push({ type: 'bankState', slots: CATALOG.map((d) => ({ itemId: d.id, quantity: between(rand, 1, 400) })) });
   }
 
+  if (opts.panel === 'workbench') {
+    // Recipes for the furniture items: one the player can craft from the pack, one short of logs, one short of gold.
+    const logs = slots.findIndex((x) => !x.itemId);
+    slots[logs] = { itemId: 14, quantity: 12 };
+    msgs.push(
+      { type: 'inventory', slots, equipment: { weapon: 1, head: 0, body: 4, shield: 0 } },
+      { type: 'playerStats', hp: 20, maxHp: 20, combatLevel: 3, xp: 500, gold: 120 },
+      {
+        type: 'workbenchCatalog',
+        recipes: [
+          { outputItemId: 40, inputs: [{ itemId: 14, quantity: 4 }], gold: 30 },
+          { outputItemId: 41, inputs: [{ itemId: 14, quantity: 10 }, { itemId: 13, quantity: 2 }], gold: 80 },
+          { outputItemId: 42, inputs: [{ itemId: 14, quantity: 6 }], gold: 400 },
+        ],
+      },
+    );
+  }
+
   if (opts.panel === 'house') {
     // The player's own house, 6 days short of dropping below one month prepaid, and one empty house.
     const paidUntil = Math.floor(Date.now() / 1000) + 36 * 24 * 3600;

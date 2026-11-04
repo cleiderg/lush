@@ -6,9 +6,17 @@ export type { WorkbenchRecipeInfo };
 /** The workbench recipes; each WorkbenchCatalog replaces the list. */
 export class WorkbenchStore {
   recipes: WorkbenchRecipeInfo[] = [];
+  private listeners = new Set<() => void>();
+
+  /** Calls fn after every catalog; returns an unsubscribe function. */
+  subscribe(fn: () => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
 
   setRecipes(recipes: WorkbenchRecipeInfo[]): void {
     this.recipes = recipes.map((r) => ({ ...r, inputs: r.inputs.map((i) => ({ ...i })) }));
+    for (const fn of this.listeners) fn();
   }
 
   recipe(outputItemId: number): WorkbenchRecipeInfo | undefined {
