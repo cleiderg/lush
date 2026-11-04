@@ -242,7 +242,11 @@ func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, 
 	if err != nil {
 		return nil, err
 	}
-	pve, err := combat.New(data, lookup, tileSize, clock, rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())), sess)
+	questEvents, talkers, err := sess.QuestSystems(tileSize, rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())))
+	if err != nil {
+		return nil, err
+	}
+	pve, err := combat.New(data, lookup, tileSize, clock, rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())), questEvents.Sink(sess))
 	if err != nil {
 		return nil, err
 	}
@@ -282,6 +286,7 @@ func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, 
 	}
 	ground := grounditems.New(data, clock, tileSize)
 	sess.SetGroundItems(ground)
+	ground.SetPickupHook(questEvents.PickedUp)
 	fights, err := pvp.NewCombat(data, lookup, tileSize, clock, rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())), sess, sess)
 	if err != nil {
 		return nil, err
@@ -304,7 +309,7 @@ func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, 
 	sess.SetCook(cooking)
 	out := []scheduled{}
 	for _, s := range []world.System{mover, gathering, cooking, npcs, emote.New(emote.DefaultConfig()), chat.New(chat.DefaultConfig(), clock, sess),
-		items.New(data), shop.New(data, lookup, tileSize, sess), trades, banks, cards, homes, rooms, ground} {
+		items.New(data), talkers, questEvents, shop.New(data, lookup, tileSize, sess), trades, banks, cards, homes, rooms, ground} {
 		out = append(out, scheduled{s, 1})
 	}
 	return append(out, scheduled{fights, combatEvery}, scheduled{pve, combatEvery}, scheduled{spawns, 1},
