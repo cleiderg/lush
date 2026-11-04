@@ -54,5 +54,9 @@
      {"item": "lithium_cell", "chance": 1, "quantity": 2},
      {"item": "lab_coat", "chance": 6, "quantity": 1},
      {"item": "watchmans_visor", "chance": 12, "quantity": 1}
-   ]}
+   ]},
+  {"id": 10, "key": "librarian", "name": "Librarian", "talkable": true, "spot": "librarian"},
+  {"id": 11, "key": "park_ranger", "name": "Park ranger", "talkable": true, "spot": "park_ranger"},
+  {"id": 12, "key": "food_truck_cook", "name": "Food truck cook", "talkable": true, "spot": "food_truck_cook"},
+  {"id": 13, "key": "guide", "name": "Guide", "talkable": true, "spot": "guide"}
 ]
