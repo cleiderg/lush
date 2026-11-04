@@ -282,3 +282,124 @@ func TestAuctionsLoadedAtStart(t *testing.T) {
 		t.Fatalf("b's view %+v", vb)
 	}
 }
+
+// leaveWorld disconnects c and ticks until player id is out of the world.
+func (h *housingRig) leaveWorld(c *client, id world.PlayerID) {
+	h.t.Helper()
+	c.c.CloseNow()
+	for i := 0; h.w.Player(id) != nil; i++ {
+		if i > 1000 {
+			h.t.Fatalf("player %d never left the world", id)
+		}
+		h.clock.Advance(time.Second)
+		h.w.Tick()
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// AC2 (#601): a player outbid while out of the world has their held gold back
+// when they return, and it stays saved.
+func TestAuctionOutbidWhileAwayKeepsRefund(t *testing.T) {
+	h := newHousingRigOn(t, nil, nil, map[string]int64{"a": 1000, "b": 1000}, openAuction1(""))
+	ca, ida, _ := h.join("a")
+	cb, _, _ := h.join("b")
+	ca.send(auctionBidMsg(1, 300))
+	if got := h.bidResult(ca); got != protocol.AuctionResultCodeOk {
+		t.Fatalf("a bids: %v", got)
+	}
+	h.leaveWorld(ca, ida)
+	cb.send(auctionBidMsg(1, 400))
+	if got := h.bidResult(cb); got != protocol.AuctionResultCodeOk {
+		t.Fatalf("b bids: %v", got)
+	}
+	h.flush()
+	if g := h.gold("a"); g != 1000 {
+		t.Fatalf("a's stored gold %d after the refund, want 1000", g)
+	}
+	_, ida, _ = h.join("a")
+	if g := h.w.Player(ida).Inv.Gold; g != 1000 {
+		t.Fatalf("a's gold %d on return, want 1000", g)
+	}
+	h.flush()
+	if g := h.gold("a"); g != 1000 {
+		t.Fatalf("a's stored gold %d after return, want 1000", g)
+	}
+}
+
+// AC3 (#601): a winner out of the world when the auction ends has paid for
+// the house when they return, and losers out of the world have their gold.
+func TestAuctionWonWhileAway(t *testing.T) {
+	h := newHousingRigOn(t, nil, nil, map[string]int64{"a": 1000, "b": 1000, "c": 1000}, openAuction1(""))
+	ca, ida, _ := h.join("a")
+	cb, idb, _ := h.join("b")
+	cc, _, _ := h.join("c")
+	ca.send(auctionBidMsg(1, 300))
+	h.bidResult(ca)
+	cb.send(auctionBidMsg(1, 500))
+	h.bidResult(cb)
+	h.leaveWorld(ca, ida)
+	h.leaveWorld(cb, idb)
+
+	h.clock.Advance(auctionLen)
+	h.stateOf(cc, 1, func(v auctionView) bool { return v.state == protocol.HouseStateOwned })
+	h.flush()
+	if ga, gb := h.gold("a"), h.gold("b"); ga != 1000 || gb != 100 {
+		t.Fatalf("stored gold a %d b %d, want 1000 and 100", ga, gb)
+	}
+	_, ida, _ = h.join("a")
+	_, idb, _ = h.join("b")
+	if ga, gb := h.w.Player(ida).Inv.Gold, h.w.Player(idb).Inv.Gold; ga != 1000 || gb != 100 {
+		t.Fatalf("gold on return a %d b %d, want 1000 and 100", ga, gb)
+	}
+	h.flush()
+	if ga, gb := h.gold("a"), h.gold("b"); ga != 1000 || gb != 100 {
+		t.Fatalf("stored gold after return a %d b %d, want 1000 and 100", ga, gb)
+	}
+}
+
+// AC4 (#601): after a restart, a bidder outbid before they first join reads
+// their refunded gold from the store, once.
+func TestAuctionOutbidBeforeFirstJoinAfterRestart(t *testing.T) {
+	h := newHousingRigOn(t, nil, nil, map[string]int64{"a": 1000, "b": 1000}, openAuction1(""))
+	ca, _, _ := h.join("a")
+	ca.send(auctionBidMsg(1, 300))
+	h.bidResult(ca)
+	h.flush()
+
+	h2 := newHousingRigOn(t, h.st, nil, nil, nil)
+	cb, _, _ := h2.join("b")
+	cb.send(auctionBidMsg(1, 400))
+	if got := h2.bidResult(cb); got != protocol.AuctionResultCodeOk {
+		t.Fatalf("b bids: %v", got)
+	}
+	_, ida, _ := h2.join("a")
+	if g := h2.w.Player(ida).Inv.Gold; g != 1000 {
+		t.Fatalf("a's gold %d, want 1000", g)
+	}
+	h2.flush()
+	if g := h2.gold("a"); g != 1000 {
+		t.Fatalf("a's stored gold %d, want 1000", g)
+	}
+}
+
+// AC2 (#601): a bid is written after the bidder's earlier economy writes: a
+// bid that needs gold picked up on the same tick is saved, with that gold.
+func TestAuctionBidQueuedAfterEarlierWrites(t *testing.T) {
+	h := newHousingRigOn(t, nil, nil, map[string]int64{"a": 1000}, openAuction1(""))
+	ca, ida, _ := h.join("a")
+	p := h.w.Player(ida)
+	ch, err := p.Inv.AddGold(500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.RecordEconomy("pickup", ch) // not yet saved: the store has 1000
+	ca.send(auctionBidMsg(1, 1200))
+	time.Sleep(50 * time.Millisecond) // the bid reaches the same tick as the pick-up's write
+	if got := h.bidResult(ca); got != protocol.AuctionResultCodeOk {
+		t.Fatalf("bid: %v, want Ok", got)
+	}
+	h.flush()
+	if g := h.gold("a"); g != 300 {
+		t.Fatalf("stored gold %d, want 300 (1000 + 500 - 1200)", g)
+	}
+}

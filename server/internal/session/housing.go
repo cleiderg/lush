@@ -289,6 +289,7 @@ func (s *Server) commitAuction(req housing.CommitRequest) {
 		}
 	}
 	stored := make(map[world.PlayerID]int64, len(who))
+	away := map[int64]bool{} // out of the world: the housing system moves none of their gold
 	for _, id := range who {
 		sid, ok := s.storeIDOf(id)
 		if !ok {
@@ -297,6 +298,9 @@ func (s *Server) commitAuction(req housing.CommitRequest) {
 			return
 		}
 		stored[id] = sid
+		if s.w.Player(id) == nil {
+			away[sid] = true
+		}
 	}
 	var earlier []econReq
 	var names []store.EconomyChange
@@ -319,7 +323,17 @@ func (s *Server) commitAuction(req housing.CommitRequest) {
 		s.keep[g.storeID] = g.id // the auction names them from now on
 		s.mu.Unlock()
 		b := store.PlaceAuctionBid{PlotID: plot, Player: g.storeID, Amount: int64(req.Amount)}
-		r.write = func(ctx context.Context) error { _, err := s.auctions.PlaceAuctionBid(ctx, b); return err }
+		moved := map[int64]int{}
+		for _, rf := range req.Refunds {
+			moved[stored[rf.Player]] += rf.Gold
+		}
+		r.write = func(ctx context.Context) error {
+			if _, err := s.auctions.PlaceAuctionBid(ctx, b); err != nil {
+				return err
+			}
+			s.movedGold(away, moved)
+			return nil
+		}
 		r.done = resolve
 	} else {
 		now := s.clock.Now()
@@ -330,6 +344,16 @@ func (s *Server) commitAuction(req housing.CommitRequest) {
 			if res, err = s.auctions.FinishAuction(ctx, f); err != nil {
 				return err
 			}
+			moved := map[int64]int{}
+			for _, rf := range res.Refunds {
+				moved[rf.Player] += int(rf.Gold)
+			}
+			for _, b := range req.Bids {
+				if res.Winner != 0 && stored[b.Player] == res.Winner {
+					moved[res.Winner] -= int(res.Bid+res.Rent) - b.Held
+				}
+			}
+			s.movedGold(away, moved)
 			if res.Winner != 0 {
 				// Committed; a failure to read the new home back only delays it until restart.
 				for id, sid := range stored {
@@ -361,6 +385,79 @@ func (s *Server) commitAuction(req housing.CommitRequest) {
 		}
 	}
 	s.saver.submitEconomy(append(earlier, r)...)
+}
+
+// goldMove is gold an auction commit moved in the store for a player who was
+// out of the world when it started, so the housing system moved none of it.
+type goldMove struct {
+	g    *guest
+	gold int
+}
+
+// movedGold records the gold a committed auction moved for each stored
+// player, keeping what the players in away must still be given: through
+// their guest, or, without one, by reading them from the store again when
+// they join (see handshake). Saver goroutine.
+func (s *Server) movedGold(away map[int64]bool, moved map[int64]int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.goldSeq++
+	for sid, gold := range moved {
+		if !away[sid] || gold == 0 {
+			continue
+		}
+		if g := s.guests[sid]; g != nil {
+			s.goldMoves = append(s.goldMoves, goldMove{g, gold})
+			continue
+		}
+		if s.goldMoved == nil {
+			s.goldMoved = map[int64]uint64{}
+		}
+		s.goldMoved[sid] = s.goldSeq
+	}
+}
+
+// applyMovedGold gives guests the gold auctions moved in the store while they
+// were out of the world, so that neither their next join nor their next save
+// undoes it, and saves their holdings again, after anything saved from before
+// it. A player back in the world with a locked inventory gets it on a later
+// tick. Tick goroutine, or with the tick stopped.
+func (s *Server) applyMovedGold() {
+	s.mu.Lock()
+	moves := s.goldMoves
+	s.goldMoves = nil
+	s.mu.Unlock()
+	var later []goldMove
+	for _, m := range moves {
+		g := m.g
+		var reqs []econReq
+		var inv world.Inventory
+		if p := s.w.Player(g.id); p != nil && s.live[g.id] == g {
+			if p.Inv.Locked() {
+				later = append(later, m)
+				continue
+			}
+			p.Inv.Gold += m.gold
+			reqs = s.appendEconomy(nil, g, p)
+			inv = p.Inv
+		} else {
+			s.mu.Lock()
+			g.inv.Gold += m.gold
+			inv = cloneInventory(g.inv)
+			s.mu.Unlock()
+		}
+		h, err := toHoldings(inv)
+		if err != nil {
+			s.log.Error("auction gold", "player", g.id, "store_id", g.storeID, "err", err)
+			continue
+		}
+		s.saver.submitEconomy(append(reqs, econEvent(g.storeID, h, nil))...)
+	}
+	if len(later) > 0 {
+		s.mu.Lock()
+		s.goldMoves = append(later, s.goldMoves...)
+		s.mu.Unlock()
+	}
 }
 
 // housingState encodes the house list for the client of g.
