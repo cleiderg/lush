@@ -9,6 +9,8 @@
 package spawner
 
 import (
+	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -17,6 +19,52 @@ import (
 	"github.com/cleiderg/lush/server/internal/world"
 	"github.com/cleiderg/lush/server/internal/world/areas"
 )
+
+// The embedded copy must match shared/map/spawnareas.json; refresh it from the
+// repo root with: cp shared/map/spawnareas.json server/internal/systems/spawner/spawnareas.json
+//
+//go:embed spawnareas.json
+var embeddedZones []byte
+
+// zonePoly is one spawn zone: a polygon in world metres.
+type zonePoly struct{ xs, ys []float64 }
+
+func (z zonePoly) contains(p world.Vec2) bool {
+	in := false
+	x, y := float64(p.X), float64(p.Y)
+	for i, j := 0, len(z.xs)-1; i < len(z.xs); j, i = i, i+1 {
+		if (z.ys[i] > y) != (z.ys[j] > y) && x < (z.xs[j]-z.xs[i])*(y-z.ys[i])/(z.ys[j]-z.ys[i])+z.xs[i] {
+			in = !in
+		}
+	}
+	return in
+}
+
+// loadZones parses spawnareas.json (decimetres, x east, z south).
+func loadZones() (map[string]zonePoly, error) {
+	var f struct {
+		Areas []struct {
+			ID string `json:"id"`
+			P  []int  `json:"p"`
+		} `json:"areas"`
+	}
+	if err := json.Unmarshal(embeddedZones, &f); err != nil {
+		return nil, fmt.Errorf("spawner: spawnareas.json: %w", err)
+	}
+	out := map[string]zonePoly{}
+	for _, a := range f.Areas {
+		if len(a.P) < 6 || len(a.P)%2 != 0 {
+			return nil, fmt.Errorf("spawner: spawn area %q: bad polygon", a.ID)
+		}
+		var z zonePoly
+		for i := 0; i < len(a.P); i += 2 {
+			z.xs = append(z.xs, float64(a.P[i])/10)
+			z.ys = append(z.ys, float64(a.P[i+1])/10)
+		}
+		out[a.ID] = z
+	}
+	return out, nil
+}
 
 // Rand picks spawn cells. *math/rand/v2.Rand satisfies it.
 type Rand interface {
@@ -80,6 +128,10 @@ func New(cfg Config) (*System, error) {
 			}
 		}
 	}
+	zones, err := loadZones()
+	if err != nil {
+		return nil, err
+	}
 	s := &System{cfg: cfg, byType: map[world.NPCTypeID]*kind{}}
 	for _, t := range cfg.Data.NPCs {
 		a, ok := gameArea[t.Area]
@@ -90,10 +142,23 @@ func New(cfg Config) (*System, error) {
 		if t.MaxAlive > 0 && limit > t.MaxAlive {
 			limit = t.MaxAlive
 		}
-		if limit > 0 && len(cells[a]) == 0 {
+		kc := cells[a]
+		if t.SpawnZone != "" {
+			z, ok := zones[t.SpawnZone]
+			if !ok {
+				return nil, fmt.Errorf("spawner: npc %q: unknown spawn zone %q", t.Key, t.SpawnZone)
+			}
+			kc = nil
+			for _, p := range cells[a] {
+				if z.contains(p) {
+					kc = append(kc, p)
+				}
+			}
+		}
+		if limit > 0 && len(kc) == 0 {
 			return nil, fmt.Errorf("spawner: npc %q: no walkable cell in area %s", t.Key, a)
 		}
-		k := &kind{typ: t, cells: cells[a], limit: limit}
+		k := &kind{typ: t, cells: kc, limit: limit}
 		s.kinds = append(s.kinds, k)
 		s.byType[world.NPCTypeID(t.ID)] = k
 	}

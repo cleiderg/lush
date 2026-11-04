@@ -66,8 +66,8 @@ func TestRollDeterministic(t *testing.T) {
 
 func TestGoldRange(t *testing.T) {
 	d := loadData(t)
-	if len(d.NPCs) != 6 {
-		t.Fatalf("want 6 shipped NPC types, got %d", len(d.NPCs))
+	if len(d.NPCs) != 9 {
+		t.Fatalf("want 9 shipped NPC types, got %d", len(d.NPCs))
 	}
 	for _, npc := range d.NPCs {
 		t.Run(npc.Key, func(t *testing.T) {
@@ -187,7 +187,7 @@ func TestCoyoteAlphaAlwaysDropsPelts(t *testing.T) {
 
 func TestUnknownNPC(t *testing.T) {
 	d := loadData(t)
-	for _, id := range []gamedata.NPCTypeID{0, 7, 999} {
+	for _, id := range []gamedata.NPCTypeID{0, 10, 999} {
 		l, err := loot.Roll(d, id, rand.New(rand.NewPCG(1, 1)))
 		if err == nil {
 			t.Errorf("npc %d: no error", id)

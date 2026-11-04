@@ -68,5 +68,17 @@
   {"id": 67, "key": "grey_tile_floor", "name": "Grey tile floor", "kind": "floor_covering"},
   {"id": 68, "key": "checker_tile_floor", "name": "Checker tile floor", "kind": "floor_covering"},
   {"id": 69, "key": "green_carpet_floor", "name": "Green carpet floor", "kind": "floor_covering"},
-  {"id": 70, "key": "sand_carpet_floor", "name": "Sand carpet floor", "kind": "floor_covering"}
+  {"id": 70, "key": "sand_carpet_floor", "name": "Sand carpet floor", "kind": "floor_covering"},
+  {"id": 71, "key": "steel_sword", "name": "Steel sword", "kind": "weapon", "slot": "weapon", "accuracy": 24, "strength": 26, "defence": 0, "attack_speed": 4, "level_to_equip": 20, "shop_buys_for": 200},
+  {"id": 72, "key": "lab_coat", "name": "Lab coat", "kind": "armor", "slot": "body", "accuracy": 0, "strength": 0, "defence": 20, "level_to_equip": 22, "shop_buys_for": 250},
+  {"id": 73, "key": "watchmans_visor", "name": "Watchman's visor", "kind": "armor", "slot": "head", "accuracy": 2, "strength": 0, "defence": 9, "level_to_equip": 25, "shop_buys_for": 220},
+  {"id": 74, "key": "steel_shield", "name": "Steel shield", "kind": "armor", "slot": "shield", "accuracy": 0, "strength": 0, "defence": 10, "level_to_equip": 15, "shop_buys_for": 60},
+  {"id": 75, "key": "feather", "name": "Feather", "kind": "loot", "shop_buys_for": 1},
+  {"id": 76, "key": "goose_egg", "name": "Goose egg", "kind": "loot", "shop_buys_for": 30},
+  {"id": 77, "key": "lithium_cell", "name": "Lithium cell", "kind": "loot", "shop_buys_for": 20},
+  {"id": 78, "key": "library_card", "name": "Library card", "kind": "loot", "shop_buys_for": 0},
+  {"id": 79, "key": "rangers_machete", "name": "Ranger's machete", "kind": "weapon", "slot": "weapon", "accuracy": 20, "strength": 22, "defence": 0, "attack_speed": 4, "level_to_equip": 18, "shop_buys_for": 120},
+  {"id": 80, "key": "chefs_hat", "name": "Chef's hat", "kind": "armor", "slot": "head", "accuracy": 0, "strength": 0, "defence": 2, "level_to_equip": 0, "shop_buys_for": 5},
+  {"id": 81, "key": "overdue_book", "name": "Overdue book", "kind": "loot", "quest_item": true, "shop_buys_for": 0},
+  {"id": 82, "key": "alphas_fang", "name": "Alpha's fang", "kind": "loot", "quest_item": true, "shop_buys_for": 0}
 ]

@@ -139,6 +139,10 @@ type Item struct {
 	Heals        int `json:"heals"`          // HP restored when eaten; food only, else 0
 	// NoStack makes a loot item take one inventory slot each (logs, fish, tools).
 	NoStack bool `json:"no_stack"`
+	// QuestItem marks an item only a quest step gives: it can't be traded or
+	// dropped and goes when the quest completes (docs/specs/quests.md). The
+	// quest engine enforces that; the table just carries the flag.
+	QuestItem bool `json:"quest_item"`
 	// ToolSkill, ToolLevel and ToolBonus make the item a skill tool: the skill
 	// it works for, the skill level needed and the chance added to both ends of
 	// the success range. Hatchets are weapons that are also tools.
@@ -166,12 +170,16 @@ type Drop struct {
 
 // NPCType is one row of the NPC table.
 type NPCType struct {
-	ID    NPCTypeID `json:"id"`
-	Key   string    `json:"key"`
-	Name  string    `json:"name"`
-	Area  Area      `json:"area"`
-	Level int       `json:"level"`
-	HP    int       `json:"hp"`
+	ID   NPCTypeID `json:"id"`
+	Key  string    `json:"key"`
+	Name string    `json:"name"`
+	Area Area      `json:"area"`
+	// SpawnZone, if set, is the id of a polygon in spawnareas.json inside Area
+	// that the spawner keeps this type to (the goose's pond, the far end of the
+	// south fields). Empty means the whole area.
+	SpawnZone string `json:"spawn_zone"`
+	Level     int    `json:"level"`
+	HP        int    `json:"hp"`
 	Stats
 	AttackSpeed    int       `json:"attack_speed"` // combat ticks between attacks
 	Behaviour      Behaviour `json:"behaviour"`
@@ -471,6 +479,9 @@ func (d *Data) index() error {
 		if err := it.validateTool(where); err != nil {
 			return err
 		}
+		if it.QuestItem && (it.Kind != KindLoot || it.ShopBuysFor != 0) {
+			return fmt.Errorf("gamedata: %s: quest item must be loot that the shop buys for 0", where)
+		}
 		if it.ShopBuysFor < 0 {
 			return fmt.Errorf("gamedata: %s: negative shop_buys_for", where)
 		}
@@ -534,6 +545,9 @@ func (d *Data) index() error {
 		id, err := d.resolve(e.ItemKey, ShopFile+": entry")
 		if err != nil {
 			return err
+		}
+		if d.Items[d.itemByKey[e.ItemKey]].QuestItem {
+			return fmt.Errorf("gamedata: %s: entry %q is a quest item", ShopFile, e.ItemKey)
 		}
 		if _, dup := d.shopPrice[id]; dup {
 			return fmt.Errorf("gamedata: %s: entry %q listed twice", ShopFile, e.ItemKey)

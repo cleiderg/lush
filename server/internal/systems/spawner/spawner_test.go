@@ -1,8 +1,11 @@
 package spawner_test
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"math/rand/v2"
+	"os"
 	"testing"
 	"time"
 
@@ -334,5 +337,68 @@ func BenchmarkTick(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		f.tick()
+	}
+}
+
+// TestSpawnAreasCopyMatchesShared fails when the embedded copy drifts.
+func TestSpawnAreasCopyMatchesShared(t *testing.T) {
+	shared, err := os.ReadFile("../../../../shared/map/spawnareas.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine, err := os.ReadFile("spawnareas.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(shared, mine) {
+		t.Error("spawner/spawnareas.json differs from shared/map/spawnareas.json; run: cp shared/map/spawnareas.json server/internal/systems/spawner/spawnareas.json")
+	}
+}
+
+// TestZonedSpawns checks the geese and the watchman bot spawn only inside
+// their zone polygons, on walkable cells, outside the safe circle.
+func TestZonedSpawns(t *testing.T) {
+	var f struct {
+		Areas []struct {
+			ID string `json:"id"`
+			P  []int  `json:"p"`
+		} `json:"areas"`
+	}
+	b, err := os.ReadFile("spawnareas.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &f); err != nil {
+		t.Fatal(err)
+	}
+	// Both zones are axis-aligned rectangles, so a bounding box is exact.
+	box := map[string][4]float32{}
+	for _, a := range f.Areas {
+		bx := [4]float32{1e9, 1e9, -1e9, -1e9}
+		for i := 0; i < len(a.P); i += 2 {
+			x, y := float32(a.P[i])/10, float32(a.P[i+1])/10
+			bx = [4]float32{min(bx[0], x), min(bx[1], y), max(bx[2], x), max(bx[3], y)}
+		}
+		box[a.ID] = bx
+	}
+	fx := newFixture(t)
+	fx.tick()
+	for _, c := range []struct {
+		key  string
+		zone string
+		n    int
+	}{{"goose", "goose_pond", 6}, {"night_watchman_bot", "south_fields_far", 1}} {
+		typ := fx.npcType(t, c.key)
+		got := fx.ofType(typ)
+		if len(got) != c.n {
+			t.Fatalf("%s: %d spawned, want %d", c.key, len(got), c.n)
+		}
+		bx := box[c.zone]
+		for _, n := range got {
+			fx.checkPlaced(t, typ, n)
+			if n.Pos.X < bx[0] || n.Pos.X > bx[2] || n.Pos.Y < bx[1] || n.Pos.Y > bx[3] {
+				t.Errorf("%s at %+v is outside zone %s", c.key, n.Pos, c.zone)
+			}
+		}
 	}
 }
