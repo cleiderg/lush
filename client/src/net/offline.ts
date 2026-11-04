@@ -35,11 +35,11 @@ export const OFFLINE_PLACES: Readonly<Record<string, { x: number; z: number }>> 
 };
 
 /** UI panels offline mode can open with fixed data (`?offline&panel=<name>`, npm run shots). */
-export const OFFLINE_PANELS = ['inventory', 'shop', 'workbench', 'trade', 'bank', 'card-table', 'chat-log', 'big-map', 'skills', 'house', 'house-auction', 'home', 'home-edit'] as const;
+export const OFFLINE_PANELS = ['inventory', 'shop', 'thrift', 'workbench', 'trade', 'bank', 'card-table', 'chat-log', 'big-map', 'skills', 'house', 'house-auction', 'home', 'home-edit'] as const;
 export type OfflinePanel = (typeof OFFLINE_PANELS)[number];
 
 /** Where a panel's shot starts when the URL names no place: within reach of the shop stall, bank booth or card table. */
-const PANEL_PLACES: Partial<Record<OfflinePanel, string>> = { shop: 'shop', bank: 'bank', 'card-table': 'cardtable' };
+const PANEL_PLACES: Partial<Record<OfflinePanel, string>> = { shop: 'shop', thrift: 'shop', bank: 'bank', 'card-table': 'cardtable' };
 
 export const OFFLINE_PLAYER_ID = 1;
 const DEFAULT_SEED = 1;
