@@ -30,6 +30,7 @@ import { BigMap, Minimap } from './ui/minimap';
 import { PlayerPortrait } from './ui/playerPortrait';
 import { localRetroStore, RetroToggle } from './ui/retroToggle';
 import { HomeLeaveButton } from './ui/homeLeaveButton';
+import { HomeOpenToggle } from './ui/homeOpenToggle';
 import { HomeEditPanel, type Tile } from './ui/homeEditPanel';
 import { HousePanel } from './ui/housePanel';
 import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
@@ -135,6 +136,7 @@ const house = new HousePanel({
   housing: game.housing,
   send,
   sendHomeEnter: (id) => session.sendHomeEnter(id),
+  sendBid: (id, amount) => session.sendAuctionBid(id, amount),
   onOpen: () => {
     hud.setOpen(false);
     skills.setOpen(false);
@@ -163,6 +165,7 @@ const homeEdit = new HomeEditPanel({
 void tilePick;
 const homeLeave = new HomeLeaveButton({ parent: document.body, housing: game.housing, sendHomeLeave: () => session.sendHomeLeave() });
 void homeLeave;
+void new HomeOpenToggle({ parent: document.body, housing: game.housing, sendHomeSetOpen: (open) => session.sendHomeSetOpen(open) });
 const cardTable = new CardTablePanel({
   parent: document.body,
   tables: game.cardTables,
@@ -233,6 +236,7 @@ const remotePositions = () => game.remotes(performance.now());
 const bigMap = new BigMap({
   parent: document.body,
   data: campusMapData(),
+  houses: () => game.housing.houses,
   position: () => game.prediction.pos,
   remotes: remotePositions,
   onOpen: () => {
@@ -247,6 +251,7 @@ const bigMap = new BigMap({
 const minimap = new Minimap({
   parent: document.body,
   data: campusMapData(),
+  houses: () => game.housing.houses,
   position: () => game.prediction.pos,
   yaw: () => renderer.world.rig.yaw,
   remotes: remotePositions,
@@ -287,6 +292,10 @@ function openOfflinePanel(panel: OfflinePanel): void {
     },
     shop: () => shop.tryOpen(),
     house: () => {
+      house.open(OFFLINE_HOUSE_ID);
+      return house.isOpen;
+    },
+    'house-auction': () => {
       house.open(OFFLINE_HOUSE_ID);
       return house.isOpen;
     },

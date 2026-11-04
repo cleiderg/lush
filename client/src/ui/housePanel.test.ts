@@ -10,22 +10,22 @@ import { HousePanel } from './housePanel';
 const NOW = 1_800_000_000;
 const MONTH = RENT_MONTH_SECONDS;
 
-function housingBytes(houses: { id: number; mine?: boolean; state: HouseState; paidUntil?: number; open?: boolean }[]): Uint8Array {
+function housingBytes(houses: { id: number; mine?: boolean; state: HouseState; paidUntil?: number; open?: boolean; topBid?: number; auctionEnd?: number; myBid?: number }[]): Uint8Array {
   const b = new flatbuffers.Builder(256);
   const offs = houses.map((h) =>
-    HouseInfo.createHouseInfo(b, h.id, 1, b.createString(h.mine ? 'Me' : ''), !!h.mine, BigInt(h.paidUntil ?? 0), h.state, h.open ?? true));
+    HouseInfo.createHouseInfo(b, h.id, 1, b.createString(h.mine ? 'Me' : ''), !!h.mine, BigInt(h.paidUntil ?? 0), h.state, h.open ?? true, h.topBid ?? 0, BigInt(h.auctionEnd ?? 0), h.myBid ?? 0));
   const msg = HousingState.createHousingState(b, HousingState.createHousesVector(b, offs), 200, 2, 6);
   b.finish(Envelope.createEnvelope(b, Message.HousingState, msg));
   return b.asUint8Array().slice();
 }
 
-function setup(houses: Parameters<typeof housingBytes>[0]) {
+function setup(houses: Parameters<typeof housingBytes>[0], sendBid = vi.fn<(id: number, amount: number) => void>()) {
   const game = new GameState();
   game.handle(decode(housingBytes(houses))!, 0);
   const send = vi.fn<(bytes: Uint8Array) => void>();
-  const panel = new HousePanel({ parent: document.body, housing: game.housing, send, sendHomeEnter: vi.fn(), now: () => NOW, viewport: () => ({ width: 390, height: 844 }) });
+  const panel = new HousePanel({ parent: document.body, housing: game.housing, send, sendBid, sendHomeEnter: vi.fn(), now: () => NOW, viewport: () => ({ width: 390, height: 844 }) });
   current = panel;
-  return { game, send, panel };
+  return { game, send, sendBid, panel };
 }
 
 const q = <T extends HTMLElement>(p: HousePanel, sel: string) => p.panel.querySelector<T>(sel);
@@ -106,6 +106,48 @@ describe('login rent warning', () => {
     g.handle(decode(housingBytes([{ id: 7, mine: true, state: HouseState.Warning, paidUntil: NOW }]))!, 0);
     expect(lines(g)).toBe(0);
   });
+
+  describe('auction', () => {
+    const auction = (extra: { topBid?: number; myBid?: number } = {}) =>
+      setup([{ id: 9, state: HouseState.Auction, auctionEnd: NOW + 2 * 86400 + 3 * 3600, ...extra }]);
+
+    it('shows top bid, time left and held bid, and no Claim', () => {
+      const { panel } = auction({ topBid: 450, myBid: 300 });
+      panel.open(9);
+      expect(q(panel, '.lush-house-top-bid')!.textContent).toBe('Top bid: 450 gp');
+      expect(q(panel, '.lush-house-time-left')!.textContent).toBe('Time left: 2d 3h');
+      expect(q(panel, '.lush-house-my-bid')!.textContent).toBe('Your held bid: 300 gp');
+      expect(q(panel, '.lush-house-claim')).toBeNull();
+    });
+
+    it('the lowest bid is rent_per_month with no bids and top bid + 1 otherwise, and Bid sends the amount', () => {
+      const none = auction();
+      none.panel.open(9);
+      expect(q(none.panel, '.lush-house-bid-amount')!.textContent).toBe('200 gp');
+      expect(q<HTMLButtonElement>(none.panel, '.lush-house-bid-minus')!.disabled).toBe(true);
+      q<HTMLButtonElement>(none.panel, '.lush-house-bid-minus')!.click();
+      expect(q(none.panel, '.lush-house-bid-amount')!.textContent).toBe('200 gp');
+      q<HTMLButtonElement>(none.panel, '.lush-house-bid-plus')!.click();
+      expect(q(none.panel, '.lush-house-bid-amount')!.textContent).toBe('220 gp');
+      q<HTMLButtonElement>(none.panel, '.lush-house-bid')!.click();
+      expect(none.sendBid).toHaveBeenCalledWith(9, 220);
+      none.panel.dispose();
+
+      const top = auction({ topBid: 450 });
+      top.panel.open(9);
+      expect(q(top.panel, '.lush-house-bid-amount')!.textContent).toBe('451 gp');
+      q<HTMLButtonElement>(top.panel, '.lush-house-bid-minus')!.click();
+      expect(q(top.panel, '.lush-house-bid-amount')!.textContent).toBe('451 gp');
+      q<HTMLButtonElement>(top.panel, '.lush-house-bid')!.click();
+      expect(top.sendBid).toHaveBeenCalledWith(9, 451);
+    });
+
+    it('notes the winner also pays claim_months x rent_per_month, from state', () => {
+      const { panel } = auction();
+      panel.open(9);
+      expect(q(panel, '.lush-house-note')!.textContent).toContain('also pays 400 gp (2 months of rent)');
+    });
+  });
 });
 
 describe('HousePanel Enter and door prompt (AC2, AC3)', () => {
@@ -113,7 +155,7 @@ describe('HousePanel Enter and door prompt (AC2, AC3)', () => {
     const s = setup(houses);
     const enter = vi.fn<(id: number) => void>();
     s.panel.dispose();
-    const panel = new HousePanel({ parent: document.body, housing: s.game.housing, send: s.send, sendHomeEnter: enter, now: () => NOW, viewport: () => ({ width: 390, height: 844 }) });
+    const panel = new HousePanel({ parent: document.body, housing: s.game.housing, send: s.send, sendBid: s.sendBid, sendHomeEnter: enter, now: () => NOW, viewport: () => ({ width: 390, height: 844 }) });
     current = panel;
     return { ...s, panel, enter };
   }

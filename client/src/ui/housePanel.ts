@@ -1,6 +1,6 @@
-import { encodeHouseClaim, encodeRentPay } from '../net/codec';
+import { encodeAuctionBid, encodeHouseClaim, encodeRentPay } from '../net/codec';
 import { HouseState } from '../protocol';
-import { maxRentMonths, prepaidMonths, RENT_MONTH_SECONDS, type HousingStore } from '../state/housing';
+import { maxRentMonths, type HouseInfoState, prepaidMonths, RENT_MONTH_SECONDS, type HousingStore } from '../state/housing';
 import { hudLayout, place } from './hudLayout';
 import { addPressFeedbackWithin, BUTTON_CLASS, PanelMotion } from './theme';
 
@@ -9,6 +9,8 @@ export interface HousePanelOptions {
   housing: HousingStore;
   /** Sends an encoded client message (HouseClaim, RentPay) to the server. */
   send: (bytes: Uint8Array) => void;
+  /** Bids gold on a house in auction; defaults to sending an AuctionBid through `send`. */
+  sendBid?: (houseId: number, amount: number) => void;
   /** Unix seconds now; defaults to the device clock. */
   now?: () => number;
   viewport?: () => { width: number; height: number };
@@ -39,6 +41,18 @@ export function formatDate(unixSeconds: number): string {
   });
 }
 
+/** Seconds as the two largest units, like "2d 3h", "5h 12m" or "40s". */
+export function formatDuration(seconds: number): string {
+  const s = Math.floor(seconds);
+  const d = Math.floor(s / 86400);
+  const hr = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d > 0) return `${d}d ${hr}h`;
+  if (hr > 0) return `${hr}h ${m}m`;
+  if (m > 0) return `${m}m`;
+  return `${s}s`;
+}
+
 /**
  * House panel: owner and state of one house, Claim (claim_months of rent) for an empty house, and for
  * the player's own house the paid-until date and a Rent control for 1 to the room left under
@@ -52,6 +66,8 @@ export class HousePanel {
   private readonly body: HTMLElement;
   private houseId = 0;
   private months = 1;
+  private bid = 0;
+  private bidHouse = 0;
   private readonly motion: PanelMotion;
   private readonly unsubscribe: () => void;
   private readonly onResize = (): void => this.layout();
@@ -86,6 +102,7 @@ export class HousePanel {
   open(houseId: number): void {
     this.houseId = houseId;
     this.months = 1;
+    this.bidHouse = 0;
     if (!this.isOpen) {
       this.motion.set(true);
       this.opts.onOpen?.();
@@ -133,6 +150,7 @@ export class HousePanel {
     }
     if (house.state === HouseState.Auction) {
       this.status.textContent = 'Up for auction';
+      this.renderAuction(house);
       return;
     }
     this.status.textContent = house.mine ? 'Your house' : `Owned by ${house.ownerName}`;
@@ -163,6 +181,41 @@ export class HousePanel {
       room < 1 ? `Already prepaid the most, ${h.maxPrepaidMonths} months.`
         : `${prepaidMonths(house.paidUntil, now)} of ${h.maxPrepaidMonths} months prepaid.`);
     this.body.append(paid, rent, note);
+  }
+
+  private renderAuction(house: HouseInfoState): void {
+    const h = this.opts.housing;
+    const min = house.topBid > 0 ? house.topBid + 1 : h.rentPerMonth;
+    // Keep the chosen amount across re-renders of this house, but never below the lowest valid bid.
+    this.bid = this.bidHouse === house.id ? Math.max(min, this.bid) : min;
+    this.bidHouse = house.id;
+    const left = Math.max(0, house.auctionEnd - this.now());
+    this.body.append(
+      el('div', 'lush-house-line lush-house-top-bid', house.topBid > 0 ? `Top bid: ${house.topBid} gp` : `No bids yet, starting at ${h.rentPerMonth} gp`),
+      el('div', 'lush-house-line lush-house-time-left', left > 0 ? `Time left: ${formatDuration(left)}` : 'Auction ending'),
+      el('div', 'lush-house-line lush-house-my-bid', house.myBid > 0 ? `Your held bid: ${house.myBid} gp` : 'You have no bid held'),
+    );
+    const step = Math.max(1, Math.floor(h.rentPerMonth / 10));
+    const row = el('div', 'lush-house-rent');
+    const minus = button('lush-house-bid-minus', '-', () => this.stepBid(-step, min));
+    const plus = button('lush-house-bid-plus', '+', () => this.stepBid(step, min));
+    minus.disabled = this.bid <= min;
+    const amount = el('span', 'lush-house-bid-amount', `${this.bid} gp`);
+    amount.style.flex = '1';
+    amount.style.textAlign = 'center';
+    const bidAmount = this.bid;
+    const bid = button('lush-house-bid', 'Bid', () => {
+      if (this.opts.sendBid) this.opts.sendBid(house.id, bidAmount);
+      else this.opts.send(encodeAuctionBid(house.id, bidAmount));
+    });
+    row.append(minus, amount, plus, bid);
+    this.body.append(row, el('div', 'lush-house-line lush-house-note',
+      `Bids hold gold until you are outbid. The winner also pays ${h.claimMonths * h.rentPerMonth} gp (${h.claimMonths} months of rent) on top of the bid.`));
+  }
+
+  private stepBid(d: number, min: number): void {
+    this.bid = Math.max(min, this.bid + d);
+    this.render();
   }
 
   private step(d: number): void {
