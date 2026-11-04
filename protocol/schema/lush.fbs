@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 20
+  Current = 21
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -1264,6 +1264,149 @@ table GroupResult {
   code: GroupResultCode;
 }
 
+// ---- Group halls, doors, vault and alarm (docs/specs/groups.md) ----
+// Hall ids are the ushort 1 to 6 of hall-1 to hall-6 (shared/map halls.json),
+// matching GroupState.hall_id.
+
+// Which door of a hall.
+enum HallDoorId : ubyte {
+  Outer0 = 0,
+  Outer1 = 1,
+  Inner = 2
+}
+
+enum DoorVerb : ubyte {
+  Open = 0,
+  Close = 1,
+  Lock = 2,
+  Unlock = 3,
+  Force = 4,    // attack a locked door
+  Repair = 5    // a member with keys repairs a broken door for gold
+}
+
+// What everyone can see of a door. There is deliberately no closed-versus-
+// locked value: a shut door looks the same either way (groups.md: Doors).
+enum DoorPublicState : ubyte {
+  Open = 0,
+  Shut = 1,
+  Broken = 2
+}
+
+enum DoorLogAction : ubyte {
+  Open = 0,
+  Close = 1,
+  Lock = 2,
+  Unlock = 3,
+  Break = 4,
+  Repair = 5
+}
+
+enum AlarmCause : ubyte {
+  Door = 0,
+  Vault = 1
+}
+
+// Client -> server: claim an empty hall for the player's group.
+table HallClaim {
+  hall_id: ushort;
+}
+
+// Client -> server: give up the group's hall.
+table HallGiveUp {
+}
+
+// Client -> server: act on one door of a hall.
+table DoorAction {
+  hall_id: ushort;
+  door: HallDoorId;
+  action: DoorVerb;
+}
+
+// Client -> server: ask for the door log (Leaders and Officers).
+table DoorLogRequest {
+}
+
+// Client -> server: move gold from the player into the group vault.
+table VaultDeposit {
+  amount: uint64;
+}
+
+// Client -> server: move gold from the group vault to the player.
+table VaultWithdraw {
+  amount: uint64;
+}
+
+// One hall in HallsState.
+table HallInfo {
+  id: ushort;
+  group_id: uint32;     // 0 when the hall is empty
+  group_name: string;   // absent when empty
+  banner: ubyte;
+}
+
+// Server -> client: who owns each hall. Sent on login and on any change.
+table HallsState {
+  halls: [HallInfo];
+}
+
+// Server -> client: the public state of one door, sent to players nearby.
+table DoorState {
+  hall_id: ushort;
+  door: HallDoorId;
+  state: DoorPublicState;
+  being_forced: bool;
+  hp: ushort;
+}
+
+table DoorLogEntry {
+  door: HallDoorId;
+  action: DoorLogAction;
+  player_name: string;
+  time_ms: ulong;   // Unix epoch milliseconds, UTC
+}
+
+// Server -> client: the door log of the player's hall, newest last.
+table DoorLog {
+  hall_id: ushort;
+  entries: [DoorLogEntry];
+}
+
+// Server -> client: the alarm of the player's hall went off.
+table HallAlarm {
+  hall_id: ushort;
+  cause: AlarmCause;
+}
+
+enum HallResultCode : ubyte {
+  Ok = 0,
+  NotInGroup = 1,
+  NoPermission = 2,        // rank too low, or no keys / withdraw permission
+  HallInvalid = 3,         // unknown hall id
+  HallTaken = 4,           // another group owns it
+  GroupHasHall = 5,        // a group holds at most one hall
+  GroupHasNoHall = 6,
+  NotEnoughGold = 7,       // claim fee, repair fee or deposit
+  NotInHall = 8,           // action needs the player to be in or at the hall
+  DoorInvalid = 9,         // hall has no such door
+  DoorLocked = 10,         // tried to open a locked door
+  DoorBroken = 11,
+  DoorNotBroken = 12,      // repair of a door that isn't broken
+  DoorAlreadyOpen = 13,
+  DoorAlreadyShut = 14,
+  DoorAlreadyLocked = 15,
+  DoorNotLocked = 16,      // unlock or force of a door that isn't locked
+  OutOfReach = 17,         // too far from the door or vault
+  NotOwnHall = 18,         // door log or vault of a hall the group doesn't hold
+  VaultAmountInvalid = 19, // zero amount
+  VaultNotEnough = 20,     // withdraw more than the vault holds
+  VaultRoomDenied = 21     // no permission to enter the vault room
+}
+
+// Server -> client: the outcome of a hall, door or vault action (or Ok).
+table HallResult {
+  code: HallResultCode;
+}
+
 union Message {
   Hello,
   Welcome,
@@ -1362,7 +1505,18 @@ union Message {
   GroupDisband,
   GroupInvited,
   GroupState,
-  GroupResult
+  GroupResult,
+  HallClaim,
+  HallGiveUp,
+  DoorAction,
+  DoorLogRequest,
+  VaultDeposit,
+  VaultWithdraw,
+  HallsState,
+  DoorState,
+  DoorLog,
+  HallAlarm,
+  HallResult
 }
 
 table Envelope {

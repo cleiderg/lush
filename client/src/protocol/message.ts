@@ -26,6 +26,10 @@ import { CraftResult } from '../protocol/craft-result';
 import { Dialogue } from '../protocol/dialogue';
 import { DialogueClose } from '../protocol/dialogue-close';
 import { DialogueReply } from '../protocol/dialogue-reply';
+import { DoorAction } from '../protocol/door-action';
+import { DoorLog } from '../protocol/door-log';
+import { DoorLogRequest } from '../protocol/door-log-request';
+import { DoorState } from '../protocol/door-state';
 import { EmoteSend } from '../protocol/emote-send';
 import { EntityHealth } from '../protocol/entity-health';
 import { EntityInfo } from '../protocol/entity-info';
@@ -42,6 +46,11 @@ import { GroupResult } from '../protocol/group-result';
 import { GroupSetPermission } from '../protocol/group-set-permission';
 import { GroupSetRank } from '../protocol/group-set-rank';
 import { GroupState } from '../protocol/group-state';
+import { HallAlarm } from '../protocol/hall-alarm';
+import { HallClaim } from '../protocol/hall-claim';
+import { HallGiveUp } from '../protocol/hall-give-up';
+import { HallResult } from '../protocol/hall-result';
+import { HallsState } from '../protocol/halls-state';
 import { Hello } from '../protocol/hello';
 import { HomeEnter } from '../protocol/home-enter';
 import { HomeLeave } from '../protocol/home-leave';
@@ -97,6 +106,8 @@ import { TradeRequestNotice } from '../protocol/trade-request-notice';
 import { TradeResult } from '../protocol/trade-result';
 import { TradeSetGold } from '../protocol/trade-set-gold';
 import { TradeState } from '../protocol/trade-state';
+import { VaultDeposit } from '../protocol/vault-deposit';
+import { VaultWithdraw } from '../protocol/vault-withdraw';
 import { Welcome } from '../protocol/welcome';
 import { WorkbenchCatalog } from '../protocol/workbench-catalog';
 import { WorkbenchCraft } from '../protocol/workbench-craft';
@@ -201,13 +212,24 @@ export enum Message {
   GroupDisband = 95,
   GroupInvited = 96,
   GroupState = 97,
-  GroupResult = 98
+  GroupResult = 98,
+  HallClaim = 99,
+  HallGiveUp = 100,
+  DoorAction = 101,
+  DoorLogRequest = 102,
+  VaultDeposit = 103,
+  VaultWithdraw = 104,
+  HallsState = 105,
+  DoorState = 106,
+  DoorLog = 107,
+  HallAlarm = 108,
+  HallResult = 109
 }
 
 export function unionToMessage(
   type: Message,
-  accessor: (obj:AttackTarget|AuctionBid|AuctionResult|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|CraftResult|Dialogue|DialogueClose|DialogueReply|EmoteSend|EntityHealth|EntityInfo|GroundItems|GroupDisband|GroupFound|GroupHandover|GroupInvite|GroupInviteReply|GroupInvited|GroupKick|GroupLeave|GroupResult|GroupSetPermission|GroupSetRank|GroupState|Hello|HomeEnter|HomeLeave|HomeMove|HomePlace|HomeRemove|HomeResult|HomeRotate|HomeSetFloor|HomeSetOpen|HomeSetWallpaper|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|QuestCatalog|QuestCompleted|QuestLog|QuestResult|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|Talk|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|WorkbenchCatalog|WorkbenchCraft) => AttackTarget|AuctionBid|AuctionResult|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|CraftResult|Dialogue|DialogueClose|DialogueReply|EmoteSend|EntityHealth|EntityInfo|GroundItems|GroupDisband|GroupFound|GroupHandover|GroupInvite|GroupInviteReply|GroupInvited|GroupKick|GroupLeave|GroupResult|GroupSetPermission|GroupSetRank|GroupState|Hello|HomeEnter|HomeLeave|HomeMove|HomePlace|HomeRemove|HomeResult|HomeRotate|HomeSetFloor|HomeSetOpen|HomeSetWallpaper|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|QuestCatalog|QuestCompleted|QuestLog|QuestResult|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|Talk|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|WorkbenchCatalog|WorkbenchCraft|null
-): AttackTarget|AuctionBid|AuctionResult|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|CraftResult|Dialogue|DialogueClose|DialogueReply|EmoteSend|EntityHealth|EntityInfo|GroundItems|GroupDisband|GroupFound|GroupHandover|GroupInvite|GroupInviteReply|GroupInvited|GroupKick|GroupLeave|GroupResult|GroupSetPermission|GroupSetRank|GroupState|Hello|HomeEnter|HomeLeave|HomeMove|HomePlace|HomeRemove|HomeResult|HomeRotate|HomeSetFloor|HomeSetOpen|HomeSetWallpaper|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|QuestCatalog|QuestCompleted|QuestLog|QuestResult|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|Talk|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|WorkbenchCatalog|WorkbenchCraft|null {
+  accessor: (obj:AttackTarget|AuctionBid|AuctionResult|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|CraftResult|Dialogue|DialogueClose|DialogueReply|DoorAction|DoorLog|DoorLogRequest|DoorState|EmoteSend|EntityHealth|EntityInfo|GroundItems|GroupDisband|GroupFound|GroupHandover|GroupInvite|GroupInviteReply|GroupInvited|GroupKick|GroupLeave|GroupResult|GroupSetPermission|GroupSetRank|GroupState|HallAlarm|HallClaim|HallGiveUp|HallResult|HallsState|Hello|HomeEnter|HomeLeave|HomeMove|HomePlace|HomeRemove|HomeResult|HomeRotate|HomeSetFloor|HomeSetOpen|HomeSetWallpaper|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|QuestCatalog|QuestCompleted|QuestLog|QuestResult|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|Talk|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|VaultDeposit|VaultWithdraw|Welcome|WorkbenchCatalog|WorkbenchCraft) => AttackTarget|AuctionBid|AuctionResult|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|CraftResult|Dialogue|DialogueClose|DialogueReply|DoorAction|DoorLog|DoorLogRequest|DoorState|EmoteSend|EntityHealth|EntityInfo|GroundItems|GroupDisband|GroupFound|GroupHandover|GroupInvite|GroupInviteReply|GroupInvited|GroupKick|GroupLeave|GroupResult|GroupSetPermission|GroupSetRank|GroupState|HallAlarm|HallClaim|HallGiveUp|HallResult|HallsState|Hello|HomeEnter|HomeLeave|HomeMove|HomePlace|HomeRemove|HomeResult|HomeRotate|HomeSetFloor|HomeSetOpen|HomeSetWallpaper|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|QuestCatalog|QuestCompleted|QuestLog|QuestResult|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|Talk|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|VaultDeposit|VaultWithdraw|Welcome|WorkbenchCatalog|WorkbenchCraft|null
+): AttackTarget|AuctionBid|AuctionResult|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|CraftResult|Dialogue|DialogueClose|DialogueReply|DoorAction|DoorLog|DoorLogRequest|DoorState|EmoteSend|EntityHealth|EntityInfo|GroundItems|GroupDisband|GroupFound|GroupHandover|GroupInvite|GroupInviteReply|GroupInvited|GroupKick|GroupLeave|GroupResult|GroupSetPermission|GroupSetRank|GroupState|HallAlarm|HallClaim|HallGiveUp|HallResult|HallsState|Hello|HomeEnter|HomeLeave|HomeMove|HomePlace|HomeRemove|HomeResult|HomeRotate|HomeSetFloor|HomeSetOpen|HomeSetWallpaper|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|QuestCatalog|QuestCompleted|QuestLog|QuestResult|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|Talk|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|VaultDeposit|VaultWithdraw|Welcome|WorkbenchCatalog|WorkbenchCraft|null {
   switch(Message[type]) {
     case 'NONE': return null; 
     case 'Hello': return accessor(new Hello())! as Hello;
@@ -308,15 +330,26 @@ export function unionToMessage(
     case 'GroupInvited': return accessor(new GroupInvited())! as GroupInvited;
     case 'GroupState': return accessor(new GroupState())! as GroupState;
     case 'GroupResult': return accessor(new GroupResult())! as GroupResult;
+    case 'HallClaim': return accessor(new HallClaim())! as HallClaim;
+    case 'HallGiveUp': return accessor(new HallGiveUp())! as HallGiveUp;
+    case 'DoorAction': return accessor(new DoorAction())! as DoorAction;
+    case 'DoorLogRequest': return accessor(new DoorLogRequest())! as DoorLogRequest;
+    case 'VaultDeposit': return accessor(new VaultDeposit())! as VaultDeposit;
+    case 'VaultWithdraw': return accessor(new VaultWithdraw())! as VaultWithdraw;
+    case 'HallsState': return accessor(new HallsState())! as HallsState;
+    case 'DoorState': return accessor(new DoorState())! as DoorState;
+    case 'DoorLog': return accessor(new DoorLog())! as DoorLog;
+    case 'HallAlarm': return accessor(new HallAlarm())! as HallAlarm;
+    case 'HallResult': return accessor(new HallResult())! as HallResult;
     default: return null;
   }
 }
 
 export function unionListToMessage(
   type: Message, 
-  accessor: (index: number, obj:AttackTarget|AuctionBid|AuctionResult|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|CraftResult|Dialogue|DialogueClose|DialogueReply|EmoteSend|EntityHealth|EntityInfo|GroundItems|GroupDisband|GroupFound|GroupHandover|GroupInvite|GroupInviteReply|GroupInvited|GroupKick|GroupLeave|GroupResult|GroupSetPermission|GroupSetRank|GroupState|Hello|HomeEnter|HomeLeave|HomeMove|HomePlace|HomeRemove|HomeResult|HomeRotate|HomeSetFloor|HomeSetOpen|HomeSetWallpaper|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|QuestCatalog|QuestCompleted|QuestLog|QuestResult|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|Talk|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|WorkbenchCatalog|WorkbenchCraft) => AttackTarget|AuctionBid|AuctionResult|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|CraftResult|Dialogue|DialogueClose|DialogueReply|EmoteSend|EntityHealth|EntityInfo|GroundItems|GroupDisband|GroupFound|GroupHandover|GroupInvite|GroupInviteReply|GroupInvited|GroupKick|GroupLeave|GroupResult|GroupSetPermission|GroupSetRank|GroupState|Hello|HomeEnter|HomeLeave|HomeMove|HomePlace|HomeRemove|HomeResult|HomeRotate|HomeSetFloor|HomeSetOpen|HomeSetWallpaper|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|QuestCatalog|QuestCompleted|QuestLog|QuestResult|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|Talk|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|WorkbenchCatalog|WorkbenchCraft|null, 
+  accessor: (index: number, obj:AttackTarget|AuctionBid|AuctionResult|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|CraftResult|Dialogue|DialogueClose|DialogueReply|DoorAction|DoorLog|DoorLogRequest|DoorState|EmoteSend|EntityHealth|EntityInfo|GroundItems|GroupDisband|GroupFound|GroupHandover|GroupInvite|GroupInviteReply|GroupInvited|GroupKick|GroupLeave|GroupResult|GroupSetPermission|GroupSetRank|GroupState|HallAlarm|HallClaim|HallGiveUp|HallResult|HallsState|Hello|HomeEnter|HomeLeave|HomeMove|HomePlace|HomeRemove|HomeResult|HomeRotate|HomeSetFloor|HomeSetOpen|HomeSetWallpaper|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|QuestCatalog|QuestCompleted|QuestLog|QuestResult|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|Talk|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|VaultDeposit|VaultWithdraw|Welcome|WorkbenchCatalog|WorkbenchCraft) => AttackTarget|AuctionBid|AuctionResult|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|CraftResult|Dialogue|DialogueClose|DialogueReply|DoorAction|DoorLog|DoorLogRequest|DoorState|EmoteSend|EntityHealth|EntityInfo|GroundItems|GroupDisband|GroupFound|GroupHandover|GroupInvite|GroupInviteReply|GroupInvited|GroupKick|GroupLeave|GroupResult|GroupSetPermission|GroupSetRank|GroupState|HallAlarm|HallClaim|HallGiveUp|HallResult|HallsState|Hello|HomeEnter|HomeLeave|HomeMove|HomePlace|HomeRemove|HomeResult|HomeRotate|HomeSetFloor|HomeSetOpen|HomeSetWallpaper|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|QuestCatalog|QuestCompleted|QuestLog|QuestResult|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|Talk|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|VaultDeposit|VaultWithdraw|Welcome|WorkbenchCatalog|WorkbenchCraft|null, 
   index: number
-): AttackTarget|AuctionBid|AuctionResult|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|CraftResult|Dialogue|DialogueClose|DialogueReply|EmoteSend|EntityHealth|EntityInfo|GroundItems|GroupDisband|GroupFound|GroupHandover|GroupInvite|GroupInviteReply|GroupInvited|GroupKick|GroupLeave|GroupResult|GroupSetPermission|GroupSetRank|GroupState|Hello|HomeEnter|HomeLeave|HomeMove|HomePlace|HomeRemove|HomeResult|HomeRotate|HomeSetFloor|HomeSetOpen|HomeSetWallpaper|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|QuestCatalog|QuestCompleted|QuestLog|QuestResult|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|Talk|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|Welcome|WorkbenchCatalog|WorkbenchCraft|null {
+): AttackTarget|AuctionBid|AuctionResult|BankClose|BankDeposit|BankDepositEquipment|BankDepositInventory|BankOpen|BankResult|BankState|BankWithdraw|CardTableCatalog|CardTableLeave|CardTableReady|CardTableResult|CardTableSit|CardTableState|ChatMessage|ChatSend|CombatHit|CraftResult|Dialogue|DialogueClose|DialogueReply|DoorAction|DoorLog|DoorLogRequest|DoorState|EmoteSend|EntityHealth|EntityInfo|GroundItems|GroupDisband|GroupFound|GroupHandover|GroupInvite|GroupInviteReply|GroupInvited|GroupKick|GroupLeave|GroupResult|GroupSetPermission|GroupSetRank|GroupState|HallAlarm|HallClaim|HallGiveUp|HallResult|HallsState|Hello|HomeEnter|HomeLeave|HomeMove|HomePlace|HomeRemove|HomeResult|HomeRotate|HomeSetFloor|HomeSetOpen|HomeSetWallpaper|HomeState|HouseClaim|HousingResult|HousingState|Input|InventoryState|ItemAction|ItemCatalog|LevelUp|NpcCatalog|PickUp|Ping|PlayerStats|Pong|QuestCatalog|QuestCompleted|QuestLog|QuestResult|Reload|RentPay|ResourceState|RestartCountdown|ShedDraw|ShedHand|ShedPlay|ShedState|ShopBuy|ShopResult|ShopSell|SkillAction|SkillCatalog|SkillResult|SkillStats|Snapshot|Talk|TradeAccept|TradeCancel|TradeOffer|TradeRemove|TradeRequest|TradeRequestNotice|TradeResult|TradeSetGold|TradeState|VaultDeposit|VaultWithdraw|Welcome|WorkbenchCatalog|WorkbenchCraft|null {
   switch(Message[type]) {
     case 'NONE': return null; 
     case 'Hello': return accessor(index, new Hello())! as Hello;
@@ -417,6 +450,17 @@ export function unionListToMessage(
     case 'GroupInvited': return accessor(index, new GroupInvited())! as GroupInvited;
     case 'GroupState': return accessor(index, new GroupState())! as GroupState;
     case 'GroupResult': return accessor(index, new GroupResult())! as GroupResult;
+    case 'HallClaim': return accessor(index, new HallClaim())! as HallClaim;
+    case 'HallGiveUp': return accessor(index, new HallGiveUp())! as HallGiveUp;
+    case 'DoorAction': return accessor(index, new DoorAction())! as DoorAction;
+    case 'DoorLogRequest': return accessor(index, new DoorLogRequest())! as DoorLogRequest;
+    case 'VaultDeposit': return accessor(index, new VaultDeposit())! as VaultDeposit;
+    case 'VaultWithdraw': return accessor(index, new VaultWithdraw())! as VaultWithdraw;
+    case 'HallsState': return accessor(index, new HallsState())! as HallsState;
+    case 'DoorState': return accessor(index, new DoorState())! as DoorState;
+    case 'DoorLog': return accessor(index, new DoorLog())! as DoorLog;
+    case 'HallAlarm': return accessor(index, new HallAlarm())! as HallAlarm;
+    case 'HallResult': return accessor(index, new HallResult())! as HallResult;
     default: return null;
   }
 }

@@ -106,6 +106,17 @@ const (
 	MessageGroupInvited         Message = 96
 	MessageGroupState           Message = 97
 	MessageGroupResult          Message = 98
+	MessageHallClaim            Message = 99
+	MessageHallGiveUp           Message = 100
+	MessageDoorAction           Message = 101
+	MessageDoorLogRequest       Message = 102
+	MessageVaultDeposit         Message = 103
+	MessageVaultWithdraw        Message = 104
+	MessageHallsState           Message = 105
+	MessageDoorState            Message = 106
+	MessageDoorLog              Message = 107
+	MessageHallAlarm            Message = 108
+	MessageHallResult           Message = 109
 )
 
 var EnumNamesMessage = map[Message]string{
@@ -208,6 +219,17 @@ var EnumNamesMessage = map[Message]string{
 	MessageGroupInvited:         "GroupInvited",
 	MessageGroupState:           "GroupState",
 	MessageGroupResult:          "GroupResult",
+	MessageHallClaim:            "HallClaim",
+	MessageHallGiveUp:           "HallGiveUp",
+	MessageDoorAction:           "DoorAction",
+	MessageDoorLogRequest:       "DoorLogRequest",
+	MessageVaultDeposit:         "VaultDeposit",
+	MessageVaultWithdraw:        "VaultWithdraw",
+	MessageHallsState:           "HallsState",
+	MessageDoorState:            "DoorState",
+	MessageDoorLog:              "DoorLog",
+	MessageHallAlarm:            "HallAlarm",
+	MessageHallResult:           "HallResult",
 }
 
 var EnumValuesMessage = map[string]Message{
@@ -310,6 +332,17 @@ var EnumValuesMessage = map[string]Message{
 	"GroupInvited":         MessageGroupInvited,
 	"GroupState":           MessageGroupState,
 	"GroupResult":          MessageGroupResult,
+	"HallClaim":            MessageHallClaim,
+	"HallGiveUp":           MessageHallGiveUp,
+	"DoorAction":           MessageDoorAction,
+	"DoorLogRequest":       MessageDoorLogRequest,
+	"VaultDeposit":         MessageVaultDeposit,
+	"VaultWithdraw":        MessageVaultWithdraw,
+	"HallsState":           MessageHallsState,
+	"DoorState":            MessageDoorState,
+	"DoorLog":              MessageDoorLog,
+	"HallAlarm":            MessageHallAlarm,
+	"HallResult":           MessageHallResult,
 }
 
 func (v Message) String() string {
