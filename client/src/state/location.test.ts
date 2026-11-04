@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { AREA_NAMES, areaMap, placeAt } from './location';
 
 const json = JSON.parse(readFileSync(resolve(__dirname, '../../../shared/map/areas.json'), 'utf8'));
+const housing = JSON.parse(readFileSync(resolve(__dirname, '../../../shared/map/housing.json'), 'utf8'));
 const map = areaMap(json);
+const withHousing = areaMap(json, housing);
 
 describe('placeAt (areas.json)', () => {
   it('reads the safe circle from areas.json in metres', () => {
@@ -39,5 +41,21 @@ describe('placeAt (areas.json)', () => {
 
   it('every area id in areas.json has a display name', () => {
     for (const a of json.areas) expect(AREA_NAMES[a.id], a.id).toBeTruthy();
+  });
+});
+
+describe('placeAt (housing areas)', () => {
+  it('Mesa Court is Safe without the danger style', () => {
+    expect(placeAt({ x: -166.5, z: -765.5 }, withHousing)).toEqual({ name: 'Mesa Court', type: 'Safe', danger: false });
+  });
+
+  it('Middle Earth is Safe without the danger style', () => {
+    expect(placeAt({ x: 477.5, z: 56.5 }, withHousing)).toEqual({ name: 'Middle Earth', type: 'Safe', danger: false });
+  });
+
+  it('Aldrich Park, South fields and the PvP zone are unchanged by the housing areas', () => {
+    const points = [map.spawn, { x: map.spawn.x, z: map.spawn.z - map.safeRadius - 30 }, { x: -280, z: 280 }, { x: 300, z: -350 }, { x: 0, z: 1000 }];
+    for (const p of points) expect(placeAt(p, withHousing)).toEqual(placeAt(p, map));
+    expect(placeAt({ x: 300, z: -350 }, withHousing)).toEqual({ name: 'PvP zone', type: 'PvP', danger: true });
   });
 });

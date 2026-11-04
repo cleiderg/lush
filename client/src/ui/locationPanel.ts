@@ -1,4 +1,5 @@
 import areas from '../../../shared/map/areas.json';
+import housing from '../../../shared/map/housing.json';
 import { irvineTime, sunTimes } from '../core/sun';
 import type { SharedClock } from '../state/clock';
 import { areaMap, placeAt, type AreaMap } from '../state/location';
@@ -6,7 +7,7 @@ import type { Point } from '../state/shop';
 import { hudLayout, place } from './hudLayout';
 
 /** The gameplay areas from shared/map/areas.json, in metres. */
-export const AREA_MAP: AreaMap = areaMap(areas);
+export const AREA_MAP: AreaMap = areaMap(areas, housing);
 
 const DAY_MS = 86_400_000;
 
