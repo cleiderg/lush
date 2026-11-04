@@ -230,6 +230,19 @@ export function claimedHomes(data: MapData, houses: readonly HouseInfoState[]): 
   return out;
 }
 
+/**
+ * Where to draw two icons on screen so neither hides the other: each area's thrift stall and workbench
+ * stand about 2 m apart, much less than an icon, so closer than `gap` they sit side by side, centred on their midpoint.
+ */
+export function sideBySide(a: { x: number; y: number }, b: { x: number; y: number }, gap: number): [{ x: number; y: number }, { x: number; y: number }] {
+  if (Math.hypot(a.x - b.x, a.y - b.y) >= gap) return [a, b];
+  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  return [{ x: mx - gap / 2, y: my }, { x: mx + gap / 2, y: my }];
+}
+
+/** Gap between icon centres (in units of the icon scale): an icon's disc is 12 across. */
+const ICON_GAP = 13;
+
 function placed(g: SVGGElement, pt: Point): SVGGElement {
   g.setAttribute('transform', `translate(${pt.x} ${pt.z})`);
   return g;
@@ -380,22 +393,25 @@ export class Minimap {
   }
 
   private updatePois(pos: Point, yaw: number): void {
-    const items: { key: string; pt: Point; make: () => SVGGElement }[] = [];
+    const items: { key: string; at: { x: number; y: number }; make: () => SVGGElement }[] = [];
     const scale = this.range / 40;
-    this.data.thrift.forEach((pt, i) => items.push({ key: `thrift-${i}`, pt, make: () => thriftIcon(scale) }));
-    this.data.workbench.forEach((pt, i) => items.push({ key: `workbench-${i}`, pt, make: () => workbenchIcon(scale) }));
+    const at = (pt: Point) => toMinimap(pt.x - pos.x, pt.z - pos.z, yaw);
+    // thrift[i] and workbench[i] are the same area's (housing.json areas[i]).
+    this.data.thrift.forEach((pt, i) => {
+      const [t, w] = sideBySide(at(pt), at(this.data.workbench[i]), ICON_GAP * scale);
+      items.push({ key: `thrift-${i}`, at: t, make: () => thriftIcon(scale) });
+      items.push({ key: `workbench-${i}`, at: w, make: () => workbenchIcon(scale) });
+    });
     for (const h of claimedHomes(this.data, this.opts.houses?.() ?? [])) {
-      items.push({ key: `home-${h.id}-${h.mine ? 'mine' : 'other'}`, pt: h.pt, make: () => homeIcon(scale, h.mine) });
+      items.push({ key: `home-${h.id}-${h.mine ? 'mine' : 'other'}`, at: at(h.pt), make: () => homeIcon(scale, h.mine) });
     }
-    const shown = items
-      .map((it) => ({ it, at: toMinimap(it.pt.x - pos.x, it.pt.z - pos.z, yaw) }))
-      .filter((e) => Math.hypot(e.at.x, e.at.y) <= this.range);
-    const key = shown.map((e) => e.it.key).join(',');
+    const shown = items.filter((e) => Math.hypot(e.at.x, e.at.y) <= this.range);
+    const key = shown.map((e) => e.key).join(',');
     if (key !== this.poiKey) {
       this.poiKey = key;
       this.pois.replaceChildren(...shown.map((e) => {
-        const g = e.it.make();
-        g.dataset.id = e.it.key;
+        const g = e.make();
+        g.dataset.id = e.key;
         return g;
       }));
     }
@@ -542,8 +558,12 @@ export class BigMap {
     const bank = this.data.bank ? bankIcon(2.5) : null;
     bank?.setAttribute('transform', `translate(${this.data.bank!.x} ${this.data.bank!.z})`);
     this.pois = svg('g', { class: 'lush-bigmap-pois' });
-    for (const pt of this.data.thrift) this.pois.append(placed(thriftIcon(2.5), pt));
-    for (const pt of this.data.workbench) this.pois.append(placed(workbenchIcon(2.5), pt));
+    this.data.thrift.forEach((pt, i) => {
+      // The big map is north-up in metres, so screen x/y are world x/z.
+      const bench = this.data.workbench[i];
+      const [t, w] = sideBySide({ x: pt.x, y: pt.z }, { x: bench.x, y: bench.z }, ICON_GAP * 2.5);
+      this.pois!.append(placed(thriftIcon(2.5), { x: t.x, z: t.y }), placed(workbenchIcon(2.5), { x: w.x, z: w.y }));
+    });
     this.homes = svg('g', { class: 'lush-bigmap-homes' });
     this.dots = svg('g', {});
     this.player = playerMarker(8);

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { hudLayout } from './hudLayout';
 import {
   BigMap, buildMapData, featuresInRange, mapRotation, Minimap, MINIMAP_CSS, MINIMAP_RANGE_M,
-  northMarkerAngle, toMinimap, type MapData,
+  northMarkerAngle, sideBySide, toMinimap, type MapData,
 } from './minimap';
 import type { HouseInfoState } from '../state/housing';
 import { THEME } from './theme';
@@ -272,6 +272,10 @@ describe('housing markers (#625)', () => {
   };
   const cls = (root: Element, c: string) => [...root.querySelectorAll(`.${c}`)];
   const placedAt = (e: Element) => e.getAttribute('transform');
+  const xyOf = (e: Element) => {
+    const [x, y] = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(placedAt(e) ?? '')!.slice(1).map(Number);
+    return { x, y };
+  };
 
   it('map data has each area thrift and workbench point and every house door', () => {
     expect(CAMPUS.thrift).toEqual(housing.areas.map((a: { thrift: XZ; workbench: XZ }) => m(a.thrift)));
@@ -283,11 +287,24 @@ describe('housing markers (#625)', () => {
     const b = bigWith(() => []);
     expect(cls(b.svg!, 'lush-map-thrift')).toHaveLength(housing.areas.length);
     expect(cls(b.svg!, 'lush-map-workbench')).toHaveLength(housing.areas.length);
-    const t = housing.areas[0].thrift;
-    expect(cls(b.svg!, 'lush-map-thrift').map(placedAt)).toContain(`translate(${t.x / 10} ${t.z / 10})`);
-    expect(cls(b.svg!, 'lush-map-thrift')[0].innerHTML).not.toBe(cls(b.svg!, 'lush-map-shop')[0].innerHTML);
-    expect(cls(b.svg!, 'lush-map-thrift')[0].innerHTML).not.toBe(cls(b.svg!, 'lush-map-bank')[0].innerHTML);
-    expect(cls(b.svg!, 'lush-map-workbench')[0].innerHTML).not.toBe(cls(b.svg!, 'lush-map-thrift')[0].innerHTML);
+    // Each area's pair is drawn at its points, side by side so the icons (12 across at scale 2.5) don't overlap.
+    housing.areas.forEach((a: { thrift: XZ; workbench: XZ }, i: number) => {
+      const t = xyOf(cls(b.svg!, 'lush-map-thrift')[i]), w = xyOf(cls(b.svg!, 'lush-map-workbench')[i]);
+      expect(Math.hypot(t.x - a.thrift.x / 10, t.y - a.thrift.z / 10)).toBeLessThan(20);
+      expect(Math.hypot(w.x - a.workbench.x / 10, w.y - a.workbench.z / 10)).toBeLessThan(20);
+      expect(Math.hypot(t.x - w.x, t.y - w.y)).toBeGreaterThanOrEqual(12 * 2.5);
+    });
+    const thrift = cls(b.svg!, 'lush-map-thrift')[0].innerHTML, bench = cls(b.svg!, 'lush-map-workbench')[0].innerHTML;
+    for (const other of [cls(b.svg!, 'lush-map-shop')[0].innerHTML, cls(b.svg!, 'lush-map-bank')[0].innerHTML]) {
+      expect(thrift).not.toBe(other);
+      expect(bench).not.toBe(other);
+    }
+    expect(bench).not.toBe(thrift);
+  });
+
+  it('sideBySide spreads two close points apart on screen and leaves far ones alone', () => {
+    expect(sideBySide({ x: 0, y: 0 }, { x: 1, y: 2 }, 10)).toEqual([{ x: -4.5, y: 1 }, { x: 5.5, y: 1 }]);
+    expect(sideBySide({ x: 0, y: 0 }, { x: 0, y: 30 }, 10)).toEqual([{ x: 0, y: 0 }, { x: 0, y: 30 }]);
   });
 
   it('the minimap draws thrift and workbench icons near them, upright and distinct', () => {
@@ -295,8 +312,13 @@ describe('housing markers (#625)', () => {
     const { m: mm } = mount({ pos: { x: t.x + 5, z: t.z } });
     expect(cls(mm.pois, 'lush-map-thrift')).toHaveLength(1);
     expect(cls(mm.pois, 'lush-map-workbench')).toHaveLength(1);
-    expect(cls(mm.pois, 'lush-map-thrift')[0].innerHTML).not.toBe(mm.shop.innerHTML);
-    expect(cls(mm.pois, 'lush-map-workbench')[0].innerHTML).not.toBe(mm.shop.innerHTML);
+    for (const other of [mm.shop.innerHTML, mm.bank!.innerHTML]) {
+      expect(cls(mm.pois, 'lush-map-thrift')[0].innerHTML).not.toBe(other);
+      expect(cls(mm.pois, 'lush-map-workbench')[0].innerHTML).not.toBe(other);
+    }
+    // Side by side on screen: icons are 12 across at scale range/40.
+    const tp = xyOf(cls(mm.pois, 'lush-map-thrift')[0]), wp = xyOf(cls(mm.pois, 'lush-map-workbench')[0]);
+    expect(Math.hypot(tp.x - wp.x, tp.y - wp.y)).toBeGreaterThanOrEqual((12 * MINIMAP_RANGE_M) / 40);
     const far = mount({ pos: { x: 0, z: 0 } }).m;
     expect(cls(far.pois, 'lush-map-thrift')).toHaveLength(0);
   });
