@@ -1,11 +1,26 @@
 import type { GameState } from '../state/world';
 import { toWorldMove, type Vec2 } from '../input/joystick';
+import type { HomeView } from '../net/codec';
+import type { RoomDescription } from '../render/roomView';
 import type { ChatBubbleView, NpcView, PlayerView, WorldView } from '../render/worldView';
 import { EntityKind } from '../protocol';
 import { FLOAT_TEXT_MS } from '../render/floatText';
 import skillsMap from '../../../shared/map/skills.json';
 import { sunPosition } from './sun';
 import { overheadOpacity } from '../state/chat';
+
+/** The room to draw for the home the player is inside (wallpaper, floor and placed items), or undefined for the campus. */
+export function homeRoom(home: HomeView | null): RoomDescription | undefined {
+  if (!home) return undefined;
+  return {
+    wallpaperId: home.wallpaperItemId,
+    floorId: home.floorItemId,
+    items: home.items.map((i) => ({
+      placedId: i.placedId, itemId: i.itemId, x: i.x, y: i.y, rotation: i.rotation, layer: i.layer,
+      parentPlacedId: i.parentPlacedId, slot: i.slot, side: i.side,
+    })),
+  };
+}
 
 /**
  * Snapshot of game state for the renderer: predicted local player, interpolated remotes and
@@ -39,7 +54,7 @@ export function buildWorldView(game: GameState, now: number): WorldView {
   const fishingSpots = new Set(game.skills.fishingSpots().flatMap((f) => skillsMap.pond.spots[f.candidate]?.id ?? []));
   const activeResource = game.gathering.activeResource(candidateOf);
   const resourceProgress = game.gathering.progress(now);
-  return { local, remotes, npcs, felledTrees, fishingSpots, activeResource, resourceProgress, entities: game.items, groundItems: game.items.groundItems, hits, gains: game.gains.active(now, FLOAT_TEXT_MS), chat, sky: sunPosition(game.clock.now()) };
+  return { local, remotes, npcs, felledTrees, fishingSpots, activeResource, resourceProgress, entities: game.items, groundItems: game.items.groundItems, hits, gains: game.gains.active(now, FLOAT_TEXT_MS), chat, sky: sunPosition(game.clock.now()), home: homeRoom(game.housing.home) };
 }
 
 /**
