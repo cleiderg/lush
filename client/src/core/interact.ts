@@ -1,5 +1,7 @@
 import { EntityKind, SkillTarget } from '../protocol';
 import { hasRawFish, usableResources } from '../state/skillTargets';
+import { HOUSE_DOORS } from '../state/doors';
+import { HouseState } from '../protocol';
 import { pickInteractTarget, type InteractTarget } from '../state/interact';
 import type { Point } from '../state/shop';
 import type { GameState } from '../state/world';
@@ -11,6 +13,8 @@ export interface InteractActions {
   openBank: () => void;
   /** Opens the card table panel for that table (CardTablePanel.open). */
   openCardTable: (tableId: number) => void;
+  /** Opens the house panel for that house (HousePanel.open). */
+  openHouse: (houseId: number) => void;
   /** Sends SkillAction (Session.sendSkillAction) for a tree, a fishing spot or the grill. */
   sendSkillAction: (target: SkillTarget, targetId: number) => void;
   sendPickUp: (groundItemId: number) => void;
@@ -40,6 +44,7 @@ export function interact(game: GameState, now: number, stall: Point, actions: In
   else if (target?.type === 'tree') skillAction(game, actions, SkillTarget.Tree, target.id);
   else if (target?.type === 'fishingSpot') skillAction(game, actions, SkillTarget.FishingSpot, target.id);
   else if (target?.type === 'cardTable') actions.openCardTable(target.id);
+  else if (target?.type === 'door') actions.openHouse(target.id);
   else if (target?.type === 'pickUp') actions.sendPickUp(target.id);
   else if (target?.type === 'attack') actions.sendAttackTarget(target.id);
   else if (target?.type === 'trade') actions.sendTradeRequest(target.id);
@@ -75,6 +80,12 @@ export function interactPromptText(game: GameState, target: InteractTarget | nul
       return { verb: 'Fish' };
     case 'cardTable':
       return { verb: 'Open card table' };
+    case 'door': {
+      const house = game.housing.house(target.id);
+      if (house && house.state !== HouseState.Empty && house.ownerName) return { verb: 'Open', name: `${house.ownerName}'s house` };
+      const door = HOUSE_DOORS.find((d) => d.id === target.id);
+      return { verb: 'Open', name: door ? `${door.areaName} house ${door.number}` : 'house' };
+    }
     case 'pickUp': {
       const g = game.items.groundItems.find((i) => i.id === target.id);
       return { verb: 'Pick up', name: (g && game.items.item(g.itemId)?.name) || 'item' };

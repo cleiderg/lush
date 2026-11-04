@@ -14,6 +14,8 @@ export interface HousePanelOptions {
   /** Unix seconds now; defaults to the device clock. */
   now?: () => number;
   viewport?: () => { width: number; height: number };
+  /** Sends HomeEnter for that house (Session.sendHomeEnter). */
+  sendHomeEnter: (houseId: number) => void;
   /** Called when the panel opens, so other panels in its place can close. */
   onOpen?: () => void;
 }
@@ -152,6 +154,12 @@ export class HousePanel {
       return;
     }
     this.status.textContent = house.mine ? 'Your house' : `Owned by ${house.ownerName}`;
+    if (house.mine || house.open) {
+      this.body.append(button('lush-house-enter', 'Enter', () => {
+        this.opts.sendHomeEnter(house.id);
+        this.close();
+      }));
+    }
     if (!house.mine) return;
 
     const now = this.now();
@@ -241,7 +249,7 @@ function injectStyle(): void {
 .lush-house-note { color: var(--lush-text-muted); }
 .lush-house-rent { display: flex; align-items: center; gap: var(--lush-space-2); }
 .lush-house-months { flex: 1; text-align: center; white-space: nowrap; }
-.lush-house .lush-house-claim, .lush-house .lush-house-rent-pay { background: var(--lush-active); }
+.lush-house .lush-house-claim, .lush-house .lush-house-enter, .lush-house .lush-house-rent-pay { background: var(--lush-active); }
 .lush-house button:disabled { opacity: 0.5; }
 .lush-house-banner { box-sizing: border-box; z-index: 5; display: flex; align-items: center; padding: 0 var(--lush-space-3); font-size: var(--lush-text-sm); line-height: 16px; color: var(--lush-gold-bright); border: var(--lush-border); border-radius: var(--lush-radius-sm); background: var(--lush-surface); pointer-events: none; overflow: hidden; }
 .lush-house-banner[hidden] { display: none; }

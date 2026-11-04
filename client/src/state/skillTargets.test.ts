@@ -161,7 +161,7 @@ describe('Interact sends SkillAction and names the action (AC3)', () => {
     const sent: [SkillTarget, number][] = [];
     const none = () => {};
     const t = interact(g, 0, { x: 1000, z: 1000 }, {
-      openShop: none, openBank: none, openCardTable: none, sendPickUp: none, sendAttackTarget: none, sendTradeRequest: none,
+      openShop: none, openBank: none, openCardTable: none, openHouse: none, sendPickUp: none, sendAttackTarget: none, sendTradeRequest: none,
       sendSkillAction: (target, id) => sent.push([target, id]),
     });
     const p = interactPromptText(g, t);

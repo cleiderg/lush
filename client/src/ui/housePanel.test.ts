@@ -10,10 +10,10 @@ import { HousePanel } from './housePanel';
 const NOW = 1_800_000_000;
 const MONTH = RENT_MONTH_SECONDS;
 
-function housingBytes(houses: { id: number; mine?: boolean; state: HouseState; paidUntil?: number; topBid?: number; auctionEnd?: number; myBid?: number }[]): Uint8Array {
+function housingBytes(houses: { id: number; mine?: boolean; state: HouseState; paidUntil?: number; open?: boolean; topBid?: number; auctionEnd?: number; myBid?: number }[]): Uint8Array {
   const b = new flatbuffers.Builder(256);
   const offs = houses.map((h) =>
-    HouseInfo.createHouseInfo(b, h.id, 1, b.createString(h.mine ? 'Me' : ''), !!h.mine, BigInt(h.paidUntil ?? 0), h.state, true, h.topBid ?? 0, BigInt(h.auctionEnd ?? 0), h.myBid ?? 0));
+    HouseInfo.createHouseInfo(b, h.id, 1, b.createString(h.mine ? 'Me' : ''), !!h.mine, BigInt(h.paidUntil ?? 0), h.state, h.open ?? true, h.topBid ?? 0, BigInt(h.auctionEnd ?? 0), h.myBid ?? 0));
   const msg = HousingState.createHousingState(b, HousingState.createHousesVector(b, offs), 200, 2, 6);
   b.finish(Envelope.createEnvelope(b, Message.HousingState, msg));
   return b.asUint8Array().slice();
@@ -23,7 +23,7 @@ function setup(houses: Parameters<typeof housingBytes>[0], sendBid = vi.fn<(id: 
   const game = new GameState();
   game.handle(decode(housingBytes(houses))!, 0);
   const send = vi.fn<(bytes: Uint8Array) => void>();
-  const panel = new HousePanel({ parent: document.body, housing: game.housing, send, sendBid, now: () => NOW, viewport: () => ({ width: 390, height: 844 }) });
+  const panel = new HousePanel({ parent: document.body, housing: game.housing, send, sendBid, sendHomeEnter: vi.fn(), now: () => NOW, viewport: () => ({ width: 390, height: 844 }) });
   current = panel;
   return { game, send, sendBid, panel };
 }
@@ -147,5 +147,43 @@ describe('login rent warning', () => {
       panel.open(9);
       expect(q(panel, '.lush-house-note')!.textContent).toContain('also pays 400 gp (2 months of rent)');
     });
+  });
+});
+
+describe('HousePanel Enter and door prompt (AC2, AC3)', () => {
+  function withEnter(houses: Parameters<typeof housingBytes>[0]) {
+    const s = setup(houses);
+    const enter = vi.fn<(id: number) => void>();
+    s.panel.dispose();
+    const panel = new HousePanel({ parent: document.body, housing: s.game.housing, send: s.send, sendBid: s.sendBid, sendHomeEnter: enter, now: () => NOW, viewport: () => ({ width: 390, height: 844 }) });
+    current = panel;
+    return { ...s, panel, enter };
+  }
+
+  it('Enter shows for own house, sends HomeEnter and closes', () => {
+    const { panel, enter } = withEnter([{ id: 7, mine: true, state: HouseState.Owned, paidUntil: NOW + MONTH }]);
+    panel.open(7);
+    q<HTMLButtonElement>(panel, '.lush-house-enter')!.click();
+    expect(enter).toHaveBeenCalledWith(7);
+    expect(panel.isOpen).toBe(false);
+  });
+
+  it('Enter shows for a claimed open house but not an empty one', () => {
+    const { panel } = withEnter([{ id: 3, state: HouseState.Owned }, { id: 4, state: HouseState.Empty }]);
+    panel.open(3);
+    expect(q(panel, '.lush-house-enter')).not.toBeNull();
+    panel.open(4);
+    expect(q(panel, '.lush-house-enter')).toBeNull();
+  });
+
+  it('Enter shows for own locked house but not for a locked house of another player', () => {
+    const { panel } = withEnter([
+      { id: 5, mine: true, state: HouseState.Owned, paidUntil: NOW + MONTH, open: false },
+      { id: 6, state: HouseState.Owned, open: false },
+    ]);
+    panel.open(5);
+    expect(q(panel, '.lush-house-enter')).not.toBeNull();
+    panel.open(6);
+    expect(q(panel, '.lush-house-enter')).toBeNull();
   });
 });

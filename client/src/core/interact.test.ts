@@ -67,6 +67,7 @@ function setup(
       openShop: () => shop?.tryOpen(),
       openBank: () => {},
       openCardTable: (id) => cardTable?.open(id),
+      openHouse: () => {},
       sendSkillAction: (t, id) => session.sendSkillAction(t, id),
       sendPickUp: (id) => session.sendPickUp(id),
       sendAttackTarget: (id) => session.sendAttackTarget(id),
@@ -202,5 +203,23 @@ describe('Interact button', () => {
     s.game.prediction.pos.z = table.z + 1;
     s.cardTable.update();
     expect(s.cardTable.isOpen).toBe(false);
+  });
+});
+
+describe('Interact at a house door (AC2)', () => {
+  it('opens the house panel and words the prompt', async () => {
+    const { HOUSE_DOORS } = await import('../state/doors');
+    const { interactPromptText } = await import('./interact');
+    const d = HOUSE_DOORS[1];
+    const { game } = setup({ x: d.x, z: d.z }, []);
+    const openHouse = vi.fn();
+    const actions = { openHouse, openShop: vi.fn(), openBank: vi.fn(), openCardTable: vi.fn(), sendSkillAction: vi.fn(), sendPickUp: vi.fn(), sendAttackTarget: vi.fn(), sendTradeRequest: vi.fn() };
+    const target = interact(game, NOW, { x: 1e6, z: 1e6 }, actions);
+    expect(target).toEqual({ type: 'door', id: 2 });
+    expect(openHouse).toHaveBeenCalledWith(2);
+    const text = (t: typeof target) => { const p = interactPromptText(game, t); return p && [p.verb, p.name].join(' '); };
+    expect(text(target)).toBe(`Open ${d.areaName} house ${d.number}`);
+    game.housing.setHouses([{ id: 2, areaId: 1, ownerName: 'Ann', mine: false, paidUntil: 1, state: 1, open: true, topBid: 0, auctionEnd: 0, myBid: 0 }]);
+    expect(text(target)).toBe("Open Ann's house");
   });
 });
