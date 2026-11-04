@@ -15,7 +15,7 @@ import (
 )
 
 // latestMigration is the version of the newest file in db/migrations.
-const latestMigration = 11
+const latestMigration = 12
 
 // progressMigration is the version of 00003_player_progress.sql.
 const progressMigration = 3
@@ -802,5 +802,56 @@ func TestMigrateGroupsDownUp(t *testing.T) {
 		if _, err := pool.Exec(ctx, tc.sql, tc.args...); err == nil {
 			t.Errorf("%s: statement succeeded, want a constraint error", tc.name)
 		}
+	}
+}
+
+// doorLogMigration is the version of 00012_group_door_log.sql.
+const doorLogMigration = 12
+
+// TestMigrateDoorLogDownUp rolls the door log migration back and applies it
+// again, then checks its constraints.
+func TestMigrateDoorLogDownUp(t *testing.T) {
+	url := os.Getenv("LUSH_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("LUSH_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := schemaPool(ctx, t, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS group_door_log, group_leave_cooldowns, group_permissions, group_members, groups, player_quests, house_bids, house_auctions, placed_items, homes, house_plots, housing_areas, player_bank, card_pot_stakes, card_pots, player_equipment, player_inventory, economy_audit, players, goose_db_version CASCADE"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatalf("up: %v", err)
+	}
+	db := stdlib.OpenDBFromPool(pool)
+	defer db.Close()
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const countTable = `SELECT count(*) FROM information_schema.tables
+		WHERE table_schema = current_schema() AND table_name = 'group_door_log'`
+	if _, err := provider.DownTo(ctx, doorLogMigration-1); err != nil {
+		t.Fatalf("down: %v", err)
+	}
+	var n int
+	if err := pool.QueryRow(ctx, countTable).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("door log table after down = %d, err %v; want 0", n, err)
+	}
+	if err := store.Migrate(ctx, pool); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+	if err := pool.QueryRow(ctx, countTable).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("door log table after up = %d, err %v; want 1", n, err)
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO groups (name, banner) VALUES ('Anteaters', 0)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO group_door_log (group_id, hall, door, action, at) SELECT group_id, 'h', 'd', 'smash', now() FROM groups"); err == nil {
+		t.Error("unknown action accepted")
 	}
 }
