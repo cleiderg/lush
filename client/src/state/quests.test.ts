@@ -2,9 +2,11 @@ import * as flatbuffers from 'flatbuffers';
 import { describe, expect, it } from 'vitest';
 import {
   Dialogue, DialogueClose, DialogueReply, Envelope, Message, QuestCatalog, QuestCompleted, QuestDef, QuestLog, QuestProgress,
-  QuestRequirement, QuestRequirementKind, QuestResult, QuestResultCode, QuestRewards, QuestState, Talk,
+  QuestRequirement, QuestRequirementKind, QuestResult, QuestResultCode, QuestRewards, QuestState, Talk, Vec2, Welcome,
 } from '../protocol';
 import { decode, encodeDialogueReply, encodeTalk } from '../net/codec';
+import { Session } from '../net/session';
+import type { Transport } from '../net/transport';
 import { GameState } from './world';
 import { QuestStore, questResultText } from './quests';
 import type { QuestInfo } from './quests';
@@ -156,10 +158,32 @@ describe('QuestStore.markerFor (AC3)', () => {
   });
 });
 
-describe('Session sends', () => {
-  it('exports sendTalk and sendDialogueReply', async () => {
-    const { Session } = await import('../net/session');
-    expect(typeof Session.prototype.sendTalk).toBe('function');
-    expect(typeof Session.prototype.sendDialogueReply).toBe('function');
+describe('Session sends (AC2)', () => {
+  class FakeTransport implements Transport {
+    onMessage: ((b: Uint8Array) => void) | null = null;
+    onOpen: (() => void) | null = null;
+    onClose: (() => void) | null = null;
+    sent: Uint8Array[] = [];
+    send(b: Uint8Array) { this.sent.push(b); }
+    close() {}
+  }
+
+  it('sendTalk and sendDialogueReply send Talk and DialogueReply', () => {
+    const t = new FakeTransport();
+    const s = new Session({ factory: () => t, store: { get: () => '', set: () => {} }, onMessage: () => {} });
+    s.start();
+    const b = new flatbuffers.Builder(64);
+    const tok = b.createString('tok');
+    Welcome.startWelcome(b);
+    Welcome.addGuestToken(b, tok);
+    Welcome.addSpawn(b, Vec2.createVec2(b, 0, 0));
+    t.onMessage?.(finish(b, Message.Welcome, Welcome.endWelcome(b)));
+
+    s.sendTalk(21);
+    s.sendDialogueReply(3);
+    const envs = t.sent.map((bytes) => Envelope.getRootAsEnvelope(new flatbuffers.ByteBuffer(bytes)));
+    expect(envs.map((e) => e.msgType())).toEqual([Message.Talk, Message.DialogueReply]);
+    expect((envs[0].msg(new Talk()) as Talk).npcId()).toBe(21);
+    expect((envs[1].msg(new DialogueReply()) as DialogueReply).index()).toBe(3);
   });
 });
