@@ -9,6 +9,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/interest"
 	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/store"
+	"github.com/cleiderg/lush/server/internal/systems/grounditems"
 	"github.com/cleiderg/lush/server/internal/world"
 )
 
@@ -125,13 +126,30 @@ func TestQuestCompletionCommitted(t *testing.T) {
 			h := newHandIn(t, players, nil)
 			book, _ := h.d.ItemByKey("overdue_book")
 			card, _ := h.d.ItemByKey("library_card")
+			trout, _ := h.d.ItemByKey("trout")
 			if _, err := h.p.Inv.Add(h.d, book.ID, 1); err != nil {
+				t.Fatal(err)
+			}
+			h.p.RecordEconomy(grounditems.ReasonPickup, nil) // the book reaches the store
+			h.w.Tick()
+			if err := h.sess.SaveAll(ctx); err != nil {
 				t.Fatal(err)
 			}
 			before, auditBefore := h.stored(), auditRows()
 			gold, xp := h.p.Inv.Gold, h.p.XP
 
 			h.handIn()
+			// A pick-up still in the outbox when the hand-in is handled: the
+			// world only ticks while the test reads, so the reply is queued
+			// and this event is pending when CommitQuest runs. It must be
+			// saved before the completion, or its holdings (book, no
+			// rewards) would overwrite it.
+			time.Sleep(50 * time.Millisecond)
+			ch, err := h.p.Inv.Add(h.d, trout.ID, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			h.p.RecordEconomy(grounditems.ReasonPickup, ch)
 			h.waitFor(h.c, protocol.MessageQuestCompleted)
 			h.waitFor(h.c, protocol.MessageQuestLog)
 
@@ -146,17 +164,24 @@ func TestQuestCompletionCommitted(t *testing.T) {
 			if got.Gold != before.Gold+150 || got.XP != before.XP+500 {
 				t.Fatalf("stored gold %d xp %d, want %d and %d", got.Gold, got.XP, before.Gold+150, before.XP+500)
 			}
-			cards, books := 0, 0
-			for _, st := range got.Inventory {
-				if st.Item == int32(card.ID) {
-					cards += int(st.Qty)
-				}
+			cards, books, trouts, beforeBooks := 0, 0, 0, 0
+			for _, st := range before.Inventory {
 				if st.Item == int32(book.ID) {
-					books += int(st.Qty)
+					beforeBooks += int(st.Qty)
 				}
 			}
-			if cards != 1 || books != 0 {
-				t.Fatalf("stored cards %d books %d, want 1 and 0", cards, books)
+			for _, st := range got.Inventory {
+				switch st.Item {
+				case int32(card.ID):
+					cards += int(st.Qty)
+				case int32(book.ID):
+					books += int(st.Qty)
+				case int32(trout.ID):
+					trouts += int(st.Qty)
+				}
+			}
+			if beforeBooks != 1 || cards != 1 || books != 0 || trouts != 1 {
+				t.Fatalf("stored books before %d; after cards %d books %d trout %d, want 1; 1, 0 and 1", beforeBooks, cards, books, trouts)
 			}
 			overdue, _ := h.d.QuestByKey("overdue")
 			if log := h.storedQuests(); log.Points != 1 || !reflect.DeepEqual(log.Quests, []store.QuestProgress{{Quest: overdue.Key, State: store.QuestComplete}}) {
