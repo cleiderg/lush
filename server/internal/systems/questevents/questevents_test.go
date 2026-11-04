@@ -449,3 +449,28 @@ func BenchmarkTick(b *testing.B) {
 		qe.Tick(w, 0)
 	}
 }
+
+// TestBookDropsAgainAfterDeath: a player on the step who lost the book to a
+// death gets it again from the crows.
+func TestBookDropsAgainAfterDeath(t *testing.T) {
+	f := newFixture(t, defaultData(t), 5)
+	book := f.item("overdue_book")
+	p := f.player(1, quest.Record{Quest: f.quest("overdue"), Status: quest.InProgress, Step: 1})
+	if _, err := p.Inv.Add(f.d, book, 1); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 50; i++ { // holding it: no more drops
+		if hasItem(f.kill(1, "crow").Items, book) {
+			t.Fatal("book dropped while held")
+		}
+	}
+	if _, err := p.Inv.RemoveQuestItems(f.d); err != nil { // the death
+		t.Fatal(err)
+	}
+	for i := 0; i < 200; i++ {
+		if hasItem(f.kill(1, "crow").Items, book) {
+			return
+		}
+	}
+	t.Fatal("book never dropped again after death")
+}

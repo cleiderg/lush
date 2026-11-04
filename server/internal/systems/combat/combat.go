@@ -23,6 +23,10 @@ import (
 // the killer.
 const ReasonNPCDrop = "npc_drop"
 
+// ReasonQuestItemLost is the economy audit reason for quest items removed
+// from a player who dies to an NPC.
+const ReasonQuestItemLost = "quest_item_lost"
+
 // AttackCommand asks for Player to attack the NPC NPC. It replaces Player's
 // previous NPC target.
 type AttackCommand struct {
@@ -410,8 +414,16 @@ func (s *System) pay(p *world.Player) {
 }
 
 // killPlayer respawns p, killed by killer, at the spawn point with full HP.
-// A PvE death costs nothing: inventory, equipment and gold are untouched.
+// A PvE death costs only the player's quest items: everything else is kept.
+// A locked inventory keeps them too, as nothing may move while a trade saves.
 func (s *System) killPlayer(p *world.Player, killer world.NPCID) {
+	if !p.Inv.Locked() {
+		inv := p.Inv.Clone()
+		if ch, err := inv.RemoveQuestItems(s.data); err == nil && len(ch) > 0 {
+			p.Inv = inv
+			p.RecordEconomy(ReasonQuestItemLost, ch)
+		}
+	}
 	d := Death{Player: p.ID, Killer: killer, Pos: p.Pos}
 	spawn := s.zones.Spawn()
 	p.Pos = spawn

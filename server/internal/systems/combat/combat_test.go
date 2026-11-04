@@ -728,3 +728,37 @@ func TestCannotAttackTalkingNPC(t *testing.T) {
 		t.Fatal("NPC removed or player hurt")
 	}
 }
+
+// TestPvEDeathLosesQuestItems: quest items are removed and recorded, the
+// rest is kept.
+func TestPvEDeathLosesQuestItems(t *testing.T) {
+	f := newFixture(t, alwaysMax, false)
+	p := f.player(t, 1, 1, f.field(1, 0), "wooden_stick")
+	book := f.item(t, "overdue_book")
+	if _, err := p.Inv.Add(f.d, f.item(t, "boba"), 3); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Inv.Add(f.d, book, 1); err != nil {
+		t.Fatal(err)
+	}
+	p.DrainEconomy()
+	want := p.Inv.Clone()
+	if _, err := want.RemoveQuestItems(f.d); err != nil {
+		t.Fatal(err)
+	}
+	p.HP = 1
+	f.npc(t, "coyote_alpha", f.field(2, 0))
+	f.combatTicks(1)
+
+	if p.Inv.Count(book) != 0 {
+		t.Error("book kept after death")
+	}
+	if !reflect.DeepEqual(p.Inv, want) {
+		t.Errorf("inventory:\n got %+v\nwant %+v", p.Inv, want)
+	}
+	ev := p.DrainEconomy()
+	if len(ev) != 1 || ev[0].Reason != combat.ReasonQuestItemLost ||
+		!reflect.DeepEqual(ev[0].Changes, []world.Change{{Kind: world.ChangeRemove, Item: book, Qty: 1}}) {
+		t.Errorf("economy events = %+v", ev)
+	}
+}

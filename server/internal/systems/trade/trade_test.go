@@ -519,3 +519,31 @@ func BenchmarkTickOpenTrades(b *testing.B) {
 		w.Tick()
 	}
 }
+
+func TestQuestItemCannotBeOffered(t *testing.T) {
+	f := newFixture(t)
+	book := f.itemID("overdue_book")
+	if _, err := f.f_add(a, book); err != nil {
+		t.Fatal(err)
+	}
+	f.open()
+	slot := -1
+	for i, s := range f.p[a].Inv.Slots {
+		if s.Item == book {
+			slot = i
+		}
+	}
+	if slot < 0 {
+		t.Fatal("book not in inventory")
+	}
+	if got := f.run(trade.OfferCommand{Player: a, Slot: slot, Quantity: 1}); len(got) != 0 {
+		t.Fatalf("offering a quest item sent %v, want nothing", got)
+	}
+	// A normal item in slot 0 still works, so the trade is live.
+	check(t, f.run(trade.OfferCommand{Player: a, Slot: 0, Quantity: 1}),
+		states(trade.ScreenOffer, trade.Offer{Items: []trade.Item{{Slot: 0, Item: f.itemID("boba"), Qty: 1}}}, trade.Offer{}, false, false))
+}
+
+func (f *fixture) f_add(id world.PlayerID, item gamedata.ItemID) ([]world.Change, error) {
+	return f.p[id].Inv.Add(f.d, item, 1)
+}

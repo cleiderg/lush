@@ -178,7 +178,7 @@ func (s *System) PickUp(p *world.Player, id ID) error {
 	if !s.inRange(p.Pos, it.Pos) {
 		return fmt.Errorf("pick up %d: %w", id, ErrTooFar)
 	}
-	if p.ID != it.Owner && now.Before(it.Spawned.Add(s.data.Rules.DropReservation())) {
+	if p.ID != it.Owner && (s.questItem(it.Item) || now.Before(it.Spawned.Add(s.data.Rules.DropReservation()))) {
 		return fmt.Errorf("pick up %d: %w", id, ErrReserved)
 	}
 	inv := p.Inv.Clone()
@@ -193,6 +193,13 @@ func (s *System) PickUp(p *world.Player, id ID) error {
 		s.onPickup(p, it.Item, it.Qty)
 	}
 	return nil
+}
+
+// questItem reports whether id is a quest item, which only its owner may
+// pick up, however long it lies there.
+func (s *System) questItem(id gamedata.ItemID) bool {
+	d, ok := s.data.Item(id)
+	return ok && d.QuestItem
 }
 
 // Tick removes every ground item that has reached Rules.DropDespawn.

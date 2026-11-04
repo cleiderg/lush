@@ -305,6 +305,27 @@ func (inv *Inventory) RemoveAt(index int) ([]Change, error) {
 	return []Change{{Kind: ChangeRemove, Item: item, Qty: 1}}, nil
 }
 
+// RemoveQuestItems takes every quest item (gamedata.Item.QuestItem) out of
+// the inventory slots, one ChangeRemove per stack, and returns the changes.
+// Quest items are never worn. It fails, changing nothing, if the inventory is
+// locked.
+func (inv *Inventory) RemoveQuestItems(d *gamedata.Data) ([]Change, error) {
+	if inv.locked {
+		return nil, fmt.Errorf("remove quest items: %w", ErrInventoryLocked)
+	}
+	var changes []Change
+	for i, s := range inv.Slots {
+		if s.Empty() {
+			continue
+		}
+		if it, ok := d.Item(s.Item); ok && it.QuestItem {
+			changes = append(changes, Change{Kind: ChangeRemove, Item: s.Item, Qty: s.Qty})
+			inv.Slots[i] = Stack{}
+		}
+	}
+	return changes, nil
+}
+
 // ReplaceAt swaps the single item in inventory slot index for item, keeping
 // its slot. It fails, changing nothing, if there is no such slot, it is empty
 // or holds more than one item. The changes are the removal and the addition.
