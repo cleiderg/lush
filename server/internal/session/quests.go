@@ -33,13 +33,24 @@ func (s *Server) SetQuests(events *questevents.System, t *talk.System) {
 // registration. Register both before the Server. Wrap the combat event sink
 // with events.Sink and set events.PickedUp as the ground item pick-up hook.
 func (s *Server) QuestSystems(tileSize float64, r quest.Rand) (*questevents.System, *talk.System, error) {
-	t, err := talk.New(s.data, quest.New(s.data), tileSize, talkSink{s})
+	t, err := talk.New(s.data, quest.New(s.data), tileSize, talkSink{s}, talkCommitter{s})
 	if err != nil {
 		return nil, nil, err
 	}
 	events := questevents.New(s.data, s.w, t, r)
 	s.SetQuests(events, t)
 	return events, t, nil
+}
+
+// talkCommitter is the talk.Committer. Saving a quest completion and its
+// rewards is P4, so until then it refuses every request: the quest stays
+// unfinished and nothing is given.
+type talkCommitter struct{ s *Server }
+
+func (c talkCommitter) CommitQuest(req talk.CommitRequest) {
+	if c.s.talk != nil {
+		c.s.talk.Resolve(req.ID, false)
+	}
 }
 
 // TalkSink is the talk.Sink that sends the player each Dialogue, DialogueClose
