@@ -64,9 +64,19 @@ func (k talkSink) Dialogue(to world.PlayerID, d talk.Dialogue) {
 
 func (k talkSink) DialogueClose(to world.PlayerID) { k.send(to, encodeDialogueClose()) }
 
-// QuestCompleted does nothing yet: completion rewards and the completion
-// message come with the completion work (P4).
-func (k talkSink) QuestCompleted(world.PlayerID, quest.Completion, []gamedata.ItemAmount) {}
+// QuestCompleted queues the quest to be stored complete, so a player who
+// returns cannot finish it, and take its rewards, again. The talk system has
+// already given the rewards through the economy outbox; the completion
+// message comes with the completion work (P4).
+func (k talkSink) QuestCompleted(to world.PlayerID, c quest.Completion, _ []gamedata.ItemAmount) {
+	k.s.questDone = append(k.s.questDone, questDone{to, c})
+}
+
+// questDone is a quest finished in dialogue, waiting to be stored complete.
+type questDone struct {
+	player world.PlayerID
+	c      quest.Completion
+}
 
 // loadQuests reads the stored quest rows of player id as records. Rows for
 // quests the game data no longer has are dropped. It is empty if the store
@@ -134,6 +144,12 @@ func (s *Server) flushQuests() {
 	if s.quests == nil {
 		return
 	}
+	for _, d := range s.questDone {
+		if g := s.live[d.player]; g != nil && s.questStore != nil {
+			s.saveCompletion(g.storeID, d.c)
+		}
+	}
+	s.questDone = s.questDone[:0]
 	for _, ch := range s.quests.Drain() {
 		g := s.live[ch.Player]
 		if g == nil {
@@ -160,6 +176,28 @@ func (s *Server) saveQuests(storeID int64, rows []store.QuestProgress) {
 		done: func(ok bool) {
 			if !ok {
 				s.log.Error("save quests failed", "store_id", storeID)
+			}
+		},
+	})
+}
+
+// saveCompletion queues marking quest c complete with its quest points,
+// behind the player's other writes. The gold, items and XP are not passed:
+// the talk system gave them and they are saved with the player.
+func (s *Server) saveCompletion(storeID int64, c quest.Completion) {
+	q, ok := s.data.Quest(c.Quest)
+	if !ok {
+		return
+	}
+	s.saver.submitEconomy(econReq{
+		changes: []store.EconomyChange{{PlayerID: storeID}},
+		write: func(ctx context.Context) error {
+			_, err := s.questStore.CompleteQuest(ctx, store.QuestCompletion{PlayerID: storeID, Quest: q.Key, Points: int64(c.QuestPoints)})
+			return err
+		},
+		done: func(ok bool) {
+			if !ok {
+				s.log.Error("save quest completion failed", "store_id", storeID, "quest", q.Key)
 			}
 		},
 	})

@@ -5,13 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"math/rand/v2"
-	"os"
 	"reflect"
 	"testing"
 	"time"
 
 	flatbuffers "github.com/google/flatbuffers/go"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/session"
@@ -213,23 +211,8 @@ func TestTalkReplyAndTooFar(t *testing.T) {
 func TestQuestProgressSavedAndSurvivesReconnect(t *testing.T) {
 	t.Run("memory", func(t *testing.T) { questProgressSurvives(t, store.NewMemory()) })
 	t.Run("postgres", func(t *testing.T) {
-		url := os.Getenv("LUSH_TEST_DATABASE_URL")
-		if url == "" {
-			t.Skip("LUSH_TEST_DATABASE_URL not set")
-		}
-		ctx := context.Background()
-		pool, err := pgxpool.New(ctx, url)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(pool.Close)
-		if err := store.Migrate(ctx, pool); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := pool.Exec(ctx, "TRUNCATE players RESTART IDENTITY CASCADE"); err != nil {
-			t.Fatal(err)
-		}
-		questProgressSurvives(t, store.NewPGPlayers(pool))
+		players, _ := pgStore(t)
+		questProgressSurvives(t, players)
 	})
 }
 
@@ -267,6 +250,66 @@ func questProgressSurvives(t *testing.T, players store.Players) {
 	c2, _, _ := q2.join(tok)
 	if got := q2.questLog(c2); !reflect.DeepEqual(got.rows, want) {
 		t.Fatalf("log after reconnect %+v, want %+v", got.rows, want)
+	}
+}
+
+// A quest finished in dialogue is saved complete: a player who returns to a
+// new server cannot hand the quest in, and take its rewards, again.
+func TestQuestCompletedInDialogueStaysComplete(t *testing.T) {
+	t.Run("memory", func(t *testing.T) { questCompletionSurvives(t, store.NewMemory()) })
+	t.Run("postgres", func(t *testing.T) {
+		players, _ := pgStore(t)
+		questCompletionSurvives(t, players)
+	})
+}
+
+func questCompletionSurvives(t *testing.T, players store.Players) {
+	ctx := context.Background()
+	q := newQuestRig(t, players)
+	_, _, tok := q.join("")
+	overdue, _ := q.d.QuestByKey("overdue")
+	book, _ := q.d.ItemByKey("overdue_book")
+	sp, err := players.LoadByTokenHash(ctx, hashOf(tok))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// On the hand-in step, holding the book.
+	if err := players.(store.Quests).SaveQuests(ctx, sp.ID, []store.QuestProgress{{Quest: overdue.Key, State: store.QuestInProgress, Step: 2}}); err != nil {
+		t.Fatal(err)
+	}
+	q1 := newQuestRig(t, players)
+	c, p, _ := q1.join(tok)
+	q1.w.Tick()
+	if _, err := p.Inv.Add(q1.d, book.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	npc, pos := q1.npcOf("librarian")
+	p.Pos = world.Vec2{X: pos.X + 1, Y: pos.Y}
+	c.send(talkFrame(uint16(npc)))
+	q1.dialogue(c)
+	c.send(replyFrame(0)) // "Here you go.": hands the book in and completes
+	q1.waitFor(c, protocol.MessageDialogueClose)
+	if p.Inv.Count(book.ID) != 0 {
+		t.Fatal("book not handed in")
+	}
+	q1.w.Tick()
+	if err := q1.sess.SaveAll(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	log, err := players.(store.Quests).LoadQuests(ctx, sp.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []store.QuestProgress{{Quest: overdue.Key, State: store.QuestComplete}}
+	if !reflect.DeepEqual(log.Quests, want) || log.Points != int64(overdue.Rewards.QuestPoints) {
+		t.Fatalf("stored %+v, want %+v with %d points", log, want, overdue.Rewards.QuestPoints)
+	}
+	q2 := newQuestRig(t, players)
+	c2, _, _ := q2.join(tok)
+	rows := []questRow{{QuestId: uint16(overdue.ID), State: protocol.QuestStateComplete}}
+	if got := q2.questLog(c2); !reflect.DeepEqual(got.rows, rows) {
+		t.Fatalf("log after reconnect %+v, want %+v", got.rows, rows)
 	}
 }
 

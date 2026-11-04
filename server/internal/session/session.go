@@ -233,6 +233,7 @@ type Server struct {
 	quests    *questevents.System      // set by SetQuests; nil without quests
 	talk      *talk.System             // set by SetQuests
 	questEng  *quest.Engine            // set by SetQuests
+	questDone []questDone              // quests finished in dialogue since the last flushQuests
 	furn      *furniture.System        // set by SetFurniture; nil without furniture
 	rooms     *homeRooms               // set by SetHomeRooms; nil without home rooms
 	furnCraft bool                     // the furniture command being handled is a craft
