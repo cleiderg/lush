@@ -19,6 +19,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/housing"
 	"github.com/cleiderg/lush/server/internal/systems/items"
 	"github.com/cleiderg/lush/server/internal/systems/shop"
+	"github.com/cleiderg/lush/server/internal/systems/talk"
 	"github.com/cleiderg/lush/server/internal/systems/trade"
 	"github.com/cleiderg/lush/server/internal/world"
 	roomgrid "github.com/cleiderg/lush/server/internal/world/housing"
@@ -509,6 +510,10 @@ func (m message) command(id world.PlayerID) world.Command {
 		}
 	case protocol.MessageShedDraw:
 		return cardroom.DrawCommand{Player: id}
+	case protocol.MessageTalk:
+		return talk.TalkCommand{Player: id, NPC: world.NPCID(m.target)}
+	case protocol.MessageDialogueReply:
+		return talk.ReplyCommand{Player: id, Index: m.index}
 	}
 	return nil
 }
@@ -672,6 +677,14 @@ func decode(buf []byte) (m message, err error) {
 		m.tableID = cs.TableId()
 	case protocol.MessageCardTableLeave, protocol.MessageCardTableReady, protocol.MessageShedDraw:
 		// No fields.
+	case protocol.MessageTalk:
+		var t protocol.Talk
+		t.Init(tbl.Bytes, tbl.Pos)
+		m.target = t.NpcId()
+	case protocol.MessageDialogueReply:
+		var dr protocol.DialogueReply
+		dr.Init(tbl.Bytes, tbl.Pos)
+		m.index = int(dr.Index())
 	case protocol.MessageShedPlay:
 		var sp protocol.ShedPlay
 		sp.Init(tbl.Bytes, tbl.Pos)
