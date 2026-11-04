@@ -33,6 +33,7 @@ import { HomeLeaveButton } from './ui/homeLeaveButton';
 import { HomeOpenToggle } from './ui/homeOpenToggle';
 import { HomeEditPanel, type Tile } from './ui/homeEditPanel';
 import { HousePanel } from './ui/housePanel';
+import { DialoguePanel } from './ui/dialoguePanel';
 import { WorkbenchPanel } from './ui/workbenchPanel';
 import { ShopKind } from './protocol';
 import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
@@ -157,6 +158,16 @@ const thrift = new ShopPanel({
     bank.close();
     bigMap.close();
   },
+});
+// Shows the open dialogue from quest state (#668); closes when the player moves.
+const dialogue = new DialoguePanel({
+  parent: document.body,
+  quests: game.quests,
+  npcName: (id) => {
+    const type = game.items.entityInfo(id)?.npcType;
+    return (type === undefined ? undefined : game.items.npc(type)?.name) ?? 'Someone';
+  },
+  sendReply: (i) => session.sendDialogueReply(i),
 });
 // Opened by Interact at a workbench (#624) and from the offline shot.
 const bench = new WorkbenchPanel({
@@ -349,6 +360,7 @@ function openOfflinePanel(panel: OfflinePanel): void {
       thrift.open();
       return thrift.isOpen;
     },
+    dialogue: () => dialogue.isOpen,
     workbench: () => {
       bench.open();
       return bench.isOpen;
@@ -399,6 +411,7 @@ new GameLoop({
     const m = controls.worldMove();
     // Inputs the server will never see would pile up unacknowledged; Welcome resets prediction anyway.
     if (!session.connected) return;
+    if (m.x !== 0 || m.y !== 0) dialogue.playerMoved();
     sendMove(game, session, m.x, m.y, stepMs / 1000, controls.isRunning);
   },
   render: () => {
