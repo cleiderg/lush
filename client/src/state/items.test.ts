@@ -134,7 +134,7 @@ describe('decode + GameState: entity info and health', () => {
   it('keeps info per entity on arrival and update', () => {
     const game = setup();
     feed(game, snapshot([1, 2, 3]), info(2, EntityKind.Player, 0, 5, 5, 0, 7, 0), info(3, EntityKind.Npc, 4, 12));
-    expect(game.items.entityInfo(2)).toEqual({
+    expect(game.items.entityInfo(2)).toMatchObject({
       id: 2, kind: EntityKind.Player, npcType: 0, combatLevel: 5, totalLevel: 0, equipment: { weapon: 5, head: 0, body: 7, shield: 0 },
     });
     expect(game.items.entityInfo(3)).toMatchObject({ kind: EntityKind.Npc, npcType: 4, combatLevel: 12 });

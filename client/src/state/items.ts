@@ -121,9 +121,12 @@ export class ItemState {
   setEntityInfo(info: EntityInfoState): void {
     const c = this.infos.get(info.id);
     if (c && c.kind === info.kind && c.npcType === info.npcType && c.combatLevel === info.combatLevel && c.totalLevel === info.totalLevel
-      && sameEquipment(c.equipment, info.equipment)) return;
+      && sameEquipment(c.equipment, info.equipment)
+      && (c.groupId ?? 0) === (info.groupId ?? 0) && (c.groupBanner ?? 0) === (info.groupBanner ?? 0)
+      && (c.groupName ?? '') === (info.groupName ?? '')) return;
     const { id, kind, npcType, combatLevel, totalLevel, equipment } = info;
-    this.infos.set(id, { id, kind, npcType, combatLevel, totalLevel, equipment: { ...equipment } });
+    const { groupId = 0, groupBanner = 0, groupName = '' } = info;
+    this.infos.set(id, { id, kind, npcType, combatLevel, totalLevel, equipment: { ...equipment }, groupId, groupBanner, groupName });
     this.notify();
   }
 

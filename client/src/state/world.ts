@@ -2,6 +2,8 @@ import type { ServerMessage } from '../net/codec';
 import { BankStore } from './bank';
 import { CardTableStore } from './cardTables';
 import { ChatStore } from './chat';
+import { GroupStore, groupInvitedText, groupResultText } from './groups';
+import { ChatChannel } from '../protocol';
 import { SharedClock } from './clock';
 import type { CollisionGrid } from './collision';
 import { GainTracker } from './gains';
@@ -51,6 +53,7 @@ export class GameState {
   /** Pending trade request, open trade window and last trade result; subscribe for changes. */
   readonly trade = new TradeStore();
   /** Houses, the player's own house and the current home; subscribe for changes. */
+  readonly groups = new GroupStore();
   readonly housing = new HousingStore();
   readonly workbench = new WorkbenchStore();
   /** True once a HousingState has arrived since the last Welcome (the first one is the login warning). */
@@ -93,6 +96,7 @@ export class GameState {
       this.gains.reset();
       this.trade.clear();
       this.housing.clear();
+      this.groups.clear();
       this.housingSeen = false;
       this.bank.clear();
       this.quests.clear();
@@ -199,7 +203,16 @@ export class GameState {
       this.gathering.onResult(msg.code, now, (id) => this.skills.fishingSpotCandidate(id));
       this.chat.system(skillResultText(msg, (id) => this.items.item(id)?.name));
     } else if (msg.type === 'chat') {
-      this.chat.push(msg.speakerId, msg.text, now);
+      if (msg.channel === ChatChannel.Group) this.chat.pushGroup(msg.speakerId, msg.speakerName ?? '', msg.text);
+      else this.chat.push(msg.speakerId, msg.text, now);
+    } else if (msg.type === 'groupState') {
+      this.groups.setState(msg);
+    } else if (msg.type === 'groupInvited') {
+      this.groups.setInvite(msg);
+      this.chat.system(groupInvitedText(msg.inviterName, msg.groupName));
+    } else if (msg.type === 'groupResult') {
+      const text = groupResultText(msg.code);
+      if (text) this.chat.system(text);
     }
   }
 
