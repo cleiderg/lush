@@ -29,7 +29,7 @@ afterEach(() => { current?.dispose(); current = null; });
 
 function setup(opts: { houseMine?: boolean; inHome?: number | null; placedItems?: PlacedItemState[] } = {}) {
   const housing = new HousingStore();
-  housing.setHouses([{ id: HOUSE, areaId: 1, ownerName: 'Me', mine: opts.houseMine ?? true, paidUntil: 0, state: HouseState.Owned, open: true }]);
+  housing.setHouses([{ id: HOUSE, areaId: 1, ownerName: 'Me', mine: opts.houseMine ?? true, paidUntil: 0, state: HouseState.Owned, open: true, topBid: 0, auctionEnd: 0, myBid: 0 }]);
   const inHome = opts.inHome === undefined ? HOUSE : opts.inHome;
   if (inHome !== null) housing.setHome(home(inHome, opts.placedItems));
   const items = new ItemState();

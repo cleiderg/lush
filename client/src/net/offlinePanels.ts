@@ -135,8 +135,8 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
     msgs.push({
       type: 'housingState', rentPerMonth: 200, claimMonths: 2, maxPrepaidMonths: 6,
       houses: [
-        { id: OFFLINE_HOUSE_ID, areaId: 1, ownerName: 'You', mine: true, paidUntil, state: HouseState.Warning, open: true },
-        { id: 8, areaId: 1, ownerName: '', mine: false, paidUntil: 0, state: HouseState.Empty, open: false },
+        { id: OFFLINE_HOUSE_ID, areaId: 1, ownerName: 'You', mine: true, paidUntil, state: HouseState.Warning, open: true, topBid: 0, auctionEnd: 0, myBid: 0 },
+        { id: 8, areaId: 1, ownerName: '', mine: false, paidUntil: 0, state: HouseState.Empty, open: false, topBid: 0, auctionEnd: 0, myBid: 0 },
       ],
     });
   }
@@ -149,7 +149,7 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
     msgs.push(
       {
         type: 'housingState', rentPerMonth: 200, claimMonths: 2, maxPrepaidMonths: 6,
-        houses: [{ id: OFFLINE_HOUSE_ID, areaId: 1, ownerName: 'You', mine: true, paidUntil, state: HouseState.Owned, open: true }],
+        houses: [{ id: OFFLINE_HOUSE_ID, areaId: 1, ownerName: 'You', mine: true, paidUntil, state: HouseState.Owned, open: true, topBid: 0, auctionEnd: 0, myBid: 0 }],
       },
       { type: 'inventory', slots, equipment: { weapon: 1, head: 0, body: 4, shield: 0 } },
       {

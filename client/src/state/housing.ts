@@ -1,5 +1,5 @@
 import type { HomeView, HouseInfoState, PlacedItemState } from '../net/codec';
-import { HomeResultCode, HouseState, HousingResultCode } from '../protocol';
+import { AuctionResultCode, HomeResultCode, HouseState, HousingResultCode } from '../protocol';
 
 /** Rent terms the server sends with HousingState. */
 export interface RentTerms {
@@ -166,6 +166,21 @@ export function homeResultText(code: HomeResultCode): string | null {
     case HomeResultCode.NotInHome: return "You aren't inside a house";
     case HomeResultCode.RateLimited: return 'Slow down; you are redecorating too fast';
     case HomeResultCode.SaveFailed: return 'The change could not be saved. Try again';
+    default: return 'Something went wrong';
+  }
+}
+
+/** Chat line for every AuctionResult code, Ok included (a bid is held, so the player wants to see it). */
+export function auctionResultText(code: AuctionResultCode): string {
+  switch (code) {
+    case AuctionResultCode.Ok: return 'Your bid is the highest. The gold is held until the auction ends';
+    case AuctionResultCode.NotAuction: return 'That house is not up for auction';
+    case AuctionResultCode.TooFar: return 'You need to be closer to the house to bid';
+    case AuctionResultCode.PreviousOwner: return "You can't bid on the house you lost";
+    case AuctionResultCode.BidTooLow: return 'Your bid must be higher than the top bid';
+    case AuctionResultCode.NotEnoughGold: return "You don't have enough gold to hold that bid";
+    case AuctionResultCode.OwnsAnother: return 'You already own a house';
+    case AuctionResultCode.SaveFailed: return 'Your bid could not be saved. Try again';
     default: return 'Something went wrong';
   }
 }

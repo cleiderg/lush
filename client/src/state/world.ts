@@ -11,7 +11,7 @@ import { ItemState } from './items';
 import { type PendingInput, Prediction, RUN_SPEED, WALK_SPEED } from './prediction';
 import { SkillState } from './skills';
 import { bankResultText, levelUpText, skillResultText } from './skillMessages';
-import { HousingStore, homeResultText, housingResultText, RENT_WARNING_LOGIN } from './housing';
+import { HousingStore, homeResultText, auctionResultText, housingResultText, RENT_WARNING_LOGIN } from './housing';
 import { WorkbenchStore, craftResultText } from './workbench';
 import { GatheringState } from './gathering';
 import { TradeStore } from './trade';
@@ -141,6 +141,8 @@ export class GameState {
     } else if (msg.type === 'housingResult') {
       const text = housingResultText(msg.code);
       if (text) this.chat.system(text);
+    } else if (msg.type === 'auctionResult') {
+      this.chat.system(auctionResultText(msg.code));
     } else if (msg.type === 'tradeRequestNotice') {
       this.trade.setRequest(msg.fromId);
     } else if (msg.type === 'tradeState') {
