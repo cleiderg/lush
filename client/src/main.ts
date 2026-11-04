@@ -133,6 +133,7 @@ const quests = new QuestsPanel({
   quests: game.quests,
   inventory: hud,
   skills,
+  levels: [game.skills, game.items],
   onOpen: () => {
     hud.setOpen(false);
     skills.setOpen(false);

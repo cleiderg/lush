@@ -28,13 +28,14 @@ let disposers: (() => void)[] = [];
 
 function setup(levelOf = () => 1) {
   const items = new ItemState();
+  const levels = new SkillState();
   const store = new QuestStore(levelOf);
   store.setCatalog(QUESTS);
   const hud = new Hud({ parent: document.body, items, viewport: () => VP });
   const skills = new SkillsPanel({ parent: document.body, skills: new SkillState(), items, inventory: hud, viewport: () => VP });
-  const panel = new QuestsPanel({ parent: document.body, quests: store, inventory: hud, skills, viewport: () => VP, onOpen: () => skills.setOpen(false) });
+  const panel = new QuestsPanel({ parent: document.body, quests: store, inventory: hud, skills, levels: [levels], viewport: () => VP, onOpen: () => skills.setOpen(false) });
   disposers.push(() => panel.dispose(), () => skills.dispose(), () => hud.dispose());
-  return { store, hud, skills, panel };
+  return { store, hud, skills, panel, levels };
 }
 
 function row(panel: QuestsPanel, id: number) {
@@ -97,13 +98,23 @@ describe('Quests tab and panel (#655)', () => {
     expect(row(panel, 2).el.classList.contains('unmet')).toBe(false);
   });
 
+  it('AC2: a level gained without a QuestLog ungreys the quest', () => {
+    let combat = 1;
+    const { panel, levels } = setup(() => combat);
+    expect(row(panel, 2).el.classList.contains('unmet')).toBe(true);
+    combat = 15;
+    levels.setStats([]);
+    expect(row(panel, 2).el.classList.contains('unmet')).toBe(false);
+  });
+
   it('AC3: the quest points total shows at the top and updates with the QuestLog', () => {
     const { store, panel } = setup();
     const top = (): string | undefined => panel.panel.querySelector('.lush-quests-points')?.textContent ?? undefined;
     expect(top()).toBe('Quest points: 0');
     store.setLog([{ questId: 1, state: QuestState.Complete, step: 0, count: 0 }], 3);
     expect(top()).toBe('Quest points: 3');
-    expect(panel.panel.children[1].classList.contains('lush-quests-head') || panel.panel.children[2] === panel.panel.querySelector('.lush-quests-points')).toBe(true);
+    // Below the tab row and the title, above the quest rows.
+    expect(panel.panel.children[2]).toBe(panel.panel.querySelector('.lush-quests-points'));
   });
 
   it('stepText adds a count only when the step names a number', () => {

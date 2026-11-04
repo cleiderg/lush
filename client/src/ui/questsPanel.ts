@@ -11,6 +11,8 @@ export interface QuestsPanelOptions {
   /** The inventory and Skills panels; the Quests tab is added to their tab rows and the three swap in the panel area. */
   inventory: Hud;
   skills: SkillsPanel;
+  /** Stores whose changes can change whether requirements are met (skill levels, combat level). */
+  levels?: { subscribe(fn: () => void): () => void }[];
   /** Current viewport size; defaults to the window's. */
   viewport?: () => { width: number; height: number };
   /** Called when the Quests panel opens, so other panels in its place can close. */
@@ -53,7 +55,7 @@ export class QuestsPanel {
   private readonly rows: HTMLElement;
   private readonly points: HTMLElement;
   private readonly motion: PanelMotion;
-  private readonly unsubscribe: () => void;
+  private readonly unsubscribe: (() => void)[];
   private readonly extraTabs: HTMLElement[] = [];
   private readonly onResize = (): void => this.layout();
 
@@ -85,7 +87,7 @@ export class QuestsPanel {
     }
 
     opts.parent.append(this.panel);
-    this.unsubscribe = opts.quests.subscribe(() => this.render());
+    this.unsubscribe = [opts.quests, ...(opts.levels ?? [])].map((s) => s.subscribe(() => this.render()));
     window.addEventListener('resize', this.onResize);
     this.layout();
     this.render();
@@ -133,7 +135,7 @@ export class QuestsPanel {
   }
 
   dispose(): void {
-    this.unsubscribe();
+    for (const u of this.unsubscribe) u();
     this.motion.dispose();
     window.removeEventListener('resize', this.onResize);
     this.panel.remove();
