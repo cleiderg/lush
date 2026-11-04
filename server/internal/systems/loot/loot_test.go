@@ -187,7 +187,7 @@ func TestCoyoteAlphaAlwaysDropsPelts(t *testing.T) {
 
 func TestUnknownNPC(t *testing.T) {
 	d := loadData(t)
-	for _, id := range []gamedata.NPCTypeID{0, 10, 999} {
+	for _, id := range []gamedata.NPCTypeID{0, 99, 999} {
 		l, err := loot.Roll(d, id, rand.New(rand.NewPCG(1, 1)))
 		if err == nil {
 			t.Errorf("npc %d: no error", id)

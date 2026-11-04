@@ -1,0 +1,29 @@
+[
+  {"id": 1, "key": "overdue", "name": "Overdue",
+   "description": "A crow stole a book from the library. Get it back.",
+   "requirements": {},
+   "steps": [
+     {"kind": "talk", "npc": "librarian"},
+     {"kind": "quest_item", "item": "overdue_book", "source_npc": "crow", "chance": 4},
+     {"kind": "bring_items", "npc": "librarian", "items": [{"item": "overdue_book", "quantity": 1}]}
+   ],
+   "rewards": {"quest_points": 1, "gold": 150, "xp": [{"skill": "combat", "xp": 500}], "items": [{"item": "library_card", "quantity": 1}]}},
+  {"id": 2, "key": "coyote_trouble", "name": "Coyote Trouble",
+   "description": "Coyotes are attacking students near the park. Help the ranger.",
+   "requirements": {"levels": [{"skill": "combat", "level": 15}]},
+   "steps": [
+     {"kind": "talk", "npc": "park_ranger"},
+     {"kind": "kill", "npc": "coyote", "count": 5},
+     {"kind": "quest_item", "item": "alphas_fang", "source_npc": "coyote_alpha", "chance": 1},
+     {"kind": "bring_items", "npc": "park_ranger", "items": [{"item": "alphas_fang", "quantity": 1}]}
+   ],
+   "rewards": {"quest_points": 2, "gold": 400, "xp": [{"skill": "combat", "xp": 2000}], "items": [{"item": "rangers_machete", "quantity": 1}]}},
+  {"id": 3, "key": "fish_fry", "name": "Fish Fry",
+   "description": "The lunch rush is coming and the fish delivery didn't show.",
+   "requirements": {"levels": [{"skill": "fishing", "level": 15}, {"skill": "cooking", "level": 15}]},
+   "steps": [
+     {"kind": "talk", "npc": "food_truck_cook"},
+     {"kind": "bring_items", "npc": "food_truck_cook", "items": [{"item": "trout", "quantity": 5}]}
+   ],
+   "rewards": {"quest_points": 1, "gold": 250, "xp": [{"skill": "cooking", "xp": 1500}, {"skill": "fishing", "xp": 1000}], "items": [{"item": "chefs_hat", "quantity": 1}]}}
+]

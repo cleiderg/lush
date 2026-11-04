@@ -189,6 +189,11 @@ type NPCType struct {
 	GoldMin        int       `json:"gold_min"`   // every kill drops GoldMin..GoldMax gold
 	GoldMax        int       `json:"gold_max"`
 	Drops          []Drop    `json:"drops"` // each rolls separately
+	// Talkable marks a non-combat talking NPC (docs/specs/quests.md). It has
+	// an id, key, name and Spot only; Load puts it in Data.Talkers, not Data.NPCs.
+	Talkable bool `json:"talkable"`
+	// Spot is the id of the talker's fixed place in talkers.json.
+	Spot string `json:"spot"`
 }
 
 // Respawn is the time between death and respawn.
@@ -323,6 +328,17 @@ type Data struct {
 	CardTables []CardTable
 	// Skills holds the woodcutting, fishing and cooking tables.
 	Skills Skills
+	// Talkers are the talking NPC types (npcs.json rows with talkable set), in file order.
+	Talkers []NPCType
+	// Quests and Dialogue come from quests.json and dialogue.json, in file order.
+	Quests   []Quest
+	Dialogue []Dialogue
+
+	questByID     map[QuestID]int
+	questByKey    map[string]int
+	dialogueByNPC map[NPCTypeID]int
+	talkerByID    map[NPCTypeID]int
+	talkerByKey   map[string]int
 
 	itemByID  map[ItemID]int
 	itemByKey map[string]int
@@ -368,6 +384,9 @@ func (d *Data) ItemByKey(key string) (Item, bool) {
 func (d *Data) NPC(id NPCTypeID) (NPCType, bool) {
 	i, ok := d.npcByID[id]
 	if !ok {
+		if t, ok := d.talkerByID[id]; ok {
+			return d.Talkers[t], true
+		}
 		return NPCType{}, false
 	}
 	return d.NPCs[i], true
@@ -377,6 +396,9 @@ func (d *Data) NPC(id NPCTypeID) (NPCType, bool) {
 func (d *Data) NPCByKey(key string) (NPCType, bool) {
 	i, ok := d.npcByKey[key]
 	if !ok {
+		if t, ok := d.talkerByKey[key]; ok {
+			return d.Talkers[t], true
+		}
 		return NPCType{}, false
 	}
 	return d.NPCs[i], true
@@ -406,7 +428,7 @@ func Load(fsys fs.FS) (*Data, error) {
 	for _, f := range []struct {
 		name string
 		v    any
-	}{{ItemsFile, &d.Items}, {NPCsFile, &d.NPCs}, {ShopFile, &d.Shop}, {ThriftFile, &d.Thrift}, {WorkbenchFile, &d.Workbench}, {RulesFile, &d.Rules}, {CardTablesFile, &d.CardTables}, {SkillsFile, &d.Skills}} {
+	}{{ItemsFile, &d.Items}, {NPCsFile, &d.NPCs}, {ShopFile, &d.Shop}, {ThriftFile, &d.Thrift}, {WorkbenchFile, &d.Workbench}, {RulesFile, &d.Rules}, {CardTablesFile, &d.CardTables}, {SkillsFile, &d.Skills}, {QuestsFile, &d.Quests}, {DialogueFile, &d.Dialogue}} {
 		if err := decode(fsys, f.name, f.v); err != nil {
 			return nil, err
 		}
@@ -489,6 +511,9 @@ func (d *Data) index() error {
 		d.itemByKey[it.Key] = i
 	}
 
+	if err := d.splitTalkers(); err != nil {
+		return err
+	}
 	d.npcByID = map[NPCTypeID]int{}
 	d.npcByKey = map[string]int{}
 	for i := range d.NPCs {
@@ -613,7 +638,62 @@ func (d *Data) index() error {
 	if err := d.validateCardTables(); err != nil {
 		return err
 	}
-	return d.validateSkills()
+	if err := d.validateSkills(); err != nil {
+		return err
+	}
+	if err := d.validateQuests(); err != nil {
+		return err
+	}
+	return d.validateDialogue()
+}
+
+// splitTalkers moves the talkable rows out of d.NPCs into d.Talkers after
+// checking them, so spawning and combat only ever see combat NPC types.
+func (d *Data) splitTalkers() error {
+	d.talkerByID = map[NPCTypeID]int{}
+	d.talkerByKey = map[string]int{}
+	d.Talkers = nil
+	combat := d.NPCs[:0:0]
+	spots := map[string]string{}
+	for _, n := range d.NPCs {
+		if !n.Talkable {
+			if n.Spot != "" {
+				return fmt.Errorf("gamedata: %s: npc %d (%q): spot on a non-talkable npc", NPCsFile, n.ID, n.Key)
+			}
+			combat = append(combat, n)
+			continue
+		}
+		where := fmt.Sprintf("%s: npc %d (%q)", NPCsFile, n.ID, n.Key)
+		if n.ID == 0 || n.Key == "" {
+			return fmt.Errorf("gamedata: %s: id and key are required", where)
+		}
+		if err := n.validateTalker(where); err != nil {
+			return err
+		}
+		if _, dup := d.talkerByID[n.ID]; dup {
+			return fmt.Errorf("gamedata: %s: duplicate id %d", where, n.ID)
+		}
+		if _, dup := d.talkerByKey[n.Key]; dup {
+			return fmt.Errorf("gamedata: %s: duplicate key %q", where, n.Key)
+		}
+		if other, dup := spots[n.Spot]; dup {
+			return fmt.Errorf("gamedata: %s: spot %q also used by %q", where, n.Spot, other)
+		}
+		spots[n.Spot] = n.Key
+		d.talkerByID[n.ID] = len(d.Talkers)
+		d.talkerByKey[n.Key] = len(d.Talkers)
+		d.Talkers = append(d.Talkers, n)
+	}
+	for _, c := range combat {
+		if t, dup := d.talkerByID[c.ID]; dup {
+			return fmt.Errorf("gamedata: %s: id %d used by %q and %q", NPCsFile, c.ID, c.Key, d.Talkers[t].Key)
+		}
+		if t, dup := d.talkerByKey[c.Key]; dup {
+			return fmt.Errorf("gamedata: %s: key %q used twice (talker id %d)", NPCsFile, c.Key, d.Talkers[t].ID)
+		}
+	}
+	d.NPCs = combat
+	return nil
 }
 
 // validateCardTables checks every card table has a unique non-zero id, 2 to 4

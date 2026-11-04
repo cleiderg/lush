@@ -1,0 +1,81 @@
+[
+  {"npc": "librarian", "start": "greeting", "nodes": [
+    {"id": "greeting", "when": {"quest": "overdue", "state": "not_started"},
+     "text": ["Shh! A crow flew off with one of our books.", "Could you get it back?"],
+     "replies": [
+       {"text": "I'll find it.", "start_quest": "overdue", "next": "thanks"},
+       {"text": "Not now."}]},
+    {"id": "thanks", "text": ["Thank you. Crows roost in Aldrich Park."],
+     "replies": [{"text": "On my way.", "finish_talk": true}]},
+    {"id": "intro_done", "when": {"quest": "overdue", "state": "step", "step": 0},
+     "text": ["A crow took the book. Look in Aldrich Park."],
+     "replies": [{"text": "Understood.", "finish_talk": true}]},
+    {"id": "hunting", "when": {"quest": "overdue", "state": "step", "step": 1},
+     "text": ["Any luck with the crows?"],
+     "replies": [{"text": "Still looking."}]},
+    {"id": "return", "when": {"quest": "overdue", "state": "step", "step": 2},
+     "text": ["Is that the book? Let me see."],
+     "replies": [{"text": "Here you go.", "finish_talk": true}]},
+    {"id": "complete", "when": {"quest": "overdue", "state": "complete"},
+     "text": ["Thanks again for the book."],
+     "replies": [{"text": "Any time."}]}
+  ]},
+  {"npc": "park_ranger", "start": "greeting", "nodes": [
+    {"id": "greeting", "when": {"quest": "coyote_trouble", "state": "not_started"},
+     "text": ["Coyotes are attacking students near the park.", "Can you help?"],
+     "replies": [
+       {"text": "I'll help.", "start_quest": "coyote_trouble", "next": "thanks"},
+       {"text": "Not now."}]},
+    {"id": "thanks", "text": ["Good. Start with the coyotes in the south fields."],
+     "replies": [{"text": "On my way.", "finish_talk": true}]},
+    {"id": "intro_done", "when": {"quest": "coyote_trouble", "state": "step", "step": 0},
+     "text": ["The coyotes are in the south fields."],
+     "replies": [{"text": "Understood.", "finish_talk": true}]},
+    {"id": "hunting", "when": {"quest": "coyote_trouble", "state": "step", "step": 1},
+     "text": ["Keep at the coyotes."],
+     "replies": [{"text": "Will do."}]},
+    {"id": "alpha", "when": {"quest": "coyote_trouble", "state": "step", "step": 2},
+     "text": ["Now find the coyote alpha."],
+     "replies": [{"text": "Will do."}]},
+    {"id": "return", "when": {"quest": "coyote_trouble", "state": "step", "step": 3},
+     "text": ["Is that the alpha's fang? Excellent."],
+     "replies": [{"text": "Here you go.", "finish_talk": true}]},
+    {"id": "complete", "when": {"quest": "coyote_trouble", "state": "complete"},
+     "text": ["The students are safe, thanks to you."],
+     "replies": [{"text": "Glad to help."}]}
+  ]},
+  {"npc": "food_truck_cook", "start": "greeting", "nodes": [
+    {"id": "greeting", "when": {"quest": "fish_fry", "state": "not_started"},
+     "text": ["The lunch rush is coming and the fish delivery didn't show.", "Can you bring me some cooked trout?"],
+     "replies": [
+       {"text": "I'll get some.", "start_quest": "fish_fry", "next": "thanks"},
+       {"text": "Not now."}]},
+    {"id": "thanks", "text": ["I need 5 cooked trout. Hurry!"],
+     "replies": [{"text": "On my way.", "finish_talk": true}]},
+    {"id": "intro_done", "when": {"quest": "fish_fry", "state": "step", "step": 0},
+     "text": ["I need 5 cooked trout."],
+     "replies": [{"text": "Understood.", "finish_talk": true}]},
+    {"id": "return", "when": {"quest": "fish_fry", "state": "step", "step": 1},
+     "text": ["Do you have the trout?"],
+     "replies": [{"text": "Here you go.", "finish_talk": true}]},
+    {"id": "complete", "when": {"quest": "fish_fry", "state": "complete"},
+     "text": ["The lunch rush was a success!"],
+     "replies": [{"text": "Great."}]}
+  ]},
+  {"npc": "guide", "start": "menu", "nodes": [
+    {"id": "menu", "text": ["Welcome to campus! What would you like to know?"],
+     "replies": [
+       {"text": "Controls", "next": "controls"},
+       {"text": "The shop", "next": "shop"},
+       {"text": "The bank", "next": "bank"},
+       {"text": "The PvP zone", "next": "pvp"}]},
+    {"id": "controls", "text": ["Tap or click the ground to walk.", "Tap an NPC or object to interact with it."],
+     "replies": [{"text": "More questions", "next": "menu"}, {"text": "Bye"}]},
+    {"id": "shop", "text": ["The shop stall buys and sells gear and food.", "Interact with it to trade."],
+     "replies": [{"text": "More questions", "next": "menu"}, {"text": "Bye"}]},
+    {"id": "bank", "text": ["The bank booth stores your items safely.", "Interact with it to open your bank."],
+     "replies": [{"text": "More questions", "next": "menu"}, {"text": "Bye"}]},
+    {"id": "pvp", "text": ["The PvP zone lets players fight each other.", "Dying there can drop your items, so be careful."],
+     "replies": [{"text": "More questions", "next": "menu"}, {"text": "Bye"}]}
+  ]}
+]
