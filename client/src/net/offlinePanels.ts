@@ -141,6 +141,15 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
     });
   }
 
+  if (opts.panel === 'house-auction') {
+    // A house in auction: a top bid, three days left and the player's own held bid.
+    const now = Math.floor(Date.now() / 1000);
+    msgs.push({
+      type: 'housingState', rentPerMonth: 200, claimMonths: 2, maxPrepaidMonths: 6,
+      houses: [{ id: OFFLINE_HOUSE_ID, areaId: 1, ownerName: '', mine: false, paidUntil: 0, state: HouseState.Auction, open: false, topBid: 450, auctionEnd: now + 3 * 24 * 3600, myBid: 300 }],
+    });
+  }
+
   if (opts.panel === 'home-edit') {
     // Inside the player's own home with furniture in the inventory and two pieces placed.
     const paidUntil = Math.floor(Date.now() / 1000) + 90 * 24 * 3600;

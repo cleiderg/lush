@@ -133,6 +133,7 @@ const house = new HousePanel({
   parent: document.body,
   housing: game.housing,
   send,
+  sendBid: (id, amount) => session.sendAuctionBid(id, amount),
   onOpen: () => {
     hud.setOpen(false);
     skills.setOpen(false);
@@ -283,6 +284,10 @@ function openOfflinePanel(panel: OfflinePanel): void {
     },
     shop: () => shop.tryOpen(),
     house: () => {
+      house.open(OFFLINE_HOUSE_ID);
+      return house.isOpen;
+    },
+    'house-auction': () => {
       house.open(OFFLINE_HOUSE_ID);
       return house.isOpen;
     },
