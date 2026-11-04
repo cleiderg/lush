@@ -18,10 +18,16 @@ export interface AreasJson {
   areas: { id: string; kind: string; p: number[] }[];
 }
 
+/** shared/map/housing.json as the client reads it (decimetres); only the areas are used here. */
+export interface HousingJson {
+  areas: { id: string; name: string; p: number[] }[];
+}
+
 export interface GameArea {
   id: string;
   name: string;
-  kind: 'pve' | 'pvp';
+  /** 'safe' is a housing area: no combat (docs/specs/map.md, Housing areas). */
+  kind: 'pve' | 'pvp' | 'safe';
   poly: Polygon;
 }
 
@@ -47,26 +53,31 @@ function nameFor(id: string): string {
 }
 
 /** Converts areas.json (decimetres) to metres, keeping only PvE and PvP areas. */
-export function areaMap(json: AreasJson): AreaMap {
+export function areaMap(json: AreasJson, housing?: HousingJson): AreaMap {
   return {
     spawn: { x: json.spawn.x / 10, z: json.spawn.z / 10 },
     safeRadius: json.safeRadius / 10,
     areas: json.areas
       .filter((a) => a.kind === 'pve' || a.kind === 'pvp')
-      .map((a) => ({ id: a.id, name: nameFor(a.id), kind: a.kind as 'pve' | 'pvp', poly: polygonFromDecimetres(a.p) })),
+      .map((a): GameArea => ({ id: a.id, name: nameFor(a.id), kind: a.kind as 'pve' | 'pvp', poly: polygonFromDecimetres(a.p) }))
+      .concat(
+        (housing?.areas ?? []).map((h) => ({ id: h.id, name: h.name, kind: 'safe' as const, poly: polygonFromDecimetres(h.p) })),
+      ),
   };
 }
 
 /**
- * The gameplay area at pos (metres): the PvP zone first, then the safe circle (named after the area
+ * The gameplay area at pos (metres): the PvP zone first, then housing areas (always Safe), then the safe circle (named after the area
  * around the spawn), then any PvE area. Null outside every area.
  */
 export function placeAt(pos: Point, map: AreaMap): Place | null {
   const containing = (p: Point): GameArea | undefined =>
     map.areas.find((a) => a.kind === 'pvp' && pointInPolygon(p, a.poly)) ??
+    map.areas.find((a) => a.kind === 'safe' && pointInPolygon(p, a.poly)) ??
     map.areas.find((a) => pointInPolygon(p, a.poly));
   const area = containing(pos);
   if (area?.kind === 'pvp') return { name: area.name, type: 'PvP', danger: true };
+  if (area?.kind === 'safe') return { name: area.name, type: 'Safe', danger: false };
   if (Math.hypot(pos.x - map.spawn.x, pos.z - map.spawn.z) <= map.safeRadius) {
     const name = area?.name ?? containing(map.spawn)?.name;
     return name ? { name, type: 'Safe', danger: false } : null;
