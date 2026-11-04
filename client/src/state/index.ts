@@ -13,3 +13,4 @@ export * from './housing';
 export * from './trade';
 export * from './skills';
 export * from './workbench';
+export * from './quests';

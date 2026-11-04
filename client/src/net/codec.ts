@@ -1,5 +1,6 @@
 import * as flatbuffers from 'flatbuffers';
 import {
+  Dialogue, DialogueReply, QuestCatalog, QuestRequirementKind, QuestRewards, QuestSkill, QuestState, QuestCompleted, QuestLog, QuestResult, QuestResultCode, Talk,
   AttackTarget, BankAmount, BankClose, BankDeposit, BankDepositEquipment, BankDepositInventory, BankOpen, BankResult, BankResultCode,
   BankSlot, BankState, BankWithdraw, CardTableCatalog, CardTableInfo, CardTableLeave, CardTableReady, CardTableResult, CardTableResultCode, CardTableSit, CardTableState, ChatMessage, ChatSend, CombatHit, Emote, EmoteSend, Entity, EntityHealth, EntityInfo, EntityKind, Envelope,
   EquipSlot, GroundItem, GroundItems, Hello, HealthRatio, Hit, Input, InventorySlot, InventoryState, ItemAction,
@@ -257,6 +258,42 @@ export interface ShedHandState {
   cards: ShedCardValue[];
 }
 
+/** One quest requirement: a skill level (skill is a QuestSkill, 0 = combat) or another quest complete. */
+export interface QuestRequirementInfo {
+  kind: QuestRequirementKind;
+  skill: QuestSkill;
+  level: number;
+  questId: number;
+}
+
+/** What a quest gives on completion. */
+export interface QuestRewardsInfo {
+  questPoints: number;
+  gold: number;
+  items: { itemId: number; count: number }[];
+  xp: { skill: QuestSkill; xp: number }[];
+}
+
+/** One quest from the QuestCatalog. */
+export interface QuestInfo {
+  id: number;
+  name: string;
+  description: string;
+  requirements: QuestRequirementInfo[];
+  steps: string[];
+  rewards: QuestRewardsInfo;
+  startNpc: number;
+  finishNpc: number;
+}
+
+/** The player's state in one quest. */
+export interface QuestProgressState {
+  questId: number;
+  state: QuestState;
+  step: number;
+  count: number;
+}
+
 /** One filled bank slot. Quantities past 2^53 lose precision, far beyond any real stack. */
 export interface BankSlotState {
   itemId: number;
@@ -325,11 +362,25 @@ export type ServerMessage =
   | ({ type: 'shedHand' } & ShedHandState)
   | { type: 'bankState'; slots: BankSlotState[] }
   | { type: 'bankResult'; code: BankResultCode }
+  | { type: 'questCatalog'; quests: QuestInfo[] }
+  | { type: 'questLog'; quests: QuestProgressState[]; questPoints: number }
+  | { type: 'dialogue'; npcId: number; lines: string[]; replies: string[] }
+  | { type: 'dialogueClose' }
+  | { type: 'questCompleted'; playerName: string; questId: number; questName: string; rewards: QuestRewardsInfo }
+  | { type: 'questResult'; code: QuestResultCode }
   /** Woodcutting, Fishing and Cooking, in Skill enum order. */
   | { type: 'skillStats'; skills: SkillValue[] }
   | { type: 'resourceState'; felledTrees: number[]; fishingSpots: FishingSpotPosition[] }
   | ({ type: 'levelUp' } & LevelUpEvent)
   | ({ type: 'skillResult' } & SkillResultEvent);
+
+function readQuestRewards(r: QuestRewards | null): QuestRewardsInfo {
+  const out: QuestRewardsInfo = { questPoints: r?.questPoints() ?? 0, gold: r?.gold() ?? 0, items: [], xp: [] };
+  if (!r) return out;
+  for (let i = 0; i < r.itemsLength(); i++) out.items.push({ itemId: r.items(i)!.itemId(), count: r.items(i)!.count() });
+  for (let i = 0; i < r.xpLength(); i++) out.xp.push({ skill: r.xp(i)!.skill(), xp: r.xp(i)!.xp() });
+  return out;
+}
 
 function wrap(b: flatbuffers.Builder, type: Message, msg: flatbuffers.Offset): Uint8Array {
   b.finish(Envelope.createEnvelope(b, type, msg));
@@ -547,6 +598,18 @@ export function encodeShedPlay(card: ShedCardValue, chosenColour: ShedColour = S
 export function encodeShedDraw(): Uint8Array {
   const b = new flatbuffers.Builder(16);
   return wrap(b, Message.ShedDraw, ShedDraw.createShedDraw(b));
+}
+
+/** Talk to the NPC entity npcId. */
+export function encodeTalk(npcId: number): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.Talk, Talk.createTalk(b, npcId));
+}
+
+/** Pick reply `index` (0-based) in the open dialogue; 0 also continues a dialogue with no replies. */
+export function encodeDialogueReply(index: number): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.DialogueReply, DialogueReply.createDialogueReply(b, index));
 }
 
 /** Open the bank at the booth (within 2 tiles). */
@@ -892,6 +955,53 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
       }
       return { type: 'bankState', slots };
     }
+    case Message.QuestCatalog: {
+      const m = env.msg(new QuestCatalog()) as QuestCatalog;
+      const quests: QuestInfo[] = [];
+      for (let i = 0; i < m.questsLength(); i++) {
+        const q = m.quests(i)!;
+        const requirements: QuestRequirementInfo[] = [];
+        for (let j = 0; j < q.requirementsLength(); j++) {
+          const r = q.requirements(j)!;
+          requirements.push({ kind: r.kind(), skill: r.skill(), level: r.level(), questId: r.questId() });
+        }
+        const steps: string[] = [];
+        for (let j = 0; j < q.stepsLength(); j++) steps.push(q.steps(j) as string);
+        quests.push({
+          id: q.id(), name: q.name() ?? '', description: q.description() ?? '', requirements, steps,
+          rewards: readQuestRewards(q.rewards()), startNpc: q.startNpc(), finishNpc: q.finishNpc(),
+        });
+      }
+      return { type: 'questCatalog', quests };
+    }
+    case Message.QuestLog: {
+      const m = env.msg(new QuestLog()) as QuestLog;
+      const quests: QuestProgressState[] = [];
+      for (let i = 0; i < m.questsLength(); i++) {
+        const p = m.quests(i)!;
+        quests.push({ questId: p.questId(), state: p.state(), step: p.step(), count: p.count() });
+      }
+      return { type: 'questLog', quests, questPoints: m.questPoints() };
+    }
+    case Message.Dialogue: {
+      const m = env.msg(new Dialogue()) as Dialogue;
+      const lines: string[] = [];
+      for (let i = 0; i < m.linesLength(); i++) lines.push(m.lines(i) as string);
+      const replies: string[] = [];
+      for (let i = 0; i < m.repliesLength(); i++) replies.push(m.replies(i) as string);
+      return { type: 'dialogue', npcId: m.npcId(), lines, replies };
+    }
+    case Message.DialogueClose:
+      return { type: 'dialogueClose' };
+    case Message.QuestCompleted: {
+      const m = env.msg(new QuestCompleted()) as QuestCompleted;
+      return {
+        type: 'questCompleted', playerName: m.playerName() ?? '', questId: m.questId(), questName: m.questName() ?? '',
+        rewards: readQuestRewards(m.rewards()),
+      };
+    }
+    case Message.QuestResult:
+      return { type: 'questResult', code: (env.msg(new QuestResult()) as QuestResult).code() };
     case Message.BankResult:
       return { type: 'bankResult', code: (env.msg(new BankResult()) as BankResult).code() };
     case Message.SkillStats: {

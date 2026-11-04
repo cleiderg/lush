@@ -1,6 +1,6 @@
 import { type EquipSlot, type ItemActionKind, ShedColour, ShopKind, type SkillTarget } from '../protocol';
 import {
-  decode, encodeAttackTarget, encodeBankClose, encodeBankDeposit, encodeBankDepositEquipment, encodeBankDepositInventory,
+  decode, encodeDialogueReply, encodeTalk, encodeAttackTarget, encodeBankClose, encodeBankDeposit, encodeBankDepositEquipment, encodeBankDepositInventory,
   encodeBankOpen, encodeBankWithdraw, encodeCardTableLeave, encodeCardTableReady, encodeCardTableSit, encodeChat, encodeHello, encodeItemAction, encodePickUp, encodeShedDraw, encodeShedPlay,
   encodeHomeEnter, encodeHomeLeave, encodeHomeMove, encodeHomePlace, encodeHomeRemove, encodeHomeRotate, encodeHomeSetFloor,
   encodeHomeSetOpen, encodeHomeSetWallpaper, type HomePlacement, encodeAuctionBid, encodeHouseClaim, encodeRentPay, encodeShopBuy, encodeShopSell, encodeWorkbenchCraft, encodeSkillAction, encodeTradeAccept, encodeTradeCancel, encodeTradeOffer, encodeTradeRemove, encodeTradeRequest, encodeTradeSetGold,
@@ -188,6 +188,16 @@ export class Session {
 
   sendTradeCancel(): void {
     this.send(encodeTradeCancel());
+  }
+
+  /** Talk to the NPC entity npcId. */
+  sendTalk(npcId: number): void {
+    this.send(encodeTalk(npcId));
+  }
+
+  /** Pick reply `index` in the open dialogue (index 0 continues one with no replies). */
+  sendDialogueReply(index: number): void {
+    this.send(encodeDialogueReply(index));
   }
 
   sendBankOpen(): void {

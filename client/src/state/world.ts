@@ -10,6 +10,7 @@ import { Interpolator } from './interpolation';
 import { ItemState } from './items';
 import { type PendingInput, Prediction, RUN_SPEED, WALK_SPEED } from './prediction';
 import { SkillState } from './skills';
+import { QuestStore, questCompletedText, questResultText } from './quests';
 import { bankResultText, levelUpText, skillResultText } from './skillMessages';
 import { HousingStore, homeResultText, auctionResultText, housingResultText, RENT_WARNING_LOGIN } from './housing';
 import { WorkbenchStore, craftResultText } from './workbench';
@@ -56,6 +57,8 @@ export class GameState {
   private housingSeen = false;
   /** Open bank slots and the last bank result; subscribe for changes. */
   readonly bank = new BankStore();
+  /** Quest catalog, quest log and open dialogue; subscribe for changes. */
+  readonly quests = new QuestStore((qs) => (qs === 0 ? this.items.stats.combatLevel : this.skills.level(qs - 1)));
   /** Card table seat and turn state, the local player's seat and the last result; subscribe for changes. */
   readonly cardTables = new CardTableStore();
   /** Chat log and overhead messages from the server's ChatMessages. */
@@ -92,6 +95,7 @@ export class GameState {
       this.housing.clear();
       this.housingSeen = false;
       this.bank.clear();
+      this.quests.clear();
       this.cardTables.clear();
       this.chat.clearOverheads();
       this.skills.reset();
@@ -154,6 +158,20 @@ export class GameState {
     } else if (msg.type === 'bankResult') {
       this.bank.setResult(msg.code);
       const text = bankResultText(msg.code);
+      if (text) this.chat.system(text);
+    } else if (msg.type === 'questCatalog') {
+      this.quests.setCatalog(msg.quests);
+    } else if (msg.type === 'questLog') {
+      this.quests.setLog(msg.quests, msg.questPoints);
+    } else if (msg.type === 'dialogue') {
+      this.quests.setDialogue(msg);
+    } else if (msg.type === 'dialogueClose') {
+      this.quests.closeDialogue();
+    } else if (msg.type === 'questCompleted') {
+      this.chat.system(questCompletedText(msg.playerName, msg.questName));
+      this.quests.setCompleted(msg.playerName, msg.questId, msg.questName, msg.rewards);
+    } else if (msg.type === 'questResult') {
+      const text = questResultText(msg.code);
       if (text) this.chat.system(text);
     } else if (msg.type === 'cardTableState') {
       this.cardTables.setState(msg, this.playerId);
