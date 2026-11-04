@@ -39,6 +39,7 @@ import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
 import { SkillsPanel } from './ui/skillsPanel';
 import { applyTheme, BUTTON_CLASS } from './ui/theme';
 import { mountTimePanel } from './ui/timePanel';
+import { QuestScroll } from './ui/questScroll';
 import { TradePanel } from './ui/tradePanel';
 
 initErrorReporting();
@@ -283,6 +284,7 @@ const trade = new TradePanel({
     bigMap.close();
   },
 });
+const questScroll = new QuestScroll({ parent: document.body, quests: game.quests, items: game.items });
 const remotePositions = () => game.remotes(performance.now());
 // Tapping the minimap opens the big map in the panel area.
 const bigMap = new BigMap({
@@ -372,6 +374,7 @@ function openOfflinePanel(panel: OfflinePanel): void {
       cardTable.open(OFFLINE_TABLE_ID);
       return cardTable.isOpen;
     },
+    'quest-scroll': () => questScroll.isOpen,
     'chat-log': () => game.chat.log.length > 0,
     skills: () => {
       skills.setOpen(true);

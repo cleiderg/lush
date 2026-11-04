@@ -42,6 +42,8 @@ export class QuestStore {
   questPoints = 0;
   /** The open dialogue, or null. */
   dialogue: DialogueState | null = null;
+  /** Counts QuestCompleted messages, so the UI can tell a new one from a repeat notify. */
+  completedSeq = 0;
   /**
    * The latest QuestCompleted, for the completion scroll; null before any. The client doesn't know its
    * own name, so the UI shows the scroll only when the quest is complete in its own log.
@@ -100,6 +102,7 @@ export class QuestStore {
   }
 
   setCompleted(playerName: string, questId: number, questName: string, rewards: QuestRewardsInfo): void {
+    this.completedSeq++;
     this.completed = { playerName, questId, questName, rewards };
     this.notify();
   }
