@@ -355,7 +355,7 @@ func TestQuestItemFlag(t *testing.T) {
 	// quest_item flag removed, set, or set together with a shop price.
 	mk := func(featherRow string) fstest.MapFS {
 		m := fstest.MapFS{}
-		for _, f := range []string{"items.json", "npcs.json", "shop.json", "thrift.json", "workbench.json", "rules.json", "cardtables.json", "skills.json", "quests.json", "dialogue.json"} {
+		for _, f := range []string{"items.json", "npcs.json", "shop.json", "thrift.json", "workbench.json", "rules.json", "cardtables.json", "skills.json", "quests.json", "dialogue.json", "groups.json"} {
 			b, err := os.ReadFile("data/" + f)
 			if err != nil {
 				t.Fatal(err)
