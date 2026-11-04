@@ -159,7 +159,7 @@ export function nearestCardTable(
 
 /**
  * What the Interact button does (gameplay spec, Interact button): the shop stall within shop
- * distance; else the bank booth within 2 tiles (open the bank); else the grill within 1 tile while carrying raw fish (cook); else the nearest usable tree or fishing spot within 1 tile (chop, fish); else the nearest card table within reach (open its panel); else the nearest house door within 3 tiles (open its panel); else the nearest ground item within pick-up range (pick up); else the nearest NPC within attack range (attack); else the nearest player within
+ * distance; else the bank booth within 2 tiles (open the bank); else the grill within 1 tile while carrying raw fish (cook); else the nearest usable tree or fishing spot within 1 tile (chop, fish); else the nearest card table within reach (open its panel); else the nearest ground item within pick-up range (pick up); else the nearest house door within 3 tiles (open its panel; after pick-up so an item dropped by a door can still be taken); else the nearest NPC within attack range (attack); else the nearest player within
  * trade distance (a trade request outside the PvP zone, an attack inside it). Null: nothing.
  */
 export function pickInteractTarget(input: InteractInput): InteractTarget | null {
@@ -171,10 +171,10 @@ export function pickInteractTarget(input: InteractInput): InteractTarget | null 
   if (res) return { type: res.type, id: res.id, kind: res.kind };
   const table = nearestCardTable(pos, input.cardTables);
   if (table) return { type: 'cardTable', id: table.id };
-  const door = nearestDoor(pos, input.doors);
-  if (door) return { type: 'door', id: door.id };
   const item = nearestPickUp(pos, input.groundItems ?? []);
   if (item) return { type: 'pickUp', id: item.id };
+  const door = nearestDoor(pos, input.doors);
+  if (door) return { type: 'door', id: door.id };
   const npc = nearest(
     pos,
     input.entities.filter((e) => e.kind === EntityKind.Npc && tileDistance(pos, e) <= ATTACK_RANGE_TILES),

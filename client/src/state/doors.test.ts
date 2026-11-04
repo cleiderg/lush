@@ -23,6 +23,12 @@ describe('house doors (AC1)', () => {
     expect(nearestDoor({ x: d.x + reach, z: d.z + reach })).toBeNull();
   });
 
+  it('lets a ground item dropped at a door be picked up first', () => {
+    const d = HOUSE_DOORS[4];
+    const groundItems = [{ id: 9, x: d.x, z: d.z }];
+    expect(pickInteractTarget({ pos: d, stall: FAR_STALL, bank: FAR_STALL, entities: [], groundItems })).toEqual({ type: 'pickUp', id: 9 });
+  });
+
   it('prefers the nearest of two doors', () => {
     const doors = [
       { id: 1, x: 0, z: 0, areaName: 'A', number: 1 },
