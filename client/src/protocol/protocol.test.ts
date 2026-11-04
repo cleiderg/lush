@@ -43,7 +43,7 @@ function buildSnapshot(n: number): Uint8Array {
 
 describe('protocol', () => {
   it('exposes the version constant', () => {
-    expect(ProtocolVersion.Current).toBe(18);
+    expect(ProtocolVersion.Current).toBe(19);
   });
 
   it('keeps a 101-entity snapshot under 1200 bytes', () => {

@@ -86,6 +86,14 @@ const (
 	MessageWorkbenchCatalog     Message = 76
 	MessageWorkbenchCraft       Message = 77
 	MessageCraftResult          Message = 78
+	MessageQuestCatalog         Message = 79
+	MessageQuestLog             Message = 80
+	MessageTalk                 Message = 81
+	MessageDialogueReply        Message = 82
+	MessageDialogue             Message = 83
+	MessageDialogueClose        Message = 84
+	MessageQuestCompleted       Message = 85
+	MessageQuestResult          Message = 86
 )
 
 var EnumNamesMessage = map[Message]string{
@@ -168,6 +176,14 @@ var EnumNamesMessage = map[Message]string{
 	MessageWorkbenchCatalog:     "WorkbenchCatalog",
 	MessageWorkbenchCraft:       "WorkbenchCraft",
 	MessageCraftResult:          "CraftResult",
+	MessageQuestCatalog:         "QuestCatalog",
+	MessageQuestLog:             "QuestLog",
+	MessageTalk:                 "Talk",
+	MessageDialogueReply:        "DialogueReply",
+	MessageDialogue:             "Dialogue",
+	MessageDialogueClose:        "DialogueClose",
+	MessageQuestCompleted:       "QuestCompleted",
+	MessageQuestResult:          "QuestResult",
 }
 
 var EnumValuesMessage = map[string]Message{
@@ -250,6 +266,14 @@ var EnumValuesMessage = map[string]Message{
 	"WorkbenchCatalog":     MessageWorkbenchCatalog,
 	"WorkbenchCraft":       MessageWorkbenchCraft,
 	"CraftResult":          MessageCraftResult,
+	"QuestCatalog":         MessageQuestCatalog,
+	"QuestLog":             MessageQuestLog,
+	"Talk":                 MessageTalk,
+	"DialogueReply":        MessageDialogueReply,
+	"Dialogue":             MessageDialogue,
+	"DialogueClose":        MessageDialogueClose,
+	"QuestCompleted":       MessageQuestCompleted,
+	"QuestResult":          MessageQuestResult,
 }
 
 func (v Message) String() string {

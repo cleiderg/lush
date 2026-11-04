@@ -65,8 +65,20 @@ func (rcv *NpcDef) MutateCombatLevel(n byte) bool {
 	return rcv._tab.MutateByteSlot(8, n)
 }
 
+func (rcv *NpcDef) Talkable() bool {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	if o != 0 {
+		return rcv._tab.GetBool(o + rcv._tab.Pos)
+	}
+	return false
+}
+
+func (rcv *NpcDef) MutateTalkable(n bool) bool {
+	return rcv._tab.MutateBoolSlot(10, n)
+}
+
 func NpcDefStart(builder *flatbuffers.Builder) {
-	builder.StartObject(3)
+	builder.StartObject(4)
 }
 func NpcDefAddId(builder *flatbuffers.Builder, id uint16) {
 	builder.PrependUint16Slot(0, id, 0)
@@ -76,6 +88,9 @@ func NpcDefAddName(builder *flatbuffers.Builder, name flatbuffers.UOffsetT) {
 }
 func NpcDefAddCombatLevel(builder *flatbuffers.Builder, combatLevel byte) {
 	builder.PrependByteSlot(2, combatLevel, 0)
+}
+func NpcDefAddTalkable(builder *flatbuffers.Builder, talkable bool) {
+	builder.PrependBoolSlot(3, talkable, false)
 }
 func NpcDefEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

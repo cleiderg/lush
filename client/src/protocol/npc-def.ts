@@ -39,8 +39,13 @@ combatLevel():number {
   return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
 }
 
+talkable():boolean {
+  const offset = this.bb!.__offset(this.bb_pos, 10);
+  return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
+}
+
 static startNpcDef(builder:flatbuffers.Builder) {
-  builder.startObject(3);
+  builder.startObject(4);
 }
 
 static addId(builder:flatbuffers.Builder, id:number) {
@@ -55,16 +60,21 @@ static addCombatLevel(builder:flatbuffers.Builder, combatLevel:number) {
   builder.addFieldInt8(2, combatLevel, 0);
 }
 
+static addTalkable(builder:flatbuffers.Builder, talkable:boolean) {
+  builder.addFieldInt8(3, +talkable, +false);
+}
+
 static endNpcDef(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createNpcDef(builder:flatbuffers.Builder, id:number = 0, nameOffset:flatbuffers.Offset = 0, combatLevel:number = 0):flatbuffers.Offset {
+static createNpcDef(builder:flatbuffers.Builder, id:number = 0, nameOffset:flatbuffers.Offset = 0, combatLevel:number = 0, talkable:boolean = false):flatbuffers.Offset {
   NpcDef.startNpcDef(builder);
   NpcDef.addId(builder, id);
   NpcDef.addName(builder, nameOffset);
   NpcDef.addCombatLevel(builder, combatLevel);
+  NpcDef.addTalkable(builder, talkable);
   return NpcDef.endNpcDef(builder);
 }
 }
