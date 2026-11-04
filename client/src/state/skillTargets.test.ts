@@ -12,7 +12,7 @@ import { GameState } from './world';
 
 const item = (id: number, o: Partial<ItemInfo> = {}): ItemInfo => ({
   id, name: `item${id}`, kind: ItemKind.Loot, equipSlot: EquipSlot.None, levelToEquip: 0, accuracy: 0, strength: 0, defence: 0,
-  attackSpeed: 0, heal: 0, shopBuysFor: 0, shopSells: false, shopSellsFor: 0, toolSkill: ToolSkill.None, toolLevel: 0, cookingLevel: 0, ...o,
+  attackSpeed: 0, heal: 0, shopBuysFor: 0, shopSells: false, shopSellsFor: 0, toolSkill: ToolSkill.None, toolLevel: 0, cookingLevel: 0, footprintW: 0, footprintD: 0, placement: 0, surfaceSlots: 0, thriftSellsFor: 0, thriftBuysFor: 0, ...o,
 });
 const HATCHET = 20, BIG_HATCHET = 21, NET = 22, RAW = 23;
 const catalog = [

@@ -12,6 +12,7 @@ import { type PendingInput, Prediction, RUN_SPEED, WALK_SPEED } from './predicti
 import { SkillState } from './skills';
 import { bankResultText, levelUpText, skillResultText } from './skillMessages';
 import { HousingStore, homeResultText, auctionResultText, housingResultText, RENT_WARNING_LOGIN } from './housing';
+import { WorkbenchStore, craftResultText } from './workbench';
 import { GatheringState } from './gathering';
 import { TradeStore } from './trade';
 
@@ -50,6 +51,7 @@ export class GameState {
   readonly trade = new TradeStore();
   /** Houses, the player's own house and the current home; subscribe for changes. */
   readonly housing = new HousingStore();
+  readonly workbench = new WorkbenchStore();
   /** True once a HousingState has arrived since the last Welcome (the first one is the login warning). */
   private housingSeen = false;
   /** Open bank slots and the last bank result; subscribe for changes. */
@@ -111,6 +113,10 @@ export class GameState {
       this.items.setInventory(msg);
     } else if (msg.type === 'itemCatalog') {
       this.items.setCatalog(msg.items);
+    } else if (msg.type === 'workbenchCatalog') {
+      this.workbench.setRecipes(msg.recipes);
+    } else if (msg.type === 'craftResult') {
+      this.chat.system(craftResultText(msg.code));
     } else if (msg.type === 'entityInfo') {
       this.items.setEntityInfo(msg);
     } else if (msg.type === 'entityHealth') {
