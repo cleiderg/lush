@@ -97,6 +97,8 @@ export interface WorldView {
   readonly groundItems?: readonly GroundItemView[];
   /** NPCs in view; missing means none are drawn and no NPC mesh is added. */
   readonly npcs?: readonly NpcView[];
+  /** Quest marker per NPC entity id: `start` draws a !, `finish` a ?; an NPC with no entry has none. Missing means none. */
+  readonly npcMarkers?: ReadonlyMap<number, 'start' | 'finish'>;
   /** Current overhead chat, at most one per speaker; missing or empty means no text is drawn. */
   readonly chat?: readonly ChatBubbleView[];
   /** Gains to float above the local player; missing means none. */

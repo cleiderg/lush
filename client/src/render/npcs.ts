@@ -10,6 +10,13 @@ export const NpcType = {
   Coyote: 4,
   RogueDeliveryRobot: 5,
   CoyoteAlpha: 6,
+  Goose: 7,
+  RunawayEScooter: 8,
+  NightWatchmanBot: 9,
+  Librarian: 10,
+  ParkRanger: 11,
+  FoodTruckCook: 12,
+  Guide: 13,
 } as const;
 
 /** Model key for a type id the client has no model for. */
@@ -50,6 +57,22 @@ function quadruped(scale: number, fur: number, belly: number, dark: number): Box
     { size: s([0.08, 0.38, 0.08]), at: s([-0.1, 0.19, -0.3]), color: fur, limb: -1 },
     { size: s([0.08, 0.38, 0.08]), at: s([0.1, 0.19, -0.3]), color: fur, limb: 1 },
     { size: s([0.09, 0.09, 0.4]), at: s([0, 0.5, -0.55]), color: dark, tiltX: 0.6 },
+  ];
+}
+
+/** A chunky, big-headed person standing on two stepping legs (visual-style.md); `extra` adds the outfit's details. */
+function person(shirt: number, trousers: number, skin: number, hair: number, extra: Box[]): Box[] {
+  return [
+    { size: [0.12, 0.4, 0.14], at: [-0.1, 0.2, 0], color: trousers, limb: 1 },
+    { size: [0.12, 0.4, 0.14], at: [0.1, 0.2, 0], color: trousers, limb: -1 },
+    { size: [0.4, 0.46, 0.24], at: [0, 0.63, 0], color: shirt },
+    { size: [0.1, 0.4, 0.12], at: [-0.25, 0.64, 0], color: shirt },
+    { size: [0.1, 0.4, 0.12], at: [0.25, 0.64, 0], color: shirt },
+    { size: [0.32, 0.32, 0.32], at: [0, 1.0, 0], color: skin },
+    { size: [0.34, 0.12, 0.34], at: [0, 1.2, -0.01], color: hair },
+    { size: [0.05, 0.05, 0.03], at: [-0.08, 1.02, 0.165], color: BLACK },
+    { size: [0.05, 0.05, 0.03], at: [0.08, 1.02, 0.165], color: BLACK },
+    ...extra,
   ];
 }
 
@@ -105,6 +128,64 @@ export const NPC_MODELS: Readonly<Record<number, readonly Box[]>> = {
     // Pale mane across the shoulders so the alpha reads at a glance.
     { size: [0.5, 0.32, 0.22], at: [0, 0.8, 0.36], color: 0xcfc4b0 },
   ],
+  [NpcType.Goose]: [
+    { size: [0.3, 0.26, 0.46], at: [0, 0.42, 0], color: 0xf0eee6 },
+    { size: [0.22, 0.06, 0.3], at: [0, 0.3, -0.02], color: 0xd8d4c8 },
+    { size: [0.1, 0.34, 0.1], at: [0, 0.68, 0.24], color: 0xf0eee6, tiltX: -0.25 },
+    { size: [0.14, 0.14, 0.18], at: [0, 0.88, 0.3], color: 0xf0eee6 },
+    { size: [0.08, 0.05, 0.14], at: [0, 0.85, 0.44], color: 0xf08a1c },
+    { size: [0.15, 0.04, 0.04], at: [0, 0.91, 0.38], color: BLACK },
+    { size: [0.03, 0.14, 0.26], at: [-0.165, 0.46, -0.02], color: 0xcfc9ba },
+    { size: [0.03, 0.14, 0.26], at: [0.165, 0.46, -0.02], color: 0xcfc9ba },
+    { size: [0.14, 0.05, 0.16], at: [0, 0.48, -0.28], color: 0xd8d4c8, tiltX: -0.3 },
+    { size: [0.04, 0.2, 0.04], at: [-0.07, 0.1, 0.04], color: 0xf08a1c, limb: 1 },
+    { size: [0.04, 0.2, 0.04], at: [0.07, 0.1, 0.04], color: 0xf08a1c, limb: -1 },
+    { size: [0.08, 0.03, 0.12], at: [-0.07, 0.015, 0.08], color: 0xf08a1c },
+    { size: [0.08, 0.03, 0.12], at: [0.07, 0.015, 0.08], color: 0xf08a1c },
+  ],
+  // A kick scooter on two wheels with no rider, its deck glowing a warning orange.
+  [NpcType.RunawayEScooter]: [
+    { size: [0.2, 0.06, 0.8], at: [0, 0.2, 0], color: 0x2c8a6a },
+    { size: [0.14, 0.04, 0.5], at: [0, 0.24, -0.05], color: 0xf08020 },
+    { size: [0.1, 0.1, 0.3], at: [0, 0.3, -0.3], color: 0x3a3a44 },
+    { size: [0.05, 0.9, 0.05], at: [0, 0.62, 0.36], color: 0x8a8a90, tiltX: -0.15 },
+    { size: [0.5, 0.05, 0.05], at: [0, 1.06, 0.4], color: BLACK },
+    { size: [0.1, 0.1, 0.04], at: [0, 1.0, 0.43], color: 0xd02a2a },
+    { size: [0.06, 0.2, 0.2], at: [-0.1, 0.1, 0.38], color: BLACK, wheel: true },
+    { size: [0.06, 0.2, 0.2], at: [0.1, 0.1, 0.38], color: BLACK, wheel: true },
+    { size: [0.06, 0.2, 0.2], at: [-0.09, 0.1, -0.38], color: BLACK, wheel: true },
+    { size: [0.06, 0.2, 0.2], at: [0.09, 0.1, -0.38], color: BLACK, wheel: true },
+  ],
+  [NpcType.NightWatchmanBot]: [
+    { size: [0.16, 0.5, 0.18], at: [-0.16, 0.25, 0], color: 0x3a3e4c, limb: 1 },
+    { size: [0.16, 0.5, 0.18], at: [0.16, 0.25, 0], color: 0x3a3e4c, limb: -1 },
+    { size: [0.6, 0.6, 0.36], at: [0, 0.8, 0], color: 0x4a5064 },
+    { size: [0.3, 0.2, 0.02], at: [0, 0.85, 0.19], color: 0xe2c030 },
+    { size: [0.14, 0.5, 0.16], at: [-0.38, 0.8, 0], color: 0x3a3e4c },
+    { size: [0.14, 0.5, 0.16], at: [0.38, 0.8, 0], color: 0x3a3e4c },
+    { size: [0.38, 0.3, 0.3], at: [0, 1.25, 0], color: 0x5c6480 },
+    { size: [0.32, 0.08, 0.02], at: [0, 1.27, 0.16], color: 0xd02a2a },
+    { size: [0.42, 0.06, 0.34], at: [0, 1.43, 0], color: 0x24262e },
+    { size: [0.02, 0.2, 0.02], at: [0.12, 1.56, 0], color: 0x8a8a90 },
+    { size: [0.06, 0.06, 0.06], at: [0.12, 1.69, 0], color: 0xf08020 },
+  ],
+  [NpcType.Librarian]: person(0x6a4a8a, 0x3c3a4a, 0xe0b890, 0xb8b8c0, [
+    { size: [0.28, 0.1, 0.02], at: [0, 1.02, 0.18], color: 0x6a3a1a },
+    { size: [0.22, 0.28, 0.08], at: [0.2, 0.62, 0.15], color: 0x3a6a4a },
+  ]),
+  [NpcType.ParkRanger]: person(0x4a7a4a, 0x6a5a3a, 0xd8a880, 0x5a3a20, [
+    { size: [0.56, 0.05, 0.56], at: [0, 1.17, 0.02], color: 0x6a5230 },
+    { size: [0.3, 0.1, 0.3], at: [0, 1.24, 0], color: 0x6a5230 },
+    { size: [0.42, 0.06, 0.26], at: [0, 0.5, 0], color: 0x3a2a1a },
+  ]),
+  [NpcType.FoodTruckCook]: person(0xf2f2ee, 0x3a4a6a, 0xc89870, 0x2a1a10, [
+    { size: [0.3, 0.2, 0.3], at: [0, 1.3, 0], color: 0xf2f2ee },
+    { size: [0.36, 0.34, 0.04], at: [0, 0.55, 0.14], color: 0xd04a2a },
+  ]),
+  [NpcType.Guide]: person(0x2a6ab0, 0x3a3a4a, 0xe8c4a0, 0xe0b040, [
+    { size: [0.1, 0.1, 0.02], at: [0.1, 0.78, 0.13], color: 0xf2e040 },
+    { size: [0.06, 0.4, 0.06], at: [-0.34, 0.9, 0.1], color: 0x8a6a3a },
+  ]),
   [GENERIC_NPC]: [
     { size: [0.4, 0.5, 0.4], at: [0, 0.25, 0], color: 0x8a6fb0 },
     { size: [0.24, 0.24, 0.24], at: [0, 0.62, 0.04], color: 0xa58ccb },
@@ -139,6 +220,15 @@ export const NPC_GAITS: Readonly<Record<number, Gait>> = {
   // No legs: the robot rolls on its wheels, bobbing and rocking a little on the paving.
   [NpcType.RogueDeliveryRobot]: { stride: 3, swing: 0, wheel: 1 / 0.06, bob: 0.015, tilt: 0.04 },
   [NpcType.CoyoteAlpha]: { stride: 4.5, swing: 0.6, wheel: 0, bob: 0.03, tilt: 0 },
+  // Goose: short legs waddle fast with a rock side to side of the body.
+  [NpcType.Goose]: { stride: 10, swing: 0.7, wheel: 0, bob: 0.03, tilt: 0.1 },
+  // Scooter: wheels only; it rolls with a lean.
+  [NpcType.RunawayEScooter]: { stride: 3, swing: 0, wheel: 1 / 0.1, bob: 0.02, tilt: 0.05 },
+  [NpcType.NightWatchmanBot]: { stride: 4, swing: 0.5, wheel: 0, bob: 0.03, tilt: 0.03 },
+  [NpcType.Librarian]: { stride: 5, swing: 0.6, wheel: 0, bob: 0.03, tilt: 0.02 },
+  [NpcType.ParkRanger]: { stride: 5, swing: 0.6, wheel: 0, bob: 0.03, tilt: 0.02 },
+  [NpcType.FoodTruckCook]: { stride: 5, swing: 0.6, wheel: 0, bob: 0.03, tilt: 0.02 },
+  [NpcType.Guide]: { stride: 5, swing: 0.6, wheel: 0, bob: 0.03, tilt: 0.02 },
   [GENERIC_NPC]: { stride: 5, swing: 0, wheel: 0, bob: 0.05, tilt: 0.08 },
 };
 

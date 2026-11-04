@@ -11,8 +11,8 @@ const DT = 1 / FPS;
 const TICK = 0.6;
 const LOCAL = 1;
 const KEYS = [...Object.values(NpcType), GENERIC_NPC];
-const LEGGED = [NpcType.Rabbit, NpcType.Squirrel, NpcType.Crow, NpcType.Coyote, NpcType.CoyoteAlpha];
-const LEGLESS = [NpcType.RogueDeliveryRobot, GENERIC_NPC];
+const LEGGED = [NpcType.Rabbit, NpcType.Squirrel, NpcType.Crow, NpcType.Coyote, NpcType.CoyoteAlpha, NpcType.Goose, NpcType.NightWatchmanBot, NpcType.Librarian, NpcType.ParkRanger, NpcType.FoodTruckCook, NpcType.Guide];
+const LEGLESS = [NpcType.RogueDeliveryRobot, NpcType.RunawayEScooter, GENERIC_NPC];
 
 interface Sample {
   pos: THREE.Vector3;
@@ -252,7 +252,7 @@ describe('NPC animations stay instanced (AC4)', () => {
       }
       return w;
     };
-    for (const count of [6, 100, 300]) {
+    for (const count of [13, 100, 300]) {
       const w = scene(count);
       const group = w.scene.getObjectByName('npcs')!;
       expect(countDrawCalls(group)).toBe(types.length);
@@ -265,7 +265,7 @@ describe('NPC animations stay instanced (AC4)', () => {
       });
       expect(meshes).toBe(types.length);
     }
-    expect(countDrawCalls(scene(300).scene)).toBe(countDrawCalls(scene(6).scene));
+    expect(countDrawCalls(scene(300).scene)).toBe(countDrawCalls(scene(13).scene));
   });
 });
 
