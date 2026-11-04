@@ -70,8 +70,25 @@ totalLevel():number {
   return offset ? this.bb!.readUint16(this.bb_pos + offset) : 0;
 }
 
+groupId():number {
+  const offset = this.bb!.__offset(this.bb_pos, 22);
+  return offset ? this.bb!.readUint32(this.bb_pos + offset) : 0;
+}
+
+groupBanner():number {
+  const offset = this.bb!.__offset(this.bb_pos, 24);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : 0;
+}
+
+groupName():string|null
+groupName(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
+groupName(optionalEncoding?:any):string|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 26);
+  return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
+}
+
 static startEntityInfo(builder:flatbuffers.Builder) {
-  builder.startObject(9);
+  builder.startObject(12);
 }
 
 static addId(builder:flatbuffers.Builder, id:number) {
@@ -110,12 +127,24 @@ static addTotalLevel(builder:flatbuffers.Builder, totalLevel:number) {
   builder.addFieldInt16(8, totalLevel, 0);
 }
 
+static addGroupId(builder:flatbuffers.Builder, groupId:number) {
+  builder.addFieldInt32(9, groupId, 0);
+}
+
+static addGroupBanner(builder:flatbuffers.Builder, groupBanner:number) {
+  builder.addFieldInt8(10, groupBanner, 0);
+}
+
+static addGroupName(builder:flatbuffers.Builder, groupNameOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(11, groupNameOffset, 0);
+}
+
 static endEntityInfo(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createEntityInfo(builder:flatbuffers.Builder, id:number = 0, kind:EntityKind = EntityKind.Player, npcType:number = 0, combatLevel:number = 0, weapon:number = 0, head:number = 0, body:number = 0, shield:number = 0, totalLevel:number = 0):flatbuffers.Offset {
+static createEntityInfo(builder:flatbuffers.Builder, id:number = 0, kind:EntityKind = EntityKind.Player, npcType:number = 0, combatLevel:number = 0, weapon:number = 0, head:number = 0, body:number = 0, shield:number = 0, totalLevel:number = 0, groupId:number = 0, groupBanner:number = 0, groupNameOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   EntityInfo.startEntityInfo(builder);
   EntityInfo.addId(builder, id);
   EntityInfo.addKind(builder, kind);
@@ -126,6 +155,9 @@ static createEntityInfo(builder:flatbuffers.Builder, id:number = 0, kind:EntityK
   EntityInfo.addBody(builder, body);
   EntityInfo.addShield(builder, shield);
   EntityInfo.addTotalLevel(builder, totalLevel);
+  EntityInfo.addGroupId(builder, groupId);
+  EntityInfo.addGroupBanner(builder, groupBanner);
+  EntityInfo.addGroupName(builder, groupNameOffset);
   return EntityInfo.endEntityInfo(builder);
 }
 }

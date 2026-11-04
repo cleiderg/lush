@@ -41,11 +41,26 @@ func (rcv *ChatSend) Text() []byte {
 	return nil
 }
 
+func (rcv *ChatSend) Channel() ChatChannel {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
+	if o != 0 {
+		return ChatChannel(rcv._tab.GetByte(o + rcv._tab.Pos))
+	}
+	return 0
+}
+
+func (rcv *ChatSend) MutateChannel(n ChatChannel) bool {
+	return rcv._tab.MutateByteSlot(6, byte(n))
+}
+
 func ChatSendStart(builder *flatbuffers.Builder) {
-	builder.StartObject(1)
+	builder.StartObject(2)
 }
 func ChatSendAddText(builder *flatbuffers.Builder, text flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(text), 0)
+}
+func ChatSendAddChannel(builder *flatbuffers.Builder, channel ChatChannel) {
+	builder.PrependByteSlot(1, byte(channel), 0)
 }
 func ChatSendEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

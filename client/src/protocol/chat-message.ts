@@ -4,6 +4,9 @@
 
 import * as flatbuffers from 'flatbuffers';
 
+import { ChatChannel } from '../protocol/chat-channel';
+
+
 export class ChatMessage {
   bb: flatbuffers.ByteBuffer|null = null;
   bb_pos = 0;
@@ -34,8 +37,20 @@ text(optionalEncoding?:any):string|Uint8Array|null {
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
+channel():ChatChannel {
+  const offset = this.bb!.__offset(this.bb_pos, 8);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : ChatChannel.Local;
+}
+
+speakerName():string|null
+speakerName(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
+speakerName(optionalEncoding?:any):string|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 10);
+  return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
+}
+
 static startChatMessage(builder:flatbuffers.Builder) {
-  builder.startObject(2);
+  builder.startObject(4);
 }
 
 static addSpeakerId(builder:flatbuffers.Builder, speakerId:number) {
@@ -46,15 +61,25 @@ static addText(builder:flatbuffers.Builder, textOffset:flatbuffers.Offset) {
   builder.addFieldOffset(1, textOffset, 0);
 }
 
+static addChannel(builder:flatbuffers.Builder, channel:ChatChannel) {
+  builder.addFieldInt8(2, channel, ChatChannel.Local);
+}
+
+static addSpeakerName(builder:flatbuffers.Builder, speakerNameOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(3, speakerNameOffset, 0);
+}
+
 static endChatMessage(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createChatMessage(builder:flatbuffers.Builder, speakerId:number = 0, textOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
+static createChatMessage(builder:flatbuffers.Builder, speakerId:number = 0, textOffset:flatbuffers.Offset = 0, channel:ChatChannel = ChatChannel.Local, speakerNameOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
   ChatMessage.startChatMessage(builder);
   ChatMessage.addSpeakerId(builder, speakerId);
   ChatMessage.addText(builder, textOffset);
+  ChatMessage.addChannel(builder, channel);
+  ChatMessage.addSpeakerName(builder, speakerNameOffset);
   return ChatMessage.endChatMessage(builder);
 }
 }
