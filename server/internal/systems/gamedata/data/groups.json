@@ -1,0 +1,82 @@
+{
+  "group": {
+    "found_cost": 500,
+    "name_min": 3,
+    "name_max": 20,
+    "max_members": 30,
+    "leave_cooldown_h": 24,
+    "leader_inactive_days": 14,
+    "banners": [
+      {"id": 1, "colour": "#d93636"},
+      {"id": 2, "colour": "#e8802a"},
+      {"id": 3, "colour": "#f0c928"},
+      {"id": 4, "colour": "#7cc242"},
+      {"id": 5, "colour": "#2e9e5b"},
+      {"id": 6, "colour": "#2bb5b0"},
+      {"id": 7, "colour": "#3b8fe0"},
+      {"id": 8, "colour": "#3c4fc4"},
+      {"id": 9, "colour": "#8a4fd0"},
+      {"id": 10, "colour": "#d151a8"},
+      {"id": 11, "colour": "#f2f2f2"},
+      {"id": 12, "colour": "#2b2b33"}
+    ],
+    "blocked_words": [
+      "fuck", "shit", "bitch", "cunt", "dick", "cock", "pussy", "whore", "slut",
+      "bastard", "asshole", "nigger", "nigga", "faggot", "retard", "rape", "rapist",
+      "nazi", "hitler", "kkk", "porn", "cum", "penis", "vagina", "admin", "moderator"
+    ]
+  },
+  "permissions": [
+    {"key": "invite", "leader": {"mode": "yes"}, "officer": {"mode": "yes"}, "member": {"mode": "no"}, "recruit": {"mode": "no"}},
+    {"key": "promote_demote", "leader": {"mode": "yes"}, "officer": {"mode": "yes"}, "member": {"mode": "no"}, "recruit": {"mode": "no"}},
+    {"key": "kick", "leader": {"mode": "yes"}, "officer": {"mode": "yes"}, "member": {"mode": "no"}, "recruit": {"mode": "no"}},
+    {"key": "keys", "leader": {"mode": "yes"}, "officer": {"mode": "yes"}, "member": {"mode": "set_by_leader", "on": false}, "recruit": {"mode": "no"}},
+    {"key": "vault_room", "leader": {"mode": "yes"}, "officer": {"mode": "yes"}, "member": {"mode": "set_by_leader", "on": false}, "recruit": {"mode": "no"}},
+    {"key": "withdraw", "leader": {"mode": "yes"}, "officer": {"mode": "set_by_leader", "on": false}, "member": {"mode": "no"}, "recruit": {"mode": "no"}},
+    {"key": "door_log", "leader": {"mode": "yes"}, "officer": {"mode": "yes"}, "member": {"mode": "no"}, "recruit": {"mode": "no"}},
+    {"key": "hall_and_siege", "leader": {"mode": "yes"}, "officer": {"mode": "no"}, "member": {"mode": "no"}, "recruit": {"mode": "no"}}
+  ],
+  "hall": {
+    "claim_cost": 2000,
+    "upkeep": 500,
+    "upkeep_weekday": "Monday",
+    "upkeep_hour": 0,
+    "timezone": "America/Los_Angeles"
+  },
+  "door": {
+    "hp": 300,
+    "defence": 40,
+    "self_repair_min": 10,
+    "repair_cost": 50,
+    "log_days": 7
+  },
+  "heist": {
+    "channel_s": 60,
+    "lost_per_hit_s": 10,
+    "max_distance_tiles": 1,
+    "gold_percent": 10,
+    "gold_cap": 2000,
+    "sabotage_percent": 25,
+    "backdoor_h": 24,
+    "cooldown_h": 24
+  },
+  "siege": {
+    "weekday": "Sunday",
+    "start_hour": 19,
+    "end_hour": 20,
+    "timezone": "America/Los_Angeles",
+    "declare_by_weekday": "Saturday",
+    "declare_cost": 1000,
+    "capture_s": 30,
+    "gate_hp": 2000,
+    "gate_hp_loss_percent_per_week": 20,
+    "gate_hp_floor_percent": 20,
+    "damage_bonus_percent_per_week": 5,
+    "damage_bonus_cap_percent": 25
+  },
+  "tax": {
+    "shop_max_percent": 20,
+    "shop_over_taxing_above_percent": 10,
+    "group_max_percent": 10
+  }
+}

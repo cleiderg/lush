@@ -56,6 +56,7 @@ const CATALOG: readonly ItemInfo[] = [
   item(42, 'Lava lamp', ItemKind.Loot, { placement: PlacementKind.Surface, thriftSellsFor: 24, thriftBuysFor: 8 }),
   item(43, 'Poster', ItemKind.Loot, { placement: PlacementKind.Wall, thriftSellsFor: 15, thriftBuysFor: 5 }),
   item(44, 'Blue wallpaper', ItemKind.Loot, { placement: PlacementKind.Wallpaper, thriftSellsFor: 50, thriftBuysFor: 16 }),
+  item(46, 'Library card', ItemKind.Loot),
   item(45, 'Wood flooring', ItemKind.Loot, { placement: PlacementKind.Flooring, thriftSellsFor: 50, thriftBuysFor: 16 }),
 ];
 
@@ -246,6 +247,18 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
           { placedId: 1, itemId: 41, x: 2, y: 1, rotation: 0, layer: 0, parentPlacedId: 0, slot: 0, side: 0 },
           { placedId: 2, itemId: 40, x: 4, y: 3, rotation: 1, layer: 0, parentPlacedId: 0, slot: 0, side: 0 },
         ],
+      },
+    );
+  }
+
+  if (opts.panel === 'quest-scroll') {
+    // The player finishes Overdue: the log goes from in progress to complete, then the QuestCompleted with its rewards.
+    msgs.push(
+      { type: 'questLog', quests: [{ questId: 1, state: QuestState.InProgress, step: 2, count: 0 }], questPoints: 0 },
+      { type: 'questLog', quests: [{ questId: 1, state: QuestState.Complete, step: 3, count: 0 }], questPoints: 1 },
+      {
+        type: 'questCompleted', playerName: 'You', questId: 1, questName: 'Overdue',
+        rewards: { questPoints: 1, gold: 150, items: [{ itemId: 46, count: 1 }], xp: [{ skill: QuestSkill.Combat, xp: 500 }] },
       },
     );
   }

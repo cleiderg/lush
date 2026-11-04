@@ -333,6 +333,8 @@ type Data struct {
 	// Quests and Dialogue come from quests.json and dialogue.json, in file order.
 	Quests   []Quest
 	Dialogue []Dialogue
+	// Groups holds the group, hall, door, heist, siege and tax numbers.
+	Groups Groups
 
 	questByID     map[QuestID]int
 	questByKey    map[string]int
@@ -428,7 +430,7 @@ func Load(fsys fs.FS) (*Data, error) {
 	for _, f := range []struct {
 		name string
 		v    any
-	}{{ItemsFile, &d.Items}, {NPCsFile, &d.NPCs}, {ShopFile, &d.Shop}, {ThriftFile, &d.Thrift}, {WorkbenchFile, &d.Workbench}, {RulesFile, &d.Rules}, {CardTablesFile, &d.CardTables}, {SkillsFile, &d.Skills}, {QuestsFile, &d.Quests}, {DialogueFile, &d.Dialogue}} {
+	}{{ItemsFile, &d.Items}, {NPCsFile, &d.NPCs}, {ShopFile, &d.Shop}, {ThriftFile, &d.Thrift}, {WorkbenchFile, &d.Workbench}, {RulesFile, &d.Rules}, {CardTablesFile, &d.CardTables}, {SkillsFile, &d.Skills}, {QuestsFile, &d.Quests}, {DialogueFile, &d.Dialogue}, {GroupsFile, &d.Groups}} {
 		if err := decode(fsys, f.name, f.v); err != nil {
 			return nil, err
 		}
@@ -642,6 +644,9 @@ func (d *Data) index() error {
 		return err
 	}
 	if err := d.validateQuests(); err != nil {
+		return err
+	}
+	if err := d.validateGroups(); err != nil {
 		return err
 	}
 	return d.validateDialogue()

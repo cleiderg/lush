@@ -53,14 +53,40 @@ func (rcv *ChatMessage) Text() []byte {
 	return nil
 }
 
+func (rcv *ChatMessage) Channel() ChatChannel {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	if o != 0 {
+		return ChatChannel(rcv._tab.GetByte(o + rcv._tab.Pos))
+	}
+	return 0
+}
+
+func (rcv *ChatMessage) MutateChannel(n ChatChannel) bool {
+	return rcv._tab.MutateByteSlot(8, byte(n))
+}
+
+func (rcv *ChatMessage) SpeakerName() []byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	if o != 0 {
+		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+	}
+	return nil
+}
+
 func ChatMessageStart(builder *flatbuffers.Builder) {
-	builder.StartObject(2)
+	builder.StartObject(4)
 }
 func ChatMessageAddSpeakerId(builder *flatbuffers.Builder, speakerId uint16) {
 	builder.PrependUint16Slot(0, speakerId, 0)
 }
 func ChatMessageAddText(builder *flatbuffers.Builder, text flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(text), 0)
+}
+func ChatMessageAddChannel(builder *flatbuffers.Builder, channel ChatChannel) {
+	builder.PrependByteSlot(2, byte(channel), 0)
+}
+func ChatMessageAddSpeakerName(builder *flatbuffers.Builder, speakerName flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(speakerName), 0)
 }
 func ChatMessageEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

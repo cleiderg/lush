@@ -94,6 +94,18 @@ const (
 	MessageDialogueClose        Message = 84
 	MessageQuestCompleted       Message = 85
 	MessageQuestResult          Message = 86
+	MessageGroupFound           Message = 87
+	MessageGroupInvite          Message = 88
+	MessageGroupInviteReply     Message = 89
+	MessageGroupSetRank         Message = 90
+	MessageGroupKick            Message = 91
+	MessageGroupLeave           Message = 92
+	MessageGroupHandover        Message = 93
+	MessageGroupSetPermission   Message = 94
+	MessageGroupDisband         Message = 95
+	MessageGroupInvited         Message = 96
+	MessageGroupState           Message = 97
+	MessageGroupResult          Message = 98
 )
 
 var EnumNamesMessage = map[Message]string{
@@ -184,6 +196,18 @@ var EnumNamesMessage = map[Message]string{
 	MessageDialogueClose:        "DialogueClose",
 	MessageQuestCompleted:       "QuestCompleted",
 	MessageQuestResult:          "QuestResult",
+	MessageGroupFound:           "GroupFound",
+	MessageGroupInvite:          "GroupInvite",
+	MessageGroupInviteReply:     "GroupInviteReply",
+	MessageGroupSetRank:         "GroupSetRank",
+	MessageGroupKick:            "GroupKick",
+	MessageGroupLeave:           "GroupLeave",
+	MessageGroupHandover:        "GroupHandover",
+	MessageGroupSetPermission:   "GroupSetPermission",
+	MessageGroupDisband:         "GroupDisband",
+	MessageGroupInvited:         "GroupInvited",
+	MessageGroupState:           "GroupState",
+	MessageGroupResult:          "GroupResult",
 }
 
 var EnumValuesMessage = map[string]Message{
@@ -274,6 +298,18 @@ var EnumValuesMessage = map[string]Message{
 	"DialogueClose":        MessageDialogueClose,
 	"QuestCompleted":       MessageQuestCompleted,
 	"QuestResult":          MessageQuestResult,
+	"GroupFound":           MessageGroupFound,
+	"GroupInvite":          MessageGroupInvite,
+	"GroupInviteReply":     MessageGroupInviteReply,
+	"GroupSetRank":         MessageGroupSetRank,
+	"GroupKick":            MessageGroupKick,
+	"GroupLeave":           MessageGroupLeave,
+	"GroupHandover":        MessageGroupHandover,
+	"GroupSetPermission":   MessageGroupSetPermission,
+	"GroupDisband":         MessageGroupDisband,
+	"GroupInvited":         MessageGroupInvited,
+	"GroupState":           MessageGroupState,
+	"GroupResult":          MessageGroupResult,
 }
 
 func (v Message) String() string {
