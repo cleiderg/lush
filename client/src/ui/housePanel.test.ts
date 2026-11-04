@@ -23,7 +23,7 @@ function setup(houses: Parameters<typeof housingBytes>[0]) {
   const game = new GameState();
   game.handle(decode(housingBytes(houses))!, 0);
   const send = vi.fn<(bytes: Uint8Array) => void>();
-  const panel = new HousePanel({ parent: document.body, housing: game.housing, send, now: () => NOW, viewport: () => ({ width: 390, height: 844 }) });
+  const panel = new HousePanel({ parent: document.body, housing: game.housing, send, sendHomeEnter: vi.fn(), now: () => NOW, viewport: () => ({ width: 390, height: 844 }) });
   current = panel;
   return { game, send, panel };
 }
@@ -105,5 +105,32 @@ describe('login rent warning', () => {
     g.handle(decode(housingBytes([{ id: 7, mine: true, state: HouseState.Owned, paidUntil: NOW }]))!, 0);
     g.handle(decode(housingBytes([{ id: 7, mine: true, state: HouseState.Warning, paidUntil: NOW }]))!, 0);
     expect(lines(g)).toBe(0);
+  });
+});
+
+describe('HousePanel Enter and door prompt (AC2, AC3)', () => {
+  function withEnter(houses: Parameters<typeof housingBytes>[0]) {
+    const s = setup(houses);
+    const enter = vi.fn<(id: number) => void>();
+    s.panel.dispose();
+    const panel = new HousePanel({ parent: document.body, housing: s.game.housing, send: s.send, sendHomeEnter: enter, now: () => NOW, viewport: () => ({ width: 390, height: 844 }) });
+    current = panel;
+    return { ...s, panel, enter };
+  }
+
+  it('Enter shows for own house, sends HomeEnter and closes', () => {
+    const { panel, enter } = withEnter([{ id: 7, mine: true, state: HouseState.Owned, paidUntil: NOW + MONTH }]);
+    panel.open(7);
+    q<HTMLButtonElement>(panel, '.lush-house-enter')!.click();
+    expect(enter).toHaveBeenCalledWith(7);
+    expect(panel.isOpen).toBe(false);
+  });
+
+  it('Enter shows for a claimed open house but not an empty one', () => {
+    const { panel } = withEnter([{ id: 3, state: HouseState.Owned }, { id: 4, state: HouseState.Empty }]);
+    panel.open(3);
+    expect(q(panel, '.lush-house-enter')).not.toBeNull();
+    panel.open(4);
+    expect(q(panel, '.lush-house-enter')).toBeNull();
   });
 });

@@ -69,6 +69,7 @@ const controls = new Controls({
       openShop: () => shop.tryOpen(),
       openBank: () => bank.open(),
       openCardTable: (id) => cardTable.open(id),
+      openHouse: (id) => house.open(id),
       sendSkillAction: (target, id) => session.sendSkillAction(target, id),
       sendPickUp: (id) => session.sendPickUp(id),
       sendAttackTarget: (id) => session.sendAttackTarget(id),
@@ -129,11 +130,11 @@ const shop = new ShopPanel({
     bigMap.close();
   },
 });
-// Opened from the offline shot for now; Interact at a door comes with the door positions (#524).
 const house = new HousePanel({
   parent: document.body,
   housing: game.housing,
   send,
+  sendHomeEnter: (id) => session.sendHomeEnter(id),
   onOpen: () => {
     hud.setOpen(false);
     skills.setOpen(false);

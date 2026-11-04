@@ -104,7 +104,7 @@ describe('bank panel (#467 AC2)', () => {
     const s = setup();
     const game = { prediction: { pos: BANK_BOOTH }, remotes: () => [], items: { entityInfo: () => undefined, groundItems: [], inventory: { slots: [], equipment: { weapon: 0 } } }, skills: { fishingSpots: () => [], level: () => 1, treeKind: () => undefined, isFelled: () => false } } as never;
     const target = interact(game, 0, SHOP_STALL, {
-      openShop: vi.fn(), openBank: () => s.panel.open(), openCardTable: vi.fn(), sendPickUp: vi.fn(), sendAttackTarget: vi.fn(), sendTradeRequest: vi.fn(), sendSkillAction: vi.fn(),
+      openShop: vi.fn(), openBank: () => s.panel.open(), openCardTable: vi.fn(), openHouse: vi.fn(), sendPickUp: vi.fn(), sendAttackTarget: vi.fn(), sendTradeRequest: vi.fn(), sendSkillAction: vi.fn(),
     });
     expect(target).toEqual({ type: 'bank' });
     expect(s.t.sent.map((b) => env(b).msgType())).toEqual([Message.BankOpen]);

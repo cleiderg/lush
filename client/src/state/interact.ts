@@ -1,6 +1,7 @@
 import areas from '../../../shared/map/areas.json';
 import { EntityKind } from '../protocol';
 import { BANK_BOOTH, nearBank } from './bank';
+import { nearestDoor, type HouseDoor } from './doors';
 import { CARD_TABLE_POSITIONS, inCardTableReach, type CardTablePosition } from './cardTables';
 import { GRILL, type SkillInteractInput, type SkillResource } from './skillTargets';
 import { nearShop, TILE_METRES, type Point } from './shop';
@@ -83,6 +84,8 @@ export interface InteractInput {
   skill?: SkillInteractInput;
   /** The cooking grill in metres; GRILL when omitted. */
   grill?: Point;
+  /** House doors; HOUSE_DOORS when omitted. */
+  doors?: readonly HouseDoor[];
   pvpZones?: readonly Polygon[];
 }
 
@@ -93,6 +96,7 @@ export type InteractTarget =
   | { type: 'tree'; id: number; kind: string }
   | { type: 'fishingSpot'; id: number; kind: string }
   | { type: 'cardTable'; id: number }
+  | { type: 'door'; id: number }
   | { type: 'pickUp'; id: number }
   | { type: 'attack'; id: number }
   | { type: 'trade'; id: number };
@@ -155,7 +159,7 @@ export function nearestCardTable(
 
 /**
  * What the Interact button does (gameplay spec, Interact button): the shop stall within shop
- * distance; else the bank booth within 2 tiles (open the bank); else the grill within 1 tile while carrying raw fish (cook); else the nearest usable tree or fishing spot within 1 tile (chop, fish); else the nearest card table within reach (open its panel); else the nearest ground item within pick-up range (pick up); else the nearest NPC within attack range (attack); else the nearest player within
+ * distance; else the bank booth within 2 tiles (open the bank); else the grill within 1 tile while carrying raw fish (cook); else the nearest usable tree or fishing spot within 1 tile (chop, fish); else the nearest card table within reach (open its panel); else the nearest house door within 3 tiles (open its panel); else the nearest ground item within pick-up range (pick up); else the nearest NPC within attack range (attack); else the nearest player within
  * trade distance (a trade request outside the PvP zone, an attack inside it). Null: nothing.
  */
 export function pickInteractTarget(input: InteractInput): InteractTarget | null {
@@ -167,6 +171,8 @@ export function pickInteractTarget(input: InteractInput): InteractTarget | null 
   if (res) return { type: res.type, id: res.id, kind: res.kind };
   const table = nearestCardTable(pos, input.cardTables);
   if (table) return { type: 'cardTable', id: table.id };
+  const door = nearestDoor(pos, input.doors);
+  if (door) return { type: 'door', id: door.id };
   const item = nearestPickUp(pos, input.groundItems ?? []);
   if (item) return { type: 'pickUp', id: item.id };
   const npc = nearest(
