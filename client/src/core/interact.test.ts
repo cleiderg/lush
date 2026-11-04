@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import * as flatbuffers from 'flatbuffers';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AttackTarget, EntityKind, Envelope, Message, PickUp, TradeRequest, Vec2, Welcome } from '../protocol';
+import { AttackTarget, EntityKind, Envelope, Message, PickUp, Talk, TradeRequest, Vec2, Welcome } from '../protocol';
 import { Session } from '../net/session';
 import type { Transport } from '../net/transport';
 import { CARD_TABLE_POSITIONS } from '../state/cardTables';
@@ -114,6 +114,23 @@ describe('Interact button', () => {
     expect(s.t.sent.length).toBe(1);
     expect(envelope(s.t.sent[0]).msgType()).toBe(Message.AttackTarget);
     expect((envelope(s.t.sent[0]).msg(new AttackTarget()) as AttackTarget).targetId()).toBe(5);
+  });
+
+  it('sends Talk to the nearest talking NPC within 2 tiles, not AttackTarget (#670 AC1, AC3)', () => {
+    const s = setup(OPEN, [
+      { id: 7, x: OPEN.x + 2, z: OPEN.z + 2, kind: EntityKind.Npc },
+      { id: 6, x: OPEN.x + 1, z: OPEN.z, kind: EntityKind.Player },
+    ]);
+    s.game.handle({ type: 'npcCatalog', npcs: [{ id: 1, name: 'Librarian', combatLevel: 0, talkable: true }] }, 0);
+    const talk = vi.spyOn(Session.prototype, 'sendTalk');
+    expect(s.press()).toEqual({ type: 'talk', id: 7 });
+    expect(talk).toHaveBeenCalledWith(7);
+    expect(s.attack).not.toHaveBeenCalled();
+    expect(s.trade).not.toHaveBeenCalled();
+    expect(s.t.sent.length).toBe(1);
+    expect(envelope(s.t.sent[0]).msgType()).toBe(Message.Talk);
+    expect((envelope(s.t.sent[0]).msg(new Talk()) as Talk).npcId()).toBe(7);
+    talk.mockRestore();
   });
 
   it('sends TradeRequest to the chosen player outside the PvP zone (AC3)', () => {
