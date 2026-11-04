@@ -135,13 +135,13 @@ func TestNPCsMatchSpec(t *testing.T) {
 		{"Squirrel", gamedata.AreaAldrichPark, 2, 5, 2, 0, 2, 4, gamedata.Passive, 20 * time.Second, 2, 6,
 			[]drop{{"Acorn", 2, 1}}, 0, 10},
 		{"Crow", gamedata.AreaAldrichPark, 4, 8, 5, 3, 3, 4, gamedata.Passive, 30 * time.Second, 3, 10,
-			[]drop{{"Shiny trinket", 8, 1}}, 0, 8},
+			[]drop{{"Shiny trinket", 8, 1}, {"Coffee mug", 64, 1}}, 0, 8},
 		{"Coyote", gamedata.AreaSouthFields, 9, 20, 12, 10, 8, 4, gamedata.Aggressive, 45 * time.Second, 8, 25,
-			[]drop{{"Coyote pelt", 2, 1}, {"Leather cap", 20, 1}}, 0, 8},
+			[]drop{{"Coyote pelt", 2, 1}, {"Leather cap", 20, 1}, {"Potted plant", 128, 1}}, 0, 8},
 		{"Rogue delivery robot", gamedata.AreaSouthFields, 15, 35, 20, 18, 25, 5, gamedata.Aggressive, 60 * time.Second, 20, 50,
-			[]drop{{"Scrap metal", 2, 1}, {"Bike lock", 32, 1}, {"Robot plating", 64, 1}}, 0, 5},
+			[]drop{{"Scrap metal", 2, 1}, {"Bike lock", 32, 1}, {"Robot plating", 64, 1}, {"Laptop", 256, 1}}, 0, 5},
 		{"Coyote alpha", gamedata.AreaSouthFields, 20, 50, 28, 26, 22, 4, gamedata.Aggressive, 3 * time.Minute, 40, 100,
-			[]drop{{"Coyote pelt", 1, 3}, {"Bike helmet", 8, 1}}, 1, 1},
+			[]drop{{"Coyote pelt", 1, 3}, {"Bike helmet", 8, 1}, {"Trophy shelf", 128, 1}}, 1, 1},
 	}
 	if len(d.NPCs) != len(tests) {
 		t.Fatalf("got %d NPC types, spec has %d", len(d.NPCs), len(tests))

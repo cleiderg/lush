@@ -202,3 +202,43 @@ func TestLoadRejectsBadHousingData(t *testing.T) {
 		})
 	}
 }
+
+// TestRareFurnitureDrops checks that at least two NPC types drop starter
+// furniture and that each furniture drop is rarer than every other item drop
+// of the same NPC.
+func TestRareFurnitureDrops(t *testing.T) {
+	d, err := gamedata.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	starter := map[string]bool{}
+	for _, r := range furnitureTable {
+		starter[r.name] = true
+	}
+	npcsWithFurniture := 0
+	for _, n := range d.NPCs {
+		has := false
+		for _, f := range n.Drops {
+			it, _ := d.Item(f.Item)
+			if it.Kind != gamedata.KindFurniture {
+				continue
+			}
+			has = true
+			if !starter[it.Name] {
+				t.Errorf("%s drops %q, not on the starter furniture list", n.Key, it.Name)
+			}
+			for _, o := range n.Drops {
+				oi, _ := d.Item(o.Item)
+				if oi.Kind != gamedata.KindFurniture && f.Chance <= o.Chance {
+					t.Errorf("%s: furniture %s (1 in %d) is not rarer than %s (1 in %d)", n.Key, it.Key, f.Chance, oi.Key, o.Chance)
+				}
+			}
+		}
+		if has {
+			npcsWithFurniture++
+		}
+	}
+	if npcsWithFurniture < 2 {
+		t.Errorf("%d NPC types drop furniture, want at least 2", npcsWithFurniture)
+	}
+}

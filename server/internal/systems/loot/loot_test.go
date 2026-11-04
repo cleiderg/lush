@@ -5,9 +5,11 @@ import (
 	"math/rand/v2"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/cleiderg/lush/server/internal/systems/combat/formula"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/grounditems"
 	"github.com/cleiderg/lush/server/internal/systems/loot"
 	"github.com/cleiderg/lush/server/internal/world"
 )
@@ -204,5 +206,62 @@ func BenchmarkRoll(b *testing.B) {
 		if _, err := loot.Roll(d, id, r); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// TestFurnitureDropPickedUp rolls every furniture-dropping NPC with a seeded
+// source until its furniture lands, then spawns it on the ground and picks it
+// up into an inventory.
+func TestFurnitureDropPickedUp(t *testing.T) {
+	d := loadData(t)
+	at := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	found := 0
+	for _, npc := range d.NPCs {
+		for _, drop := range npc.Drops {
+			it, _ := d.Item(drop.Item)
+			if it.Kind != gamedata.KindFurniture {
+				continue
+			}
+			found++
+			t.Run(npc.Key+"/"+it.Key, func(t *testing.T) {
+				r := rand.New(rand.NewPCG(7, 8))
+				var got world.Stack
+				for range 100000 {
+					l, err := loot.Roll(d, npc.ID, r)
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, s := range l.Items {
+						if s.Item == drop.Item {
+							got = s
+						}
+					}
+					if got.Qty > 0 {
+						break
+					}
+				}
+				if got.Qty == 0 {
+					t.Fatalf("%s never dropped in 100000 rolls", it.Key)
+				}
+				g := grounditems.New(d, world.NewFakeClock(at), 1.0)
+				p := &world.Player{ID: 1, Inv: world.NewInventory(d)}
+				id, err := g.Spawn(got.Item, got.Qty, p.Pos, p.ID, at)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := g.PickUp(p, id); err != nil {
+					t.Fatal(err)
+				}
+				if n := p.Inv.Count(drop.Item); n != got.Qty {
+					t.Errorf("inventory has %d %s, want %d", n, it.Key, got.Qty)
+				}
+				if _, ok := g.Get(id); ok {
+					t.Error("item still on the ground")
+				}
+			})
+		}
+	}
+	if found < 2 {
+		t.Fatalf("found %d furniture drops", found)
 	}
 }
