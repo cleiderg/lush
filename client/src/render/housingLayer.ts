@@ -6,9 +6,10 @@ import { type Building, type HousingData, parseHousing } from './mapData';
 
 const DM = 0.1;
 /** How far the sign stands beside the door, along the wall. Under the 1 m the door-point test allows. */
-/** Metres from the nearest door or stall within which the layer is drawn (past the far plane of the camera). */
-const VISIBLE_RADIUS = 120;
 const SIGN_OFFSET = 0.65;
+/** A sphere about each door, stall and workbench point that holds its model (sign included): centre height and radius, metres. */
+const POINT_Y = 1;
+const POINT_RADIUS = 2.5;
 const DOOR_RED = 0xb8402f;
 const DOOR_TRIM = 0xf2e6c8;
 const WOOD = 0x8a5a34;
@@ -99,8 +100,12 @@ export class HousingLayer {
   readonly signs: THREE.InstancedMesh;
   readonly stalls: THREE.InstancedMesh;
   readonly workbenches: THREE.InstancedMesh;
-  /** Where to measure the distance to each area, in metres: its stall and workbench points and every door. */
+  /** Where to look for each area, in metres: its stall and workbench points and every door. */
   private readonly areaPoints: [number, number][];
+  private readonly frustum = new THREE.Frustum();
+  private readonly viewProj = new THREE.Matrix4();
+  private readonly sphere = new THREE.Sphere(new THREE.Vector3(), POINT_RADIUS);
+  private readonly view = new THREE.Vector3();
 
   constructor(data: HousingData, buildings: readonly Building[] = []) {
     this.group.name = 'housing';
@@ -138,13 +143,19 @@ export class HousingLayer {
     }
   }
 
-  /** Show the layer only near a housing area: the two areas are far apart, so one instanced mesh spans the whole map. */
-  update(x: number, z: number): void {
-    this.group.visible = this.near(x, z);
-  }
-
-  private near(x: number, z: number): boolean {
-    return this.areaPoints.some(([ax, az]) => Math.hypot(x - ax, z - az) < VISIBLE_RADIUS);
+  /**
+   * Show the layer only while a door, stall or workbench is in view and nearer than `fogFar` in view
+   * depth (past it everything is fog colour): the two areas are far apart, so one instanced mesh
+   * spans the whole map and three.js would never cull it.
+   */
+  update(camera: THREE.Camera, fogFar: number): void {
+    camera.updateMatrixWorld();
+    this.frustum.setFromProjectionMatrix(this.viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    this.group.visible = this.areaPoints.some(([x, z]) => {
+      this.sphere.center.set(x, POINT_Y, z);
+      if (!this.frustum.intersectsSphere(this.sphere)) return false;
+      return -this.view.copy(this.sphere.center).applyMatrix4(camera.matrixWorldInverse).z - POINT_RADIUS < fogFar;
+    });
   }
 
   dispose(): void {

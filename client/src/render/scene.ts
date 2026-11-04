@@ -192,8 +192,9 @@ export class WorldScene {
       this.nature.cull(this.rig.camera);
       this.skills.cull(this.rig.camera);
     }
-    this.housing.update(local.x, local.z);
     this.sky.update(view.sky, local.x, local.z);
+    // After the sky sets this frame's fog; at home the campus, housing included, stays hidden.
+    if (!this.room) this.housing.update(this.rig.camera, this.sky.fog.far);
     this.lamps.update((view.sky ?? DEFAULT_SKY).elevation, this.rig.camera.position, this.now());
     this.map.updateSky(view.sky);
     // Hitsplats join the scene with the first hit, so a view without hits leaves the graph as it was.
