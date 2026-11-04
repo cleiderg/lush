@@ -41,19 +41,24 @@ function setup(opts: { houseMine?: boolean; inHome?: number | null; placedItems?
     slots: [1, 2, 0, 4, 5, 3].map((itemId) => ({ itemId, quantity: itemId ? 1 : 0 })),
     equipment: { weapon: 0, head: 0, body: 0, shield: 0 },
   });
+  const valid = { green: true };
+  const room = {
+    setGrid: vi.fn(), hideGhost: vi.fn(),
+    showGhost: vi.fn<(id: number, t: Tile, r: number, i: number) => boolean>(() => valid.green),
+  };
   const session = {
     sendHomePlace: vi.fn(), sendHomeMove: vi.fn(), sendHomeRotate: vi.fn(),
     sendHomeRemove: vi.fn(), sendHomeSetWallpaper: vi.fn(), sendHomeSetFloor: vi.fn(),
   };
   let pick: ((t: Tile) => void) | null = null;
   const panel = new HomeEditPanel({
-    parent: document.body, housing, items, session, viewport: () => ({ width: 390, height: 844 }),
+    parent: document.body, housing, items, session, room, viewport: () => ({ width: 390, height: 844 }),
     pickTile: (cb) => { pick = cb; },
   });
   current = panel;
   const q = (sel: string) => panel.drawer.querySelector<HTMLButtonElement>(sel)!;
   const qa = (sel: string) => [...panel.drawer.querySelectorAll<HTMLButtonElement>(sel)];
-  return { housing, items, session, panel, q, qa, tap: (t: Tile) => pick!(t) };
+  return { housing, items, session, room, valid, panel, q, qa, tap: (t: Tile) => pick!(t) };
 }
 
 describe('HomeEditPanel', () => {
@@ -102,7 +107,9 @@ describe('HomeEditPanel', () => {
     expect(t.session.sendHomePlace).not.toHaveBeenCalled();
     t.q('.lush-edit-rotate').click();
     t.tap({ x: 3, y: 4 });
-    expect(t.session.sendHomePlace).toHaveBeenCalledWith(1, { x: 3, y: 4, rotation: 1 });
+    expect(t.session.sendHomePlace).not.toHaveBeenCalled();
+    t.tap({ x: 3, y: 4 });
+    expect(t.session.sendHomePlace).toHaveBeenCalledWith(1, { x: 3, y: 4, rotation: 1, parentPlacedId: 0, slot: 0, side: 0 });
   });
 
   it('applies wallpaper and floor at once', () => {
@@ -135,6 +142,65 @@ describe('HomeEditPanel', () => {
     t.panel.button.click();
     t.q('.lush-edit-placed').click();
     t.tap({ x: 5, y: 6 });
-    expect(t.session.sendHomeMove).toHaveBeenCalledWith(9, { x: 5, y: 6, rotation: 2 });
+    t.tap({ x: 5, y: 6 });
+    expect(t.session.sendHomeMove).toHaveBeenCalledWith(9, { x: 5, y: 6, rotation: 2, parentPlacedId: 0, slot: 0, side: 0 });
+  });
+
+  it('turns the grid on when edit mode opens and the grid and ghost off when it closes', () => {
+    const t = setup();
+    t.panel.button.click();
+    expect(t.room.setGrid).toHaveBeenLastCalledWith(true);
+    t.qa('.lush-edit-furniture')[0].click();
+    t.tap({ x: 1, y: 1 });
+    expect(t.room.showGhost).toHaveBeenCalled();
+    t.room.hideGhost.mockClear();
+    t.panel.setEditing(false);
+    expect(t.room.setGrid).toHaveBeenLastCalledWith(false);
+    expect(t.room.hideGhost).toHaveBeenCalled();
+  });
+
+  it('moves the ghost on the first tap with the current rotation, sends nothing, and Rotate turns it', () => {
+    const t = setup();
+    t.panel.button.click();
+    t.qa('.lush-edit-furniture')[0].click();
+    t.tap({ x: 2, y: 3 });
+    expect(t.room.showGhost).toHaveBeenLastCalledWith(2, { x: 2, y: 3 }, 0, 0);
+    t.q('.lush-edit-rotate').click();
+    expect(t.room.showGhost).toHaveBeenLastCalledWith(2, { x: 2, y: 3 }, 1, 0);
+    t.tap({ x: 4, y: 4 });
+    expect(t.room.showGhost).toHaveBeenLastCalledWith(2, { x: 4, y: 4 }, 1, 0);
+    expect(t.session.sendHomePlace).not.toHaveBeenCalled();
+  });
+
+  it('sends place on a second tap of a green ghost with parent, slot and side, but nothing when red', () => {
+    const t = setup();
+    t.panel.button.click();
+    t.qa('.lush-edit-furniture')[0].click();
+    const spot = { x: 2, y: 2, parentPlacedId: 5, slot: 1, side: 0 };
+    t.valid.green = false;
+    t.tap(spot);
+    t.tap(spot);
+    expect(t.session.sendHomePlace).not.toHaveBeenCalled();
+    t.valid.green = true;
+    t.tap({ x: 3, y: 2, parentPlacedId: 5, slot: 1 });
+    t.room.hideGhost.mockClear();
+    t.tap({ x: 3, y: 2, parentPlacedId: 5, slot: 1 });
+    expect(t.session.sendHomePlace).toHaveBeenCalledWith(1, { x: 3, y: 2, rotation: 0, parentPlacedId: 5, slot: 1, side: 0 });
+    expect(t.room.hideGhost).toHaveBeenCalled();
+  });
+
+  it('sends move for a placed item on the second tap of a green ghost, none when red', () => {
+    const t = setup({ placedItems: [placed(9, 2, 2)] });
+    t.panel.button.click();
+    t.q('.lush-edit-placed').click();
+    t.valid.green = false;
+    t.tap({ x: 5, y: 6 });
+    t.tap({ x: 5, y: 6 });
+    expect(t.session.sendHomeMove).not.toHaveBeenCalled();
+    expect(t.room.showGhost).toHaveBeenLastCalledWith(2, { x: 5, y: 6 }, 2, 9);
+    t.valid.green = true;
+    t.tap({ x: 6, y: 6 });
+    t.tap({ x: 6, y: 6 });
+    expect(t.session.sendHomeMove).toHaveBeenCalledTimes(1);
   });
 });

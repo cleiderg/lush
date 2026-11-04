@@ -9,6 +9,20 @@ import { addPressFeedbackWithin, BUTTON_CLASS, PanelMotion } from './theme';
 export interface Tile {
   x: number;
   y: number;
+  /** Placed id of the surface piece the tap landed on, when it landed on one. */
+  parentPlacedId?: number;
+  /** Surface slot, or -1 for the first free one. */
+  slot?: number;
+  /** Wall side, for a tap on a wall. */
+  side?: number;
+}
+
+/** What the room renderer draws for edit mode (RoomEditView); the panel drives it and reads back the colour. */
+export interface EditRoom {
+  setGrid(on: boolean): void;
+  /** Shows the ghost of `itemId` at `at` with `rotation`; true if it is green (the server would accept it). */
+  showGhost(itemId: number, at: Tile, rotation: number, ignorePlacedId: number): boolean;
+  hideGhost(): void;
 }
 
 /** The home senders the panel calls (Session.sendHome*). */
@@ -31,6 +45,8 @@ export interface HomeEditPanelOptions {
    * Asking again replaces the earlier request.
    */
   pickTile: (onTile: (tile: Tile) => void) => void;
+  /** The room's grid overlay and ghost; absent when the room isn't drawn. */
+  room?: EditRoom;
   viewport?: () => { width: number; height: number };
   /** Called when edit mode opens or closes. */
   onEditing?: (editing: boolean) => void;
@@ -50,6 +66,15 @@ function button(cls: string, text: string, onClick: () => void): HTMLButtonEleme
   b.type = 'button';
   b.addEventListener('click', onClick);
   return b;
+}
+
+function sameSpot(a: Tile, b: Tile): boolean {
+  return a.x === b.x && a.y === b.y && (a.parentPlacedId ?? 0) === (b.parentPlacedId ?? 0)
+    && (a.slot ?? -1) === (b.slot ?? -1) && (a.side ?? 0) === (b.side ?? 0);
+}
+
+function placement(t: Tile, rotation: number): HomePlacement {
+  return { x: t.x, y: t.y, rotation, parentPlacedId: t.parentPlacedId ?? 0, slot: Math.max(0, t.slot ?? 0), side: t.side ?? 0 };
 }
 
 const FURNITURE = new Set<PlacementKind>([
@@ -76,6 +101,8 @@ export class HomeEditPanel {
   private placedId = 0;
   /** Rotation, in quarter turns, for the next item placed. */
   private rotation = 0;
+  /** The tile the ghost is on and whether it is green, or null while no ghost is shown. */
+  private ghost: { tile: Tile; valid: boolean } | null = null;
 
   constructor(private readonly opts: HomeEditPanelOptions) {
     injectStyle();
@@ -112,6 +139,8 @@ export class HomeEditPanel {
     if (!this.editing || !this.opts.housing.home?.items.some((i) => i.placedId === placedId)) return;
     this.slot = -1;
     this.placedId = placedId;
+    this.rotation = this.opts.housing.home?.items.find((i) => i.placedId === placedId)?.rotation ?? 0;
+    this.clearGhost();
     this.armMove(placedId);
     this.render();
   }
@@ -122,6 +151,8 @@ export class HomeEditPanel {
     this.editing = on;
     this.slot = -1;
     this.placedId = 0;
+    this.clearGhost();
+    this.opts.room?.setGrid(on);
     this.motion.set(on);
     this.opts.onEditing?.(on);
     this.render();
@@ -134,31 +165,67 @@ export class HomeEditPanel {
     place(this.drawer, l.editDrawer);
   }
 
+  private clearGhost(): void {
+    this.ghost = null;
+    this.opts.room?.hideGhost();
+  }
+
+  /**
+   * Handles a tap while an item is chosen. The first tap on a tile only moves the ghost there; a second tap
+   * on the ghost's tile sends the place or move if the ghost is green. A red ghost sends nothing.
+   */
+  private tapTile(t: Tile, itemId: number): boolean {
+    const same = this.ghost !== null && sameSpot(this.ghost.tile, t);
+    if (same && this.ghost!.valid) return true;
+    if (!same) this.showGhost(t, itemId);
+    return false;
+  }
+
+  private showGhost(t: Tile, itemId: number): void {
+    const room = this.opts.room;
+    const valid = room ? room.showGhost(itemId, t, this.rotation, this.placedId) : true;
+    this.ghost = { tile: t, valid };
+  }
+
   private armMove(placedId: number): void {
-    this.opts.pickTile((t) => {
+    const again = (): void => this.opts.pickTile((t) => {
       if (this.placedId !== placedId) return;
       const item = this.opts.housing.home?.items.find((i) => i.placedId === placedId);
       if (!item) return;
-      this.opts.session.sendHomeMove(placedId, { x: t.x, y: t.y, rotation: item.rotation });
+      if (this.tapTile(t, item.itemId)) {
+        this.opts.session.sendHomeMove(placedId, placement(t, this.rotation));
+        this.clearGhost();
+      }
+      again();
     });
+    again();
   }
 
   private chooseFurniture(slot: number): void {
     this.placedId = 0;
     this.slot = slot;
-    this.opts.pickTile((t) => {
+    this.clearGhost();
+    const again = (): void => this.opts.pickTile((t) => {
       if (this.slot !== slot) return;
-      this.opts.session.sendHomePlace(slot, { x: t.x, y: t.y, rotation: this.rotation });
-      this.slot = -1;
-      this.render();
+      const itemId = this.opts.items.inventory.slots[slot]?.itemId ?? 0;
+      if (this.tapTile(t, itemId)) {
+        this.opts.session.sendHomePlace(slot, placement(t, this.rotation));
+        this.slot = -1;
+        this.clearGhost();
+        this.render();
+        return;
+      }
+      again();
     });
+    again();
     this.render();
   }
 
   private rotate(): void {
     const item = this.opts.housing.home?.items.find((i) => i.placedId === this.placedId);
-    if (item) this.opts.session.sendHomeRotate(item.placedId, (item.rotation + 1) % QUARTER_TURNS);
-    else this.rotation = (this.rotation + 1) % QUARTER_TURNS;
+    this.rotation = (this.rotation + 1) % QUARTER_TURNS;
+    if (item) this.opts.session.sendHomeRotate(item.placedId, this.rotation);
+    if (this.ghost) this.showGhost(this.ghost.tile, item?.itemId ?? this.opts.items.inventory.slots[this.slot]?.itemId ?? 0);
     this.render();
   }
 
@@ -166,6 +233,7 @@ export class HomeEditPanel {
     if (!this.placedId) return;
     this.opts.session.sendHomeRemove(this.placedId);
     this.placedId = 0;
+    this.clearGhost();
     this.render();
   }
 
