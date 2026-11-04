@@ -14,7 +14,7 @@ import (
 func fixture(t *testing.T, file, old, new string) fstest.MapFS {
 	t.Helper()
 	fsys := fstest.MapFS{}
-	for _, name := range []string{gamedata.ItemsFile, gamedata.NPCsFile, gamedata.ShopFile, gamedata.RulesFile, gamedata.CardTablesFile, gamedata.SkillsFile, gamedata.ThriftFile, gamedata.WorkbenchFile, gamedata.QuestsFile, gamedata.DialogueFile} {
+	for _, name := range []string{gamedata.ItemsFile, gamedata.NPCsFile, gamedata.ShopFile, gamedata.RulesFile, gamedata.CardTablesFile, gamedata.SkillsFile, gamedata.ThriftFile, gamedata.WorkbenchFile, gamedata.QuestsFile, gamedata.DialogueFile, gamedata.GroupsFile} {
 		b, err := os.ReadFile(filepath.Join("data", name))
 		if err != nil {
 			t.Fatal(err)
