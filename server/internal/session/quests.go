@@ -2,10 +2,12 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	flatbuffers "github.com/google/flatbuffers/go"
 
+	"github.com/cleiderg/lush/server/internal/interest"
 	"github.com/cleiderg/lush/server/internal/protocol"
 	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
@@ -33,24 +35,13 @@ func (s *Server) SetQuests(events *questevents.System, t *talk.System) {
 // registration. Register both before the Server. Wrap the combat event sink
 // with events.Sink and set events.PickedUp as the ground item pick-up hook.
 func (s *Server) QuestSystems(tileSize float64, r quest.Rand) (*questevents.System, *talk.System, error) {
-	t, err := talk.New(s.data, quest.New(s.data), tileSize, talkSink{s}, talkCommitter{s})
+	t, err := talk.New(s.data, quest.New(s.data), tileSize, talkSink{s}, s)
 	if err != nil {
 		return nil, nil, err
 	}
 	events := questevents.New(s.data, s.w, t, r)
 	s.SetQuests(events, t)
 	return events, t, nil
-}
-
-// talkCommitter is the talk.Committer. Saving a quest completion and its
-// rewards is P4, so until then it refuses every request: the quest stays
-// unfinished and nothing is given.
-type talkCommitter struct{ s *Server }
-
-func (c talkCommitter) CommitQuest(req talk.CommitRequest) {
-	if c.s.talk != nil {
-		c.s.talk.Resolve(req.ID, false)
-	}
 }
 
 // TalkSink is the talk.Sink that sends the player each Dialogue, DialogueClose
@@ -75,18 +66,114 @@ func (k talkSink) Dialogue(to world.PlayerID, d talk.Dialogue) {
 
 func (k talkSink) DialogueClose(to world.PlayerID) { k.send(to, encodeDialogueClose()) }
 
-// QuestCompleted queues the quest to be stored complete, so a player who
-// returns cannot finish it, and take its rewards, again. The talk system has
-// already given the rewards through the economy outbox; the completion
-// message comes with the completion work (P4).
+// QuestCompleted is called when the store has committed a completion and the
+// world applied it: it announces the quest to the player and to every player
+// in their interest area. The rewards were saved by CommitQuest.
 func (k talkSink) QuestCompleted(to world.PlayerID, c quest.Completion, _ []gamedata.ItemAmount) {
-	k.s.questDone = append(k.s.questDone, questDone{to, c})
+	k.s.announceQuest(to, c)
 }
 
-// questDone is a quest finished in dialogue, waiting to be stored complete.
-type questDone struct {
-	player world.PlayerID
-	c      quest.Completion
+// announceQuest sends QuestCompleted to player id and to the players near
+// them. Tick goroutine only.
+func (s *Server) announceQuest(id world.PlayerID, c quest.Completion) {
+	p := s.w.Player(id)
+	if p == nil {
+		return
+	}
+	q, ok := s.data.Quest(c.Quest)
+	if !ok {
+		return
+	}
+	msg := encodeQuestCompleted(fmt.Sprintf("Guest %d", id), q) // PLACEHOLDER: players have no names yet
+	if g := s.live[id]; g != nil && g.conn != nil {
+		g.conn.Send(msg)
+	}
+	s.hits = s.grid.Query(p.Pos, interest.ViewRadius, interest.MaxVisible, id, s.hits[:0])
+	for _, h := range s.hits {
+		if g := s.live[h.ID]; g != nil && g.conn != nil {
+			g.conn.Send(msg)
+		}
+	}
+}
+
+func encodeQuestCompleted(player string, q gamedata.Quest) []byte {
+	b := flatbuffers.NewBuilder(256)
+	pn, qn := b.CreateString(player), b.CreateString(q.Name)
+	rewards := encodeQuestRewards(b, q.Rewards)
+	protocol.QuestCompletedStart(b)
+	protocol.QuestCompletedAddPlayerName(b, pn)
+	protocol.QuestCompletedAddQuestId(b, uint16(q.ID))
+	protocol.QuestCompletedAddQuestName(b, qn)
+	protocol.QuestCompletedAddRewards(b, rewards)
+	return finish(b, protocol.MessageQuestCompleted, protocol.QuestCompletedEnd(b))
+}
+
+// CommitQuest implements talk.Committer. It first queues the player's pending
+// economy events, then the completion as one store CompleteQuest, which gives
+// the rewards, takes the quest items, marks the quest complete and writes the
+// audit entries in one transaction. The result goes back to the talk system
+// through Resolve. A completion that fails because the inventory has no room
+// also tells the player QuestResult InventoryFull. Called on the tick
+// goroutine; never blocks.
+func (s *Server) CommitQuest(req talk.CommitRequest) {
+	resolve := func(ok bool) {
+		if s.talk != nil {
+			s.talk.Resolve(req.ID, ok)
+		}
+	}
+	q, hasQuest := s.data.Quest(req.Quest)
+	g, p := s.live[req.Player], s.w.Player(req.Player)
+	if !hasQuest || g == nil || p == nil || s.questStore == nil {
+		s.log.Error("commit quest: no quest, live player or quest store", "player", req.Player, "quest", req.Quest)
+		resolve(false)
+		return
+	}
+	c := store.QuestCompletion{PlayerID: g.storeID, Quest: q.Key, Points: int64(req.QuestPoints), Gold: int64(req.Gold)}
+	for _, it := range req.Items {
+		if d, ok := s.data.Item(it.Item); ok {
+			c.Items = append(c.Items, store.QuestItem{Item: int32(it.Item), Qty: int64(it.Quantity), Stackable: d.Stackable()})
+		}
+	}
+	for _, it := range req.Remove {
+		c.Remove = append(c.Remove, store.QuestItem{Item: int32(it.Item), Qty: int64(it.Quantity)})
+	}
+	for _, it := range req.Take {
+		if d, ok := s.data.Item(it.Item); ok && !d.QuestItem { // quest items are in Remove already
+			c.Remove = append(c.Remove, store.QuestItem{Item: int32(it.Item), Qty: int64(it.Quantity)})
+		}
+	}
+	for _, x := range req.XP {
+		switch x.Skill {
+		case gamedata.CombatSkill:
+			c.XP += int64(x.XP)
+		case gamedata.SkillWoodcutting:
+			c.Skills.Woodcutting += int64(x.XP) * world.SkillXPScale
+		case gamedata.SkillFishing:
+			c.Skills.Fishing += int64(x.XP) * world.SkillXPScale
+		case gamedata.SkillCooking:
+			c.Skills.Cooking += int64(x.XP) * world.SkillXPScale
+		}
+	}
+	var werr error
+	earlier := s.appendEconomy(nil, g, p)
+	s.saver.submitEconomy(append(earlier, econReq{
+		changes: []store.EconomyChange{{PlayerID: g.storeID}},
+		write: func(ctx context.Context) error {
+			_, werr = s.questStore.CompleteQuest(ctx, c)
+			return werr
+		},
+		done: func(ok bool) {
+			if !ok {
+				s.log.Warn("quest completion not saved", "store_id", g.storeID, "quest", q.Key, "err", werr)
+				if errors.Is(werr, store.ErrNoRoom) {
+					s.mu.Lock()
+					s.questFull = append(s.questFull, req.Player)
+					s.mu.Unlock()
+				}
+			}
+			resolve(ok)
+		},
+	})...)
 }
 
 // loadQuests reads the stored quest rows of player id as records. Rows for
@@ -155,12 +242,15 @@ func (s *Server) flushQuests() {
 	if s.quests == nil {
 		return
 	}
-	for _, d := range s.questDone {
-		if g := s.live[d.player]; g != nil && s.questStore != nil {
-			s.saveCompletion(g.storeID, d.c)
+	s.mu.Lock()
+	full := s.questFull
+	s.questFull = nil
+	s.mu.Unlock()
+	for _, id := range full {
+		if g := s.live[id]; g != nil && g.conn != nil {
+			g.conn.Send(encodeQuestResult(protocol.QuestResultCodeInventoryFull))
 		}
 	}
-	s.questDone = s.questDone[:0]
 	for _, ch := range s.quests.Drain() {
 		g := s.live[ch.Player]
 		if g == nil {
@@ -187,28 +277,6 @@ func (s *Server) saveQuests(storeID int64, rows []store.QuestProgress) {
 		done: func(ok bool) {
 			if !ok {
 				s.log.Error("save quests failed", "store_id", storeID)
-			}
-		},
-	})
-}
-
-// saveCompletion queues marking quest c complete with its quest points,
-// behind the player's other writes. The gold, items and XP are not passed:
-// the talk system gave them and they are saved with the player.
-func (s *Server) saveCompletion(storeID int64, c quest.Completion) {
-	q, ok := s.data.Quest(c.Quest)
-	if !ok {
-		return
-	}
-	s.saver.submitEconomy(econReq{
-		changes: []store.EconomyChange{{PlayerID: storeID}},
-		write: func(ctx context.Context) error {
-			_, err := s.questStore.CompleteQuest(ctx, store.QuestCompletion{PlayerID: storeID, Quest: q.Key, Points: int64(c.QuestPoints)})
-			return err
-		},
-		done: func(ok bool) {
-			if !ok {
-				s.log.Error("save quest completion failed", "store_id", storeID, "quest", q.Key)
 			}
 		},
 	})

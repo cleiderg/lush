@@ -253,60 +253,6 @@ func questProgressSurvives(t *testing.T, players store.Players) {
 	}
 }
 
-// Completing a quest is P4: until the store can save it with its rewards, the
-// session refuses the commit, so the quest stays on its step and the player
-// keeps the book and gets nothing.
-func TestQuestCompletionRefusedUntilCommitted(t *testing.T) {
-	t.Run("memory", func(t *testing.T) { questCompletionRefused(t, store.NewMemory()) })
-	t.Run("postgres", func(t *testing.T) {
-		players, _ := pgStore(t)
-		questCompletionRefused(t, players)
-	})
-}
-
-func questCompletionRefused(t *testing.T, players store.Players) {
-	ctx := context.Background()
-	q := newQuestRig(t, players)
-	_, _, tok := q.join("")
-	overdue, _ := q.d.QuestByKey("overdue")
-	book, _ := q.d.ItemByKey("overdue_book")
-	sp, err := players.LoadByTokenHash(ctx, hashOf(tok))
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []store.QuestProgress{{Quest: overdue.Key, State: store.QuestInProgress, Step: 2}}
-	if err := players.(store.Quests).SaveQuests(ctx, sp.ID, want); err != nil {
-		t.Fatal(err)
-	}
-	q1 := newQuestRig(t, players)
-	c, p, _ := q1.join(tok)
-	q1.w.Tick()
-	if _, err := p.Inv.Add(q1.d, book.ID, 1); err != nil {
-		t.Fatal(err)
-	}
-	npc, pos := q1.npcOf("librarian")
-	p.Pos = world.Vec2{X: pos.X + 1, Y: pos.Y}
-	c.send(talkFrame(uint16(npc)))
-	q1.dialogue(c)
-	c.send(replyFrame(0)) // "Here you go.": asks to hand in and complete
-	q1.waitFor(c, protocol.MessageDialogueClose)
-	q1.w.Tick()
-	q1.w.Tick()
-	if p.Inv.Count(book.ID) != 1 {
-		t.Fatal("book taken although the completion was refused")
-	}
-	if err := q1.sess.SaveAll(ctx); err != nil {
-		t.Fatal(err)
-	}
-	log, err := players.(store.Quests).LoadQuests(ctx, sp.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(log.Quests, want) || log.Points != 0 {
-		t.Fatalf("stored %+v, want %+v and no points", log, want)
-	}
-}
-
 func hashOf(tok string) string {
 	h := sha256.Sum256([]byte(tok))
 	return hex.EncodeToString(h[:])
