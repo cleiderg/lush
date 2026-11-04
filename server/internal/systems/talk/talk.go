@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
@@ -82,6 +83,49 @@ type Sink interface {
 	QuestCompleted(to world.PlayerID, c quest.Completion, take []gamedata.ItemAmount)
 }
 
+// CommitID names one pending quest completion.
+type CommitID uint64
+
+// CommitRequest is one quest completion for the store to save as a single
+// transaction: the quest, its rewards, and the items it takes. Gold and items
+// go to the economy audit log (HandIn and Reward are the changes to record).
+type CommitRequest struct {
+	ID          CommitID
+	Player      world.PlayerID
+	Quest       gamedata.QuestID
+	QuestPoints int
+	Gold        int
+	Items       []gamedata.ItemAmount
+	XP          []gamedata.SkillXP
+	// Take are the items the finishing bring step takes.
+	Take []gamedata.ItemAmount
+	// Remove are the quest items removed on completion, including any the
+	// finishing step takes.
+	Remove []gamedata.ItemAmount
+	HandIn []world.Change // economy changes of Take and Remove
+	Reward []world.Change // economy changes of Gold and Items
+}
+
+// Committer saves a request off the tick, then calls System.Resolve with its
+// ID. The player's inventory is locked when it is called. It is called on the
+// tick goroutine and must not block.
+type Committer interface {
+	CommitQuest(req CommitRequest)
+}
+
+type inflight struct {
+	req    CommitRequest
+	player *world.Player
+	inv    world.Inventory
+	post   []quest.Record // quest state once the commit succeeds
+	done   quest.Completion
+}
+
+type resolution struct {
+	id CommitID
+	ok bool
+}
+
 type talkerFile struct {
 	Version int    `json:"version"`
 	Units   string `json:"units"`
@@ -128,6 +172,7 @@ type System struct {
 	data  *gamedata.Data
 	eng   *quest.Engine
 	sink  Sink
+	cm    Committer
 	reach float64 // metres
 	spots map[gamedata.NPCTypeID]world.Vec2
 
@@ -136,12 +181,19 @@ type System struct {
 	states  map[world.PlayerID]*quest.State
 	convs   map[world.PlayerID]conversation
 
+	nextID     CommitID
+	commits    map[CommitID]*inflight
+	committing map[world.PlayerID]CommitID
+
+	rmu      sync.Mutex
+	resolved []resolution
+
 	onChange func(world.PlayerID)
 }
 
 // New creates the system. tileSize is the length of a tile in metres.
-func New(d *gamedata.Data, eng *quest.Engine, tileSize float64, sink Sink) (*System, error) {
-	if d == nil || eng == nil || sink == nil {
+func New(d *gamedata.Data, eng *quest.Engine, tileSize float64, sink Sink, cm Committer) (*System, error) {
+	if d == nil || eng == nil || sink == nil || cm == nil {
 		return nil, errors.New("talk: nil dependency")
 	}
 	if !(tileSize > 0) || math.IsInf(tileSize, 0) {
@@ -152,11 +204,14 @@ func New(d *gamedata.Data, eng *quest.Engine, tileSize float64, sink Sink) (*Sys
 		return nil, err
 	}
 	return &System{
-		data: d, eng: eng, sink: sink,
+		data: d, eng: eng, sink: sink, cm: cm,
 		reach:  ReachTiles * tileSize,
 		spots:  spots,
 		states: map[world.PlayerID]*quest.State{},
 		convs:  map[world.PlayerID]conversation{},
+
+		commits:    map[CommitID]*inflight{},
+		committing: map[world.PlayerID]CommitID{},
 	}, nil
 }
 
@@ -187,6 +242,14 @@ func (s *System) Forget(id world.PlayerID) {
 	delete(s.convs, id)
 }
 
+// Resolve reports the outcome of commit id. The next Tick applies it. Safe
+// for concurrent use; unknown or repeated ids are ignored.
+func (s *System) Resolve(id CommitID, ok bool) {
+	s.rmu.Lock()
+	s.resolved = append(s.resolved, resolution{id: id, ok: ok})
+	s.rmu.Unlock()
+}
+
 // Handle queues the command; it needs the world, so it is applied in Tick.
 func (s *System) Handle(cmd world.Command, _ *world.Player) {
 	switch cmd.(type) {
@@ -197,6 +260,13 @@ func (s *System) Handle(cmd world.Command, _ *world.Player) {
 
 // Tick spawns the talkers on the first tick, then applies queued commands.
 func (s *System) Tick(w *world.World, _ time.Duration) {
+	s.rmu.Lock()
+	done := s.resolved
+	s.resolved = nil
+	s.rmu.Unlock()
+	for _, r := range done {
+		s.finish(w, r)
+	}
 	if !s.spawned {
 		s.spawned = true
 		for _, t := range s.data.Talkers {
@@ -327,6 +397,10 @@ func (s *System) reply(w *world.World, p *world.Player, idx int) {
 	if !ok {
 		return
 	}
+	if _, busy := s.committing[p.ID]; busy {
+		s.end(p.ID) // a completion is being saved; nothing more to do yet
+		return
+	}
 	n := w.NPC(cv.npc)
 	dl, hasDl := s.data.DialogueFor(cv.typ)
 	if n == nil || !hasDl {
@@ -398,6 +472,16 @@ func (s *System) act(p *world.Player, f func(*quest.State, quest.Env) (quest.Res
 		}
 		return NotTalkable
 	}
+	var post []quest.Record // quest state once a completion commits
+	if len(res.Completed) > 0 {
+		// One completion per commit: keep only the first quest's change and
+		// the items its own step takes. Any other quest the event moved goes
+		// back as it was, items and rewards included; the next talk moves it.
+		c := res.Completed[0]
+		post = withRecord(snap, c.Quest, st.Encode())
+		rollback()
+		res = quest.Result{Advanced: true, Take: s.stepTake(c.Quest, snap), Completed: res.Completed[:1]}
+	}
 	inv := p.Inv.Clone()
 	var hand, reward []world.Change
 	take := func(list []gamedata.ItemAmount, into *[]world.Change) error {
@@ -436,6 +520,10 @@ func (s *System) act(p *world.Player, f func(*quest.State, quest.Env) (quest.Res
 			reward = append(reward, ch...)
 		}
 	}
+	if len(res.Completed) > 0 {
+		s.beginCommit(p, post, res, inv, hand, reward)
+		return Ok
+	}
 	p.Inv = inv
 	if len(hand) > 0 {
 		p.RecordEconomy(ReasonHandIn, hand)
@@ -443,23 +531,121 @@ func (s *System) act(p *world.Player, f func(*quest.State, quest.Env) (quest.Res
 	if len(reward) > 0 {
 		p.RecordEconomy(ReasonReward, reward)
 	}
-	for _, c := range res.Completed {
-		for _, x := range c.XP {
-			switch x.Skill {
-			case gamedata.CombatSkill:
-				p.AddXP(s.data.Rules, x.XP)
-			case gamedata.SkillWoodcutting:
-				p.AddSkillXP(world.Woodcutting, x.XP*world.SkillXPScale)
-			case gamedata.SkillFishing:
-				p.AddSkillXP(world.Fishing, x.XP*world.SkillXPScale)
-			case gamedata.SkillCooking:
-				p.AddSkillXP(world.Cooking, x.XP*world.SkillXPScale)
-			}
-		}
-		s.sink.QuestCompleted(p.ID, c, res.Take)
-	}
-	if s.onChange != nil && (res.Advanced || len(res.Completed) > 0) {
+	if s.onChange != nil && res.Advanced {
 		s.onChange(p.ID)
 	}
 	return Ok
+}
+
+// beginCommit holds a finished quest back: the quest state stays on its last
+// step and the inventory locks until the store confirms. res holds the one
+// completion; post is the quest state and inv, hand and reward are the
+// inventory and economy changes once it commits.
+func (s *System) beginCommit(p *world.Player, post []quest.Record, res quest.Result,
+	inv world.Inventory, hand, reward []world.Change) {
+	c := res.Completed[0]
+	remove := append([]gamedata.ItemAmount(nil), c.Remove...)
+	for _, it := range res.Take {
+		if d, ok := s.data.Item(it.Item); ok && d.QuestItem {
+			remove = append(remove, it)
+		}
+	}
+	s.nextID++
+	req := CommitRequest{ID: s.nextID, Player: p.ID, Quest: c.Quest, QuestPoints: c.QuestPoints, Gold: c.Gold,
+		Items: append([]gamedata.ItemAmount(nil), c.Items...), XP: append([]gamedata.SkillXP(nil), c.XP...),
+		Take: append([]gamedata.ItemAmount(nil), res.Take...), Remove: remove,
+		HandIn: hand, Reward: reward}
+	s.commits[req.ID] = &inflight{req: req, player: p, inv: inv, post: post, done: c}
+	s.committing[p.ID] = req.ID
+	p.Inv.SetLocked(true)
+	// The Committer gets its own copies, so nothing it does reaches what is
+	// applied on Resolve.
+	out := req
+	out.Items, out.XP = append([]gamedata.ItemAmount(nil), req.Items...), append([]gamedata.SkillXP(nil), req.XP...)
+	out.Take, out.Remove = append([]gamedata.ItemAmount(nil), req.Take...), append([]gamedata.ItemAmount(nil), req.Remove...)
+	out.HandIn = append([]world.Change(nil), hand...)
+	out.Reward = append([]world.Change(nil), reward...)
+	s.cm.CommitQuest(out)
+}
+
+// stepTake returns the items quest q's step in recs takes: the bring step's
+// items, or none for a talk step or a quest not yet started.
+func (s *System) stepTake(q gamedata.QuestID, recs []quest.Record) []gamedata.ItemAmount {
+	qd, ok := s.data.Quest(q)
+	if !ok {
+		return nil
+	}
+	for _, r := range recs {
+		if r.Quest == q && r.Status == quest.InProgress && r.Step < len(qd.Steps) {
+			if st := qd.Steps[r.Step]; st.Kind == gamedata.StepBringItems {
+				return append([]gamedata.ItemAmount(nil), st.Items...)
+			}
+		}
+	}
+	return nil
+}
+
+// withRecord sets quest q in recs to its record in orig, or drops it.
+func withRecord(recs []quest.Record, q gamedata.QuestID, orig []quest.Record) []quest.Record {
+	var out []quest.Record
+	for _, r := range recs {
+		if r.Quest != q {
+			out = append(out, r)
+		}
+	}
+	for _, r := range orig {
+		if r.Quest == q {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// finish applies the outcome of a commit: on success the quest completes and
+// the rewards reach the live player; either way the inventory unlocks.
+func (s *System) finish(w *world.World, r resolution) {
+	c := s.commits[r.id]
+	if c == nil {
+		return
+	}
+	delete(s.commits, r.id)
+	delete(s.committing, c.req.Player)
+	p := c.player
+	if w.Player(c.req.Player) != p {
+		return // left the world; the store has the result
+	}
+	p.Inv.SetLocked(false)
+	if !r.ok {
+		return
+	}
+	inv := c.inv
+	inv.SetLocked(false)
+	p.Inv = inv
+	// Only the completed quest's record comes from the saved state, so
+	// progress other systems made meanwhile (kills, items) is kept.
+	if st, err := s.eng.Decode(withRecord(s.State(p.ID).Encode(), c.req.Quest, c.post)); err == nil {
+		s.SetState(p.ID, st)
+	}
+	if len(c.req.HandIn) > 0 {
+		p.RecordEconomy(ReasonHandIn, c.req.HandIn)
+	}
+	if len(c.req.Reward) > 0 {
+		p.RecordEconomy(ReasonReward, c.req.Reward)
+	}
+	for _, x := range c.req.XP {
+		switch x.Skill {
+		case gamedata.CombatSkill:
+			p.AddXP(s.data.Rules, x.XP)
+		case gamedata.SkillWoodcutting:
+			p.AddSkillXP(world.Woodcutting, x.XP*world.SkillXPScale)
+		case gamedata.SkillFishing:
+			p.AddSkillXP(world.Fishing, x.XP*world.SkillXPScale)
+		case gamedata.SkillCooking:
+			p.AddSkillXP(world.Cooking, x.XP*world.SkillXPScale)
+		}
+	}
+	s.sink.QuestCompleted(p.ID, c.done, c.req.Take)
+	if s.onChange != nil {
+		s.onChange(p.ID)
+	}
 }

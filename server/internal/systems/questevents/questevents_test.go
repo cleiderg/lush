@@ -31,6 +31,11 @@ func (s *sink) NPCKilled(k combat.Kill) { s.kills = append(s.kills, k) }
 // talkSink discards what the talking NPC system tells players.
 type talkSink struct{}
 
+// nopCommitter drops commit requests; these tests do not finish quests.
+type nopCommitter struct{}
+
+func (nopCommitter) CommitQuest(talk.CommitRequest) {}
+
 func (talkSink) QuestResult(world.PlayerID, talk.Result)                                {}
 func (talkSink) Dialogue(world.PlayerID, talk.Dialogue)                                 {}
 func (talkSink) DialogueClose(world.PlayerID)                                           {}
@@ -49,7 +54,7 @@ type fixture struct {
 func newFixture(t *testing.T, d *gamedata.Data, seed uint64) *fixture {
 	t.Helper()
 	w := world.New(world.DefaultConfig())
-	tk, err := talk.New(d, quest.New(d), 1, talkSink{})
+	tk, err := talk.New(d, quest.New(d), 1, talkSink{}, nopCommitter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,7 +438,7 @@ func BenchmarkTick(b *testing.B) {
 		b.Fatal(err)
 	}
 	w := world.New(world.DefaultConfig())
-	tk, err := talk.New(d, quest.New(d), 1, talkSink{})
+	tk, err := talk.New(d, quest.New(d), 1, talkSink{}, nopCommitter{})
 	if err != nil {
 		b.Fatal(err)
 	}
