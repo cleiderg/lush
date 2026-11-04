@@ -6,7 +6,7 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 |---|---|
 | `source/osm-central.json` | Committed OSM snapshot of central campus (`node shared/map/fetch.mjs central` refreshes it; needs network) |
 | `source/osm-housing.json` | Committed OSM snapshot of the Mesa Court and Middle Earth housing areas (`node shared/map/fetch.mjs housing` refreshes it) |
-| `build.mjs` | `node shared/map/build.mjs [outDir] [--no-nature]` writes `campus.json`, `collision.bin`, `areas.json`, `cardtables.json`, `fountain.json`, `props.json`, `skills.json`, `housing.json` and `parknature.json` (skipped with `--no-nature`). Offline and deterministic |
+| `build.mjs` | `node shared/map/build.mjs [outDir] [--no-nature]` writes `campus.json`, `collision.bin`, `areas.json`, `cardtables.json`, `fountain.json`, `props.json`, `skills.json`, `housing.json`, `talkers.json`, `spawnareas.json` and `parknature.json` (skipped with `--no-nature`). Offline and deterministic |
 | `campus.json` | Compact map for rendering |
 | `collision.bin` | Collision grid for client and server |
 | `areas.mjs` | Gameplay places (spawn, shop, area polygons, card tables) in metres; edit here, then rebuild |
@@ -21,6 +21,10 @@ Central-campus map (Aldrich Park and the ring around it), generated from OpenStr
 | `housing.json` | M10 housing areas, their 20 houses each with a door, and the thrift stall and workbench, for client and server |
 | `parknature.mjs` | Aldrich Park nature types, seed, densities and clearances; edit here, then rebuild |
 | `parknature.json` | Aldrich Park trees, rocks, bushes, flower beds, picnic blankets and birds, visual only |
+| `talkers.mjs` | M11 talking NPC spots (Langson Library way id, offsets, ranger target); edit here, then rebuild |
+| `talkers.json` | The four talking NPC spots, for client and server |
+| `spawnareas.mjs` | M11 monster spawn polygons (`goose_pond`, `south_fields_far`); edit here, then rebuild |
+| `spawnareas.json` | Monster spawn polygons that are not in `areas.json`, for client and server |
 | `config.mjs` | Bounding box, fixed origin, housing outline and connecting path ids, chunk size, cell size |
 
 ## Housing areas (M10)
@@ -159,6 +163,34 @@ M10 housing (`docs/specs/housing.md`: Neighborhoods and ownership, Economy hooks
 **Ids in `HousingState`** (protocol): the house at 0-based index `j` in `houses[]` is house (plot) id `j+1`, and the area at 0-based index `i` in `areas[]` is area id `i+1`. Client and server both count in file order, so the order of `areas[]` and `houses[]` must not change without a version bump.
 
 `build.mjs` runs this last, on the final grid. Per area it takes the `HOUSES_PER_AREA` (20) largest buildings wholly inside the outline (ties by id) that have a door cell: a walkable cell inside the outline, outside the building and within 1.5 m of its footprint, nearest the wall (then best connected, then north-west first), never one used as another door. The thrift stall is on the open cell (all 8 neighbours walkable) inside the outline nearest the middle of the area's doors, at least 3 m from every door; the workbench is another such cell 1.5 to 2.5 m from the stall. All points are on walkable cells of `collision.bin`. Deterministic: byte-identical on every build.
+
+## `talkers.json`
+
+M11 talking NPC spots (`docs/specs/map.md`: Talking NPCs; `docs/specs/quests.md`). Kept out of `areas.json`, whose parser rejects unknown area ids. Same units: integer decimetres, x east, z south.
+
+`{version, units, talkers}`
+
+- `version`: 1.
+- `talkers[]`: `{id, x, z}`, in the order `librarian`, `park_ranger`, `food_truck_cook`, `guide`. `x`, `z` are the centre of a walkable collision cell with walkable cells on all four sides.
+  - `guide`: the free open cell nearest 2 m east of the spawn (within 3 m of it, inside the safe circle).
+  - `food_truck_cook`: the free open cell nearest 2 m south of the grill in `skills.json` (within 3 m of it).
+  - `librarian`: outside the Langson Library podium (OSM way 171169252, `LANGSON_WAY` in `talkers.mjs`), 2 to 4 m from its footprint, the open cell nearest the spawn.
+  - `park_ranger`: the open cell nearest the south fields corner closest to Aldrich Park (`RANGER_TARGET`).
+
+`build.mjs` runs this after the housing, on the final grid, and fails if a rule isn't met. Deterministic: byte-identical on every build.
+
+## `spawnareas.json`
+
+M11 monster spawn polygons (`docs/specs/quests.md`: More monsters) that are not in `areas.json`. Same units: integer decimetres, x east, z south.
+
+`{version, units, areas}`
+
+- `version`: 1.
+- `areas[]`: `{id, p}`; `p` a closed polygon `[x0,z0,...]` (last point not repeated).
+  - `goose_pond`: a strip of the Aldrich Park lawn along the south shore of the pond in `skills.json`, wholly inside `aldrich_park`, outside the safe circle and clear of the pond, with at least 6 walkable cells within 8 m of the pond outline.
+  - `south_fields_far`: the west (far) end of `south_fields`; every cell in it is farther from the spawn than the `south_fields` centroid, and it holds at least 4 walkable cells.
+
+Polygons come from `spawnareas.mjs`; `build.mjs` checks them and fails if a rule isn't met.
 
 ## `parknature.json`
 
