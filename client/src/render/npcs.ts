@@ -223,7 +223,7 @@ export const NPC_GAITS: Readonly<Record<number, Gait>> = {
   // Goose: short legs waddle fast with a rock side to side of the body.
   [NpcType.Goose]: { stride: 10, swing: 0.7, wheel: 0, bob: 0.03, tilt: 0.1 },
   // Scooter: wheels only; it rolls with a lean.
-  [NpcType.RunawayEScooter]: { stride: 3, swing: 0, wheel: 1 / 0.1, bob: 0.01, tilt: 0.05 },
+  [NpcType.RunawayEScooter]: { stride: 3, swing: 0, wheel: 1 / 0.1, bob: 0.02, tilt: 0.05 },
   [NpcType.NightWatchmanBot]: { stride: 4, swing: 0.5, wheel: 0, bob: 0.03, tilt: 0.03 },
   [NpcType.Librarian]: { stride: 5, swing: 0.6, wheel: 0, bob: 0.03, tilt: 0.02 },
   [NpcType.ParkRanger]: { stride: 5, swing: 0.6, wheel: 0, bob: 0.03, tilt: 0.02 },

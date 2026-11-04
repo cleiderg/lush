@@ -252,7 +252,7 @@ describe('NPC animations stay instanced (AC4)', () => {
       }
       return w;
     };
-    for (const count of [6, 100, 300]) {
+    for (const count of [13, 100, 300]) {
       const w = scene(count);
       const group = w.scene.getObjectByName('npcs')!;
       expect(countDrawCalls(group)).toBe(types.length);
