@@ -152,6 +152,8 @@ describe('HomeEditPanel', () => {
     expect(t.room.setGrid).toHaveBeenLastCalledWith(true);
     t.qa('.lush-edit-furniture')[0].click();
     t.tap({ x: 1, y: 1 });
+    expect(t.room.showGhost).toHaveBeenCalled();
+    t.room.hideGhost.mockClear();
     t.panel.setEditing(false);
     expect(t.room.setGrid).toHaveBeenLastCalledWith(false);
     expect(t.room.hideGhost).toHaveBeenCalled();
@@ -181,6 +183,7 @@ describe('HomeEditPanel', () => {
     expect(t.session.sendHomePlace).not.toHaveBeenCalled();
     t.valid.green = true;
     t.tap({ x: 3, y: 2, parentPlacedId: 5, slot: 1 });
+    t.room.hideGhost.mockClear();
     t.tap({ x: 3, y: 2, parentPlacedId: 5, slot: 1 });
     expect(t.session.sendHomePlace).toHaveBeenCalledWith(1, { x: 3, y: 2, rotation: 0, parentPlacedId: 5, slot: 1, side: 0 });
     expect(t.room.hideGhost).toHaveBeenCalled();
