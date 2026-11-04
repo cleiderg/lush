@@ -264,6 +264,14 @@ func gameSystems(mover world.System, data *gamedata.Data, lookup *areas.Lookup, 
 		return nil, err
 	}
 	sess.SetCardRoom(cards)
+	seed, err := loadHousingSeed()
+	if err != nil {
+		return nil, err
+	}
+	if err := seedHousing(seed, players); err != nil {
+		return nil, err
+	}
+	furnitureSystem(data, tileSize, seed, sess)
 	homes, err := housingSystem(data, tileSize, clock, sess, players)
 	if err != nil {
 		return nil, err
