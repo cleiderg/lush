@@ -10,10 +10,10 @@ import { HousePanel } from './housePanel';
 const NOW = 1_800_000_000;
 const MONTH = RENT_MONTH_SECONDS;
 
-function housingBytes(houses: { id: number; mine?: boolean; state: HouseState; paidUntil?: number }[]): Uint8Array {
+function housingBytes(houses: { id: number; mine?: boolean; state: HouseState; paidUntil?: number; open?: boolean }[]): Uint8Array {
   const b = new flatbuffers.Builder(256);
   const offs = houses.map((h) =>
-    HouseInfo.createHouseInfo(b, h.id, 1, b.createString(h.mine ? 'Me' : ''), !!h.mine, BigInt(h.paidUntil ?? 0), h.state, true));
+    HouseInfo.createHouseInfo(b, h.id, 1, b.createString(h.mine ? 'Me' : ''), !!h.mine, BigInt(h.paidUntil ?? 0), h.state, h.open ?? true));
   const msg = HousingState.createHousingState(b, HousingState.createHousesVector(b, offs), 200, 2, 6);
   b.finish(Envelope.createEnvelope(b, Message.HousingState, msg));
   return b.asUint8Array().slice();
@@ -131,6 +131,17 @@ describe('HousePanel Enter and door prompt (AC2, AC3)', () => {
     panel.open(3);
     expect(q(panel, '.lush-house-enter')).not.toBeNull();
     panel.open(4);
+    expect(q(panel, '.lush-house-enter')).toBeNull();
+  });
+
+  it('Enter shows for own locked house but not for a locked house of another player', () => {
+    const { panel } = withEnter([
+      { id: 5, mine: true, state: HouseState.Owned, paidUntil: NOW + MONTH, open: false },
+      { id: 6, state: HouseState.Owned, open: false },
+    ]);
+    panel.open(5);
+    expect(q(panel, '.lush-house-enter')).not.toBeNull();
+    panel.open(6);
     expect(q(panel, '.lush-house-enter')).toBeNull();
   });
 });
