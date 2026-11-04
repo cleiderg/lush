@@ -20,6 +20,8 @@ import {
   SKILLS_SEED, SKILL_TREES, SKILL_TREE_R, SKILL_TREE_SPACING, SAFE_MARGIN, POND_CENTRE, POND_RADII, POND_POINTS, POND_WOBBLE,
   POND_SHORE, POND_SHIFT, FISHING_SPOTS, STATION_CLEAR,
 } from './skills.mjs';
+import { LANGSON_WAY, LIBRARIAN_GAP, GUIDE_OFFSET, COOK_OFFSET, RANGER_TARGET, TALKER_IDS } from './talkers.mjs';
+import { GOOSE_POND, GOOSE_MIN_CELLS, GOOSE_REACH, SOUTH_FIELDS_FAR, FAR_MIN_CELLS } from './spawnareas.mjs';
 import { FOUNTAIN_R, FOUNTAIN_PATH_CLEAR, FOUNTAIN_CLEAR, FOUNTAIN_STEP } from './fountain.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -985,6 +987,111 @@ function placeHousing() {
 }
 const housing = placeHousing();
 
+// M11 talking NPC spots (talkers.json) and monster spawn polygons (spawnareas.json), on the final grid. Every spot is the
+// centre of a walkable cell with walkable cells on all four sides; the polygons are checked against the spec's rules.
+function placeTalkers() {
+  const spawnM = { x: areas.spawn.x / 10, z: areas.spawn.z / 10 };
+  const cellDmOf = (v, min) => Math.floor((v * 10 - min) / cellDm);
+  const open = (x, z) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].every(([a, b]) => !blockedAt(x + a, z + b));
+  const snap = (v, min) => (min + (cellDmOf(v, min) + 0.5) * cellDm) / 10;
+  const taken = [spawnM, { x: areas.shop.x / 10, z: areas.shop.z / 10 }, { x: skills.bank.x / 10, z: skills.bank.z / 10 }, { x: skills.grill.x / 10, z: skills.grill.z / 10 }];
+  const free = (x, z) => open(x, z) && !taken.some((t) => Math.hypot(t.x - x, t.z - z) < 1);
+  /** Free open cell nearest (x, z), searching outwards. */
+  function nearest(x, z, name) {
+    let best = null;
+    for (let dz = -60; dz <= 60; dz++) for (let dx = -60; dx <= 60; dx++) {
+      const px = snap(x + dx, minX), pz = snap(z + dz, minZ);
+      if (!free(px, pz)) continue;
+      const d = Math.hypot(px - x, pz - z);
+      if (!best || d < best.d || (d === best.d && (pz < best.z || (pz === best.z && px < best.x)))) best = { x: px, z: pz, d };
+    }
+    if (!best) throw new Error(`${name}: no free walkable cell near (${x}, ${z})`);
+    return best;
+  }
+  const guide = nearest(spawnM.x + GUIDE_OFFSET.x, spawnM.z + GUIDE_OFFSET.z, 'guide');
+  if (Math.hypot(guide.x - spawnM.x, guide.z - spawnM.z) > 3) throw new Error('guide is more than 3 m from the spawn');
+  const cook = nearest(skills.grill.x / 10 + COOK_OFFSET.x, skills.grill.z / 10 + COOK_OFFSET.z, 'food_truck_cook');
+  if (Math.hypot(cook.x - skills.grill.x / 10, cook.z - skills.grill.z / 10) > 3) throw new Error('food truck cook is more than 3 m from the grill');
+  // Librarian: the open cell LIBRARIAN_GAP metres outside the Langson footprint, nearest the spawn.
+  const lang = buildings.find((b) => b.id === LANGSON_WAY);
+  if (!lang) throw new Error(`Langson building ${LANGSON_WAY} missing`);
+  const lb = [Math.min(...lang.p.filter((_, i) => i % 2 === 0)), Math.min(...lang.p.filter((_, i) => i % 2)), Math.max(...lang.p.filter((_, i) => i % 2 === 0)), Math.max(...lang.p.filter((_, i) => i % 2))];
+  const edgeM = (x, z) => {
+    let b = Infinity;
+    for (let i = 0, n = lang.p.length / 2; i < n; i++) {
+      const j = (i + 1) % n, ax = lang.p[2 * i], az = lang.p[2 * i + 1], dx = lang.p[2 * j] - ax, dz = lang.p[2 * j + 1] - az;
+      const t = Math.max(0, Math.min(1, ((x * 10 - ax) * dx + (z * 10 - az) * dz) / (dx * dx + dz * dz || 1)));
+      b = Math.min(b, Math.hypot(x * 10 - (ax + t * dx), z * 10 - (az + t * dz)) / 10);
+    }
+    return b;
+  };
+  let lib = null;
+  for (let z = snap(lb[1] / 10 - 6, minZ); z <= lb[3] / 10 + 6; z++) for (let x = snap(lb[0] / 10 - 6, minX); x <= lb[2] / 10 + 6; x++) {
+    const px = snap(x, minX), pz = snap(z, minZ);
+    if (!free(px, pz) || insideDm(px, pz, lang.p)) continue;
+    const e = edgeM(px, pz);
+    if (e < LIBRARIAN_GAP[0] || e > LIBRARIAN_GAP[1]) continue;
+    const d = Math.hypot(px - spawnM.x, pz - spawnM.z);
+    if (!lib || d < lib.d || (d === lib.d && (pz < lib.z || (pz === lib.z && px < lib.x)))) lib = { x: px, z: pz, d };
+  }
+  if (!lib) throw new Error('librarian: no open cell outside Langson Library');
+  const ranger = nearest(RANGER_TARGET.x, RANGER_TARGET.z, 'park_ranger');
+  const by = { librarian: lib, park_ranger: ranger, food_truck_cook: cook, guide };
+  // Order of TALKER_IDS in the file; walkable by construction, re-checked here.
+  const out = TALKER_IDS.map((id) => {
+    const p = by[id];
+    if (blockedAt(p.x, p.z)) throw new Error(`${id} is on a blocked cell`);
+    return { id, x: Math.round(p.x * 10), z: Math.round(p.z * 10) };
+  });
+  return { version: 1, units: 'decimetres', talkers: out };
+}
+
+function placeSpawnAreas() {
+  const poly = (pts) => pts.flatMap(([x, z]) => [x * 10, z * 10]);
+  const park = areas.areas.find((a) => a.id === 'aldrich_park').p;
+  const fields = areas.areas.find((a) => a.id === 'south_fields').p;
+  const spawnM = { x: areas.spawn.x / 10, z: areas.spawn.z / 10 };
+  const safe = areas.safeRadius / 10;
+  const cells = (pts) => {
+    const xs = pts.map((q) => q[0]), zs = pts.map((q) => q[1]);
+    const out = [];
+    for (let z = Math.min(...zs); z < Math.max(...zs); z++) for (let x = Math.min(...xs); x < Math.max(...xs); x++) {
+      const cx = x + 0.5, cz = z + 0.5;
+      if (insideDm(cx, cz, poly(pts)) && !blockedAt(cx, cz)) out.push({ x: cx, z: cz });
+    }
+    return out;
+  };
+  const pond = skills.pond.p;
+  const pondDist = (x, z) => {
+    let b = Infinity;
+    for (let i = 0, j = pond.length - 2; i < pond.length; j = i, i += 2) {
+      const dx = pond[i] - pond[j], dz = pond[i + 1] - pond[j + 1];
+      const t = Math.max(0, Math.min(1, ((x * 10 - pond[j]) * dx + (z * 10 - pond[j + 1]) * dz) / (dx * dx + dz * dz || 1)));
+      b = Math.min(b, Math.hypot(x * 10 - (pond[j] + t * dx), z * 10 - (pond[j + 1] + t * dz)) / 10);
+    }
+    return b;
+  };
+  for (const [x, z] of GOOSE_POND) {
+    if (!insideDm(x, z, park)) throw new Error(`goose_pond corner (${x}, ${z}) is outside aldrich_park`);
+    if (Math.hypot(x - spawnM.x, z - spawnM.z) <= safe) throw new Error('goose_pond corner is inside the safe circle');
+  }
+  const gc = cells(GOOSE_POND);
+  if (gc.some((c) => insideDm(c.x, c.z, pond) || Math.hypot(c.x - spawnM.x, c.z - spawnM.z) <= safe)) throw new Error('goose_pond holds a pond or safe-circle cell');
+  if (gc.filter((c) => pondDist(c.x, c.z) <= GOOSE_REACH).length < GOOSE_MIN_CELLS) throw new Error('goose_pond has too few walkable cells by the pond');
+  const cen = { x: fields.filter((_, i) => i % 2 === 0).reduce((a, v) => a + v, 0) / (fields.length / 2) / 10, z: fields.filter((_, i) => i % 2).reduce((a, v) => a + v, 0) / (fields.length / 2) / 10 };
+  const cenD = Math.hypot(cen.x - spawnM.x, cen.z - spawnM.z);
+  // south_fields is an axis-aligned rectangle, so inside means within its bounds.
+  for (const [x, z] of SOUTH_FIELDS_FAR) {
+    if (x * 10 < fields[0] || x * 10 > fields[2] || z * 10 < fields[1] || z * 10 > fields[5]) throw new Error(`south_fields_far corner (${x}, ${z}) is outside south_fields`);
+  }
+  const fc = cells(SOUTH_FIELDS_FAR);
+  if (fc.length < FAR_MIN_CELLS) throw new Error('south_fields_far has too few walkable cells');
+  if (fc.some((c) => Math.hypot(c.x - spawnM.x, c.z - spawnM.z) <= cenD)) throw new Error('south_fields_far has a cell nearer the spawn than the south_fields centroid');
+  return { version: 1, units: 'decimetres', areas: [{ id: 'goose_pond', p: poly(GOOSE_POND) }, { id: 'south_fields_far', p: poly(SOUTH_FIELDS_FAR) }] };
+}
+const talkers = placeTalkers();
+const spawnAreas = placeSpawnAreas();
+
 mkdirSync(outDir, { recursive: true });
 writeFileSync(outDir + '/campus.json', JSON.stringify(campus) + '\n');
 writeFileSync(outDir + '/collision.bin', Buffer.concat([header, Buffer.from(bits)]));
@@ -994,5 +1101,7 @@ writeFileSync(outDir + '/fountain.json', JSON.stringify(fountain) + '\n');
 writeFileSync(outDir + '/props.json', JSON.stringify(props) + '\n');
 writeFileSync(outDir + '/skills.json', JSON.stringify(skills) + '\n');
 writeFileSync(outDir + '/housing.json', JSON.stringify(housing) + '\n');
+writeFileSync(outDir + '/talkers.json', JSON.stringify(talkers) + '\n');
+writeFileSync(outDir + '/spawnareas.json', JSON.stringify(spawnAreas) + '\n');
 if (nature) writeFileSync(outDir + '/parknature.json', JSON.stringify(nature) + '\n');
 console.log(`buildings=${buildings.length} paths=${paths.length} plazas=${plazas.length} green=${green.length} grid=${width}x${height} fountain=${fountain.x / 10},${fountain.z / 10} props=${placed.length} skillTrees=${skills.trees.length} nature=${nature ? nature.items.length : 'off'}`);

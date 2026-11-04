@@ -190,3 +190,23 @@ export function parseHousing(json: string): HousingData {
   if (d.version !== 1) throw new Error(`unsupported housing.json version ${d.version}`);
   return d;
 }
+
+/** One talking NPC spot from talkers.json (decimetres, on a walkable cell centre). */
+export interface TalkerSpot { id: string; x: number; z: number }
+/** talkers.json: the four M11 talking NPC spots. */
+export interface TalkersData { version: number; units: string; talkers: TalkerSpot[] }
+
+export function parseTalkers(json: string): TalkersData {
+  const d = JSON.parse(json) as TalkersData;
+  if (d.version !== 1) throw new Error(`unsupported talkers.json version ${d.version}`);
+  return d;
+}
+
+/** spawnareas.json: M11 monster spawn polygons (decimetres) that are not in areas.json. */
+export interface SpawnAreasData { version: number; units: string; areas: { id: string; p: number[] }[] }
+
+export function parseSpawnAreas(json: string): SpawnAreasData {
+  const d = JSON.parse(json) as SpawnAreasData;
+  if (d.version !== 1) throw new Error(`unsupported spawnareas.json version ${d.version}`);
+  return d;
+}
