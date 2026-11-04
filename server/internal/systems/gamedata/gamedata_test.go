@@ -1,7 +1,10 @@
 package gamedata_test
 
 import (
+	"os"
+	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
@@ -63,6 +66,19 @@ func TestItemsMatchSpec(t *testing.T) {
 		{"Sardine", gamedata.KindFood, gamedata.SlotNone, 0, 0, 0, 0, 1, 3, none, 4, false},
 		{"Trout", gamedata.KindFood, gamedata.SlotNone, 0, 0, 0, 0, 1, 10, none, 7, false},
 		{"Burnt fish", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 0, none, 0, false},
+		// docs/specs/quests.md: More items, and the quest reward and quest items.
+		{"Steel sword", gamedata.KindWeapon, gamedata.SlotWeapon, 24, 26, 0, 4, 20, 200, none, 0, false},
+		{"Lab coat", gamedata.KindArmor, gamedata.SlotBody, 0, 0, 20, 0, 22, 250, none, 0, false},
+		{"Watchman's visor", gamedata.KindArmor, gamedata.SlotHead, 2, 0, 9, 0, 25, 220, none, 0, false},
+		{"Steel shield", gamedata.KindArmor, gamedata.SlotShield, 0, 0, 10, 0, 15, 60, 160, 0, false},
+		{"Feather", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 1, none, 0, true},
+		{"Goose egg", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 30, none, 0, true},
+		{"Lithium cell", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 20, none, 0, true},
+		{"Library card", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 0, none, 0, true},
+		{"Ranger's machete", gamedata.KindWeapon, gamedata.SlotWeapon, 20, 22, 0, 4, 18, 120, none, 0, false},
+		{"Chef's hat", gamedata.KindArmor, gamedata.SlotHead, 0, 0, 2, 0, 0, 5, none, 0, false},
+		{"Overdue book", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 0, none, 0, true},
+		{"Alpha's fang", gamedata.KindLoot, gamedata.SlotNone, 0, 0, 0, 0, 0, 0, none, 0, true},
 	}
 	// Housing items are checked in housing_test.go.
 	byName := map[string]gamedata.Item{}
@@ -142,6 +158,13 @@ func TestNPCsMatchSpec(t *testing.T) {
 			[]drop{{"Scrap metal", 2, 1}, {"Bike lock", 32, 1}, {"Robot plating", 64, 1}, {"Laptop", 256, 1}}, 0, 5},
 		{"Coyote alpha", gamedata.AreaSouthFields, 20, 50, 28, 26, 22, 4, gamedata.Aggressive, 3 * time.Minute, 40, 100,
 			[]drop{{"Coyote pelt", 1, 3}, {"Bike helmet", 8, 1}, {"Trophy shelf", 128, 1}}, 1, 1},
+		// docs/specs/quests.md: More monsters.
+		{"Goose", gamedata.AreaAldrichPark, 6, 12, 8, 6, 4, 4, gamedata.Aggressive, 30 * time.Second, 4, 12,
+			[]drop{{"Feather", 1, 1}, {"Goose egg", 10, 1}}, 0, 6},
+		{"Runaway e-scooter", gamedata.AreaSouthFields, 24, 60, 32, 30, 34, 5, gamedata.Aggressive, 90 * time.Second, 50, 120,
+			[]drop{{"Lithium cell", 3, 1}, {"Steel sword", 40, 1}}, 0, 4},
+		{"Night watchman bot", gamedata.AreaSouthFields, 30, 90, 40, 38, 40, 4, gamedata.Aggressive, 5 * time.Minute, 100, 250,
+			[]drop{{"Lithium cell", 1, 2}, {"Lab coat", 6, 1}, {"Watchman's visor", 12, 1}}, 0, 1},
 	}
 	if len(d.NPCs) != len(tests) {
 		t.Fatalf("got %d NPC types, spec has %d", len(d.NPCs), len(tests))
@@ -315,5 +338,54 @@ func TestCardTablesMatchSpec(t *testing.T) {
 		if got := d.CardTables[i].TurnTimer(); got != 20*time.Second {
 			t.Errorf("card table %d turn timer = %v, want 20s", w.ID, got)
 		}
+	}
+}
+
+// TestQuestItemFlag checks the flag loads, defaults to false, and is set on
+// exactly the two quest items.
+func TestQuestItemFlag(t *testing.T) {
+	d := load(t)
+	for _, it := range d.Items {
+		want := it.Key == "overdue_book" || it.Key == "alphas_fang"
+		if it.QuestItem != want {
+			t.Errorf("%s: quest_item = %v, want %v", it.Key, it.QuestItem, want)
+		}
+	}
+	// mk loads the shipped tables with the Feather's row changed: the
+	// quest_item flag removed, set, or set together with a shop price.
+	mk := func(featherRow string) fstest.MapFS {
+		m := fstest.MapFS{}
+		for _, f := range []string{"items.json", "npcs.json", "shop.json", "thrift.json", "workbench.json", "rules.json", "cardtables.json", "skills.json"} {
+			b, err := os.ReadFile("data/" + f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m[f] = &fstest.MapFile{Data: b}
+		}
+		old := `"key": "feather", "name": "Feather", "kind": "loot", "shop_buys_for": 1`
+		items := string(m["items.json"].Data)
+		if !strings.Contains(items, old) {
+			t.Fatal("feather row not found")
+		}
+		m["items.json"].Data = []byte(strings.Replace(items, old, featherRow, 1))
+		return m
+	}
+	const base = `"key": "feather", "name": "Feather", "kind": "loot"`
+	flag := func(row string) (bool, error) {
+		d, err := gamedata.Load(mk(row))
+		if err != nil {
+			return false, err
+		}
+		it, _ := d.ItemByKey("feather")
+		return it.QuestItem, nil
+	}
+	if got, err := flag(base + `, "shop_buys_for": 1`); err != nil || got {
+		t.Errorf("item without the flag: err %v, flag %v", err, got)
+	}
+	if got, err := flag(base + `, "quest_item": true`); err != nil || !got {
+		t.Errorf("item with the flag: err %v, flag %v", err, got)
+	}
+	if _, err := gamedata.Load(mk(base + `, "quest_item": true, "shop_buys_for": 5`)); err == nil {
+		t.Error("quest item the shop buys: no error")
 	}
 }

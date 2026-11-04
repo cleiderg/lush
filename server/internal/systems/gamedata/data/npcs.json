@@ -35,5 +35,24 @@
      {"item": "coyote_pelt", "chance": 1, "quantity": 3},
      {"item": "bike_helmet", "chance": 8, "quantity": 1},
      {"item": "trophy_shelf", "chance": 128, "quantity": 1}
+   ]},
+  {"id": 7, "key": "goose", "name": "Goose", "area": "aldrich_park", "spawn_zone": "goose_pond", "level": 6, "hp": 12,
+   "accuracy": 8, "strength": 6, "defence": 4, "attack_speed": 4, "behaviour": "aggressive", "respawn_s": 30, "population": 6,
+   "gold_min": 4, "gold_max": 12, "drops": [
+     {"item": "feather", "chance": 1, "quantity": 1},
+     {"item": "goose_egg", "chance": 10, "quantity": 1}
+   ]},
+  {"id": 8, "key": "runaway_e_scooter", "name": "Runaway e-scooter", "area": "south_fields", "level": 24, "hp": 60,
+   "accuracy": 32, "strength": 30, "defence": 34, "attack_speed": 5, "behaviour": "aggressive", "respawn_s": 90, "population": 4,
+   "gold_min": 50, "gold_max": 120, "drops": [
+     {"item": "lithium_cell", "chance": 3, "quantity": 1},
+     {"item": "steel_sword", "chance": 40, "quantity": 1}
+   ]},
+  {"id": 9, "key": "night_watchman_bot", "name": "Night watchman bot", "area": "south_fields", "spawn_zone": "south_fields_far", "level": 30, "hp": 90,
+   "accuracy": 40, "strength": 38, "defence": 40, "attack_speed": 4, "behaviour": "aggressive", "respawn_s": 300, "population": 1,
+   "gold_min": 100, "gold_max": 250, "drops": [
+     {"item": "lithium_cell", "chance": 1, "quantity": 2},
+     {"item": "lab_coat", "chance": 6, "quantity": 1},
+     {"item": "watchmans_visor", "chance": 12, "quantity": 1}
    ]}
 ]
