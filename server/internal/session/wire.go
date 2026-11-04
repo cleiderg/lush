@@ -387,6 +387,7 @@ type message struct {
 	// HouseClaim and RentPay.
 	houseID uint16
 	months  uint8
+	bid     uint32 // AuctionBid amount
 	// Home messages; slot is the inventory slot, houseID the home to enter.
 	placed                     uint32 // placed item id
 	hx, hy, hrot, hslot, hside uint8
@@ -492,6 +493,8 @@ func (m message) command(id world.PlayerID) world.Command {
 		return HomeCommand{homeroom.SetWallpaperCommand{Player: id, Slot: m.slot}}
 	case protocol.MessageHomeSetFloor:
 		return HomeCommand{homeroom.SetFloorCommand{Player: id, Slot: m.slot}}
+	case protocol.MessageAuctionBid:
+		return housing.BidCommand{Player: id, House: housing.HouseID(m.houseID), Amount: int(min(m.bid, math.MaxInt32))}
 	case protocol.MessageRentPay:
 		return housing.PayRentCommand{Player: id, House: housing.HouseID(m.houseID), Months: int(m.months)}
 	case protocol.MessageCardTableSit:
@@ -643,6 +646,10 @@ func decode(buf []byte) (m message, err error) {
 		var hf protocol.HomeSetFloor
 		hf.Init(tbl.Bytes, tbl.Pos)
 		m.slot = int(hf.InventorySlot())
+	case protocol.MessageAuctionBid:
+		var ab protocol.AuctionBid
+		ab.Init(tbl.Bytes, tbl.Pos)
+		m.houseID, m.bid = ab.HouseId(), ab.Amount()
 	case protocol.MessageRentPay:
 		var rp protocol.RentPay
 		rp.Init(tbl.Bytes, tbl.Pos)

@@ -25,8 +25,9 @@ var housingStart = time.Unix(1_700_000_000, 0)
 // housingStore is the in-memory store whose ClaimPlot and PayRent can fail.
 type housingStore struct {
 	*store.Memory
-	mu   sync.Mutex
-	fail bool
+	mu       sync.Mutex
+	fail     bool
+	afterBid func() // if set, runs once a PlaceAuctionBid has committed
 }
 
 func (s *housingStore) setFail(v bool) { s.mu.Lock(); s.fail = v; s.mu.Unlock() }
@@ -37,6 +38,27 @@ func (s *housingStore) ClaimPlot(ctx context.Context, c store.ClaimPlot) (store.
 		return store.Plot{}, errors.New("db down")
 	}
 	return s.Memory.ClaimPlot(ctx, c)
+}
+
+func (s *housingStore) PlaceAuctionBid(ctx context.Context, b store.PlaceAuctionBid) (store.Auction, error) {
+	if s.failing() {
+		return store.Auction{}, errors.New("db down")
+	}
+	a, err := s.Memory.PlaceAuctionBid(ctx, b)
+	s.mu.Lock()
+	after := s.afterBid
+	s.mu.Unlock()
+	if err == nil && after != nil {
+		after()
+	}
+	return a, err
+}
+
+func (s *housingStore) FinishAuction(ctx context.Context, f store.FinishAuction) (store.AuctionResult, error) {
+	if s.failing() {
+		return store.AuctionResult{}, errors.New("db down")
+	}
+	return s.Memory.FinishAuction(ctx, f)
 }
 
 func (s *housingStore) PayRent(ctx context.Context, r store.PayRent) (store.Plot, error) {
@@ -69,33 +91,50 @@ type ownedPlot struct {
 }
 
 func newHousingRig(t *testing.T, owned map[int32]ownedPlot, golds map[string]int64) *housingRig {
+	return newHousingRigOn(t, nil, owned, golds, nil)
+}
+
+// newHousingRigOn is newHousingRig on the store st (a server restarted on the
+// same store) or, with st nil, on a new one. setup, if set, runs on a new
+// store after the plots are owned, to open auctions.
+func newHousingRigOn(t *testing.T, st *housingStore, owned map[int32]ownedPlot, golds map[string]int64, setup func(st *housingStore, ids map[string]int64)) *housingRig {
 	t.Helper()
 	d := testData(t)
 	l := lookup(t)
-	h := &housingRig{d: d, st: &housingStore{Memory: store.NewMemory()}, logs: &syncBuf{}}
+	h := &housingRig{d: d, st: st, logs: &syncBuf{}}
 	ctx := context.Background()
 	spawn := l.Spawn()
-	areas := []store.Area{{ID: 1, Name: "Row", X: spawn.X, Z: spawn.Y}}
-	plots := []store.Plot{{ID: 1, AreaID: 1, X: spawn.X, Z: spawn.Y}, {ID: 2, AreaID: 1, X: spawn.X, Z: spawn.Y}}
-	if err := h.st.UpsertPlots(ctx, areas, plots); err != nil {
+	if st == nil {
+		h.st = &housingStore{Memory: store.NewMemory()}
+		areas := []store.Area{{ID: 1, Name: "Row", X: spawn.X, Z: spawn.Y}}
+		plots := []store.Plot{{ID: 1, AreaID: 1, X: spawn.X, Z: spawn.Y}, {ID: 2, AreaID: 1, X: spawn.X, Z: spawn.Y}}
+		if err := h.st.UpsertPlots(ctx, areas, plots); err != nil {
+			t.Fatal(err)
+		}
+		kit, _ := kitHoldings(t, d)
+		ids := map[string]int64{}
+		for tok, gold := range golds {
+			k := kit
+			k.Gold = gold
+			sp, err := h.st.CreateGuest(ctx, tokenHash(tok), k, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids[tok] = sp.ID
+		}
+		for plot, o := range owned {
+			_, err := h.st.Memory.ClaimPlot(ctx, store.ClaimPlot{PlayerID: ids[o.token], PlotID: plot, Rent: o.rent, Now: housingStart})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		if setup != nil {
+			setup(h.st, ids)
+		}
+	}
+	auctions, err := h.st.LoadAuctions(ctx)
+	if err != nil {
 		t.Fatal(err)
-	}
-	kit, _ := kitHoldings(t, d)
-	ids := map[string]int64{}
-	for tok, gold := range golds {
-		k := kit
-		k.Gold = gold
-		sp, err := h.st.CreateGuest(ctx, tokenHash(tok), k, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		ids[tok] = sp.ID
-	}
-	for plot, o := range owned {
-		_, err := h.st.Memory.ClaimPlot(ctx, store.ClaimPlot{PlayerID: ids[o.token], PlotID: plot, Rent: o.rent, Now: housingStart})
-		if err != nil {
-			t.Fatal(err)
-		}
 	}
 	stored, err := h.st.LoadPlots(ctx)
 	if err != nil {
@@ -114,6 +153,13 @@ func newHousingRig(t *testing.T, owned map[int32]ownedPlot, golds map[string]int
 					t.Fatal("no id")
 				}
 				p.Owner = id
+			}
+			for _, a := range auctions {
+				if a.PlotID == sp.ID {
+					if p.Auction, err = s.AuctionOf(a); err != nil {
+						t.Fatal(err)
+					}
+				}
 			}
 			hp = append(hp, p)
 		}
