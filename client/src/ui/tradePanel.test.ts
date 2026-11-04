@@ -239,3 +239,26 @@ describe('trade result (AC4)', () => {
     expect(panel.message.hidden).toBe(true);
   });
 });
+
+describe('quest items (#672)', () => {
+  it('greys out quest items and sends no TradeOffer for them', () => {
+    const { items, trade, send, panel } = setup();
+    items.setCatalog([
+      item(1, 'Acorn'), item(2, 'Boba'), item(3, 'Shiny trinket'), { ...item(9, 'Overdue book'), questItem: true },
+    ]);
+    items.setInventory({
+      slots: [{ itemId: 9, quantity: 1 }, { itemId: 2, quantity: 4 }],
+      equipment: { weapon: 0, head: 0, body: 0, shield: 0 },
+    });
+    trade.setState(VIEW);
+    const book = panel.panel.querySelector<HTMLButtonElement>('.lush-trade-inv [data-slot="0"]')!;
+    expect(book.disabled).toBe(true);
+    expect(book.classList.contains('lush-trade-quest')).toBe(true);
+    book.click();
+    expect(send).not.toHaveBeenCalled();
+    const boba = panel.panel.querySelector<HTMLButtonElement>('.lush-trade-inv [data-slot="1"]')!;
+    expect(boba.disabled).toBe(false);
+    boba.click();
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+});

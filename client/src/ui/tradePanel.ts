@@ -273,8 +273,16 @@ export class TradePanel {
     const rows: HTMLElement[] = [];
     this.opts.items.inventory.slots.forEach((slot, i) => {
       if (!slot.itemId) return;
-      const row = button('lush-trade-row', this.itemName(slot), () => this.opts.send(encodeTradeOffer(i, slot.quantity)));
+      const quest = this.opts.items.item(slot.itemId)?.questItem === true;
+      const row = button('lush-trade-row', this.itemName(slot), () => {
+        if (!quest) this.opts.send(encodeTradeOffer(i, slot.quantity));
+      });
       row.dataset.slot = String(i);
+      if (quest) {
+        row.disabled = true;
+        row.classList.add('lush-trade-quest');
+        row.title = "Quest items can't be traded";
+      }
       rows.push(row);
     });
     this.invList.replaceChildren(...(rows.length ? rows : [el('div', 'lush-trade-empty', 'Nothing to offer')]));
@@ -312,6 +320,7 @@ function injectStyle(): void {
 .lush-trade-list { display: flex; flex-direction: column; gap: var(--lush-space-1); }
 .lush-trade-row { box-sizing: border-box; display: block; width: 100%; min-height: 44px; text-align: left; padding: var(--lush-space-2); border: var(--lush-border); border-radius: var(--lush-radius-sm); background: var(--lush-surface); color: var(--lush-text); word-break: break-word; }
 .lush-trade button.lush-trade-row { border: var(--lush-border); background: var(--lush-surface); font: var(--lush-text-sm) var(--lush-font-body); letter-spacing: 0; text-align: left; }
+.lush-trade .lush-trade-row.lush-trade-quest { opacity: 0.45; filter: grayscale(1); }
 .lush-trade-empty { color: var(--lush-text-muted); }
 .lush-trade-gold { color: var(--lush-gold); }
 .lush-trade-status { min-height: 16px; color: #9fd06a; font-weight: 600; }
