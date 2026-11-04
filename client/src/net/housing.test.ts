@@ -2,11 +2,11 @@ import * as flatbuffers from 'flatbuffers';
 import { describe, expect, it } from 'vitest';
 import {
   Envelope, HomeState, HouseClaim, HouseInfo, HouseState, HousingResult, HousingResultCode, HousingState, Message,
-  PlacedItem, RentPay,
+  AuctionBid, AuctionResult, AuctionResultCode, PlacedItem, RentPay,
 } from '../protocol';
 import { GameState } from '../state/world';
-import { housingResultText } from '../state/housing';
-import { decode, encodeHouseClaim, encodeRentPay } from './codec';
+import { auctionResultText, housingResultText } from '../state/housing';
+import { decode, encodeAuctionBid, encodeHouseClaim, encodeRentPay } from './codec';
 
 function finish(b: flatbuffers.Builder, type: Message, msg: flatbuffers.Offset): Uint8Array {
   b.finish(Envelope.createEnvelope(b, type, msg));
@@ -40,6 +40,7 @@ describe('housing state', () => {
     expect(w.housing.houses).toHaveLength(2);
     expect(w.housing.houses[0]).toEqual({
       id: 3, areaId: 1, ownerName: 'Peter', mine: true, paidUntil: 1795000000, state: HouseState.Warning, open: true,
+      topBid: 0, auctionEnd: 0, myBid: 0,
     });
     expect(w.housing.myHouse()?.id).toBe(3);
     expect(w.housing.inWarning()).toBe(true);
@@ -94,5 +95,38 @@ describe('housing results', () => {
     const w = new GameState();
     w.handle(decode(resultBytes(HousingResultCode.OwnsAnother))!, 0);
     expect(w.chat.log.at(-1)).toMatchObject({ text: 'You already own a house', system: true });
+  });
+});
+
+describe('auctions', () => {
+  it('HousingState carries top bid, end and my bid; no bids read 0', () => {
+    const b = new flatbuffers.Builder(256);
+    const h1 = HouseInfo.createHouseInfo(b, 3, 1, 0, false, 0n, HouseState.Auction, true, 900, 1795500000n, 800);
+    const h2 = HouseInfo.createHouseInfo(b, 4, 1, 0, false, 0n, HouseState.Auction, true, 0, 1795600000n, 0);
+    const bytes = finish(b, Message.HousingState, HousingState.createHousingState(b, HousingState.createHousesVector(b, [h1, h2])));
+    const w = new GameState();
+    w.handle(decode(bytes)!, 0);
+    expect(w.housing.house(3)).toMatchObject({ state: HouseState.Auction, topBid: 900, auctionEnd: 1795500000, myBid: 800 });
+    expect(w.housing.house(4)).toMatchObject({ state: HouseState.Auction, topBid: 0, auctionEnd: 1795600000, myBid: 0 });
+  });
+
+  it('encodes AuctionBid', () => {
+    const e = Envelope.getRootAsEnvelope(new flatbuffers.ByteBuffer(encodeAuctionBid(512, 1500)));
+    expect(e.msgType()).toBe(Message.AuctionBid);
+    const m = e.msg(new AuctionBid()) as AuctionBid;
+    expect([m.houseId(), m.amount()]).toEqual([512, 1500]);
+  });
+
+  it('every AuctionResult code has its own chat line', () => {
+    const codes = [0, 1, 2, 3, 4, 5, 6, 7] as AuctionResultCode[];
+    const lines = codes.map((c) => auctionResultText(c));
+    expect(new Set(lines).size).toBe(codes.length);
+    for (const c of codes) {
+      const b = new flatbuffers.Builder(32);
+      const bytes = finish(b, Message.AuctionResult, AuctionResult.createAuctionResult(b, c));
+      const w = new GameState();
+      w.handle(decode(bytes)!, 0);
+      expect(w.chat.log.at(-1)).toMatchObject({ text: auctionResultText(c), system: true });
+    }
   });
 });
