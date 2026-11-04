@@ -67,6 +67,14 @@ type System struct {
 	items map[ID]*Item
 	order []*Item // spawn order, for deterministic iteration
 	next  ID      // next id Spawn tries
+
+	onPickup func(p *world.Player, item gamedata.ItemID, qty int)
+}
+
+// SetPickupHook sets a function called after every successful pick-up with
+// the player, item and quantity. The quest system uses it for get-item steps.
+func (s *System) SetPickupHook(f func(p *world.Player, item gamedata.ItemID, qty int)) {
+	s.onPickup = f
 }
 
 // New creates the ground item system. The reservation, despawn and pick-up
@@ -181,6 +189,9 @@ func (s *System) PickUp(p *world.Player, id ID) error {
 	p.Inv = inv
 	s.remove(id)
 	p.RecordEconomy(ReasonPickup, added)
+	if s.onPickup != nil {
+		s.onPickup(p, it.Item, it.Qty)
+	}
 	return nil
 }
 

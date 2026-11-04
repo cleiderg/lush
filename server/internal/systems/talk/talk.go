@@ -187,6 +187,8 @@ type System struct {
 
 	rmu      sync.Mutex
 	resolved []resolution
+
+	onChange func(world.PlayerID)
 }
 
 // New creates the system. tileSize is the length of a tile in metres.
@@ -225,6 +227,11 @@ func (s *System) State(id world.PlayerID) *quest.State {
 	}
 	return st
 }
+
+// SetChangeHook sets a function called with the player's id whenever a reply
+// changes their quest state (a start, a step or a completion). The quest event
+// system uses it to report the change for saving.
+func (s *System) SetChangeHook(f func(world.PlayerID)) { s.onChange = f }
 
 // SetState replaces player id's quest state (when they load in).
 func (s *System) SetState(id world.PlayerID, st quest.State) { s.states[id] = &st }
@@ -514,6 +521,9 @@ func (s *System) act(p *world.Player, f func(*quest.State, quest.Env) (quest.Res
 	if len(reward) > 0 {
 		p.RecordEconomy(ReasonReward, reward)
 	}
+	if s.onChange != nil && res.Advanced {
+		s.onChange(p.ID)
+	}
 	return Ok
 }
 
@@ -610,4 +620,7 @@ func (s *System) finish(w *world.World, r resolution) {
 		}
 	}
 	s.sink.QuestCompleted(p.ID, c.done, c.req.Take)
+	if s.onChange != nil {
+		s.onChange(p.ID)
+	}
 }
