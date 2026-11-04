@@ -7,6 +7,7 @@ import {
   BigMap, buildMapData, featuresInRange, mapRotation, Minimap, MINIMAP_CSS, MINIMAP_RANGE_M,
   northMarkerAngle, toMinimap, type MapData,
 } from './minimap';
+import type { HouseInfoState } from '../state/housing';
 import { THEME } from './theme';
 
 const repo = resolve(__dirname, '../../..');
@@ -15,7 +16,8 @@ const areas = JSON.parse(readFileSync(resolve(repo, 'shared/map/areas.json'), 'u
 const SPAWN = { x: areas.spawn.x / 10, z: areas.spawn.z / 10 };
 const skills = JSON.parse(readFileSync(resolve(repo, 'shared/map/skills.json'), 'utf8'));
 const BANK = { x: skills.bank.x / 10, z: skills.bank.z / 10 };
-const CAMPUS = buildMapData(campus, areas, skills);
+const housing = JSON.parse(readFileSync(resolve(repo, 'shared/map/housing.json'), 'utf8'));
+const CAMPUS = buildMapData(campus, areas, skills, housing);
 /** Near the buildings south of Aldrich Park (the spawn, in the park, has none within 60 m). */
 const TOWN = { x: -22.6, z: 50 };
 
@@ -33,6 +35,7 @@ interface Setup {
   yaw?: number;
   remotes?: { id: number; x: number; z: number }[];
   data?: MapData;
+  houses?: HouseInfoState[];
 }
 
 function mount(s: Setup = {}) {
@@ -40,7 +43,7 @@ function mount(s: Setup = {}) {
   let opened = 0;
   minimap = new Minimap({
     parent: document.body, position: () => state.pos, yaw: () => state.yaw, remotes: () => state.remotes,
-    data: s.data ?? CAMPUS, onOpen: () => opened++, viewport: () => ({ width: 390, height: 844 }),
+    data: s.data ?? CAMPUS, houses: () => s.houses ?? [], onOpen: () => opened++, viewport: () => ({ width: 390, height: 844 }),
   });
   return { state, m: minimap, opened: () => opened };
 }
@@ -252,5 +255,94 @@ describe('Minimap tap and big map (AC4)', () => {
     bigMap.open();
     bigMap.open();
     expect(calls).toBe(1);
+  });
+});
+
+type XZ = { x: number; z: number };
+
+describe('housing markers (#625)', () => {
+  const m = (p: { x: number; z: number }) => ({ x: p.x / 10, z: p.z / 10 });
+  const house = (id: number, ownerName: string, mine = false): HouseInfoState => ({
+    id, areaId: 1, ownerName, mine, paidUntil: 0, state: 0, open: false, topBid: 0, auctionEnd: 0, myBid: 0,
+  });
+  const bigWith = (houses: () => HouseInfoState[]) => {
+    bigMap = new BigMap({ parent: document.body, data: CAMPUS, houses, position: () => SPAWN, remotes: () => [], viewport: () => ({ width: 390, height: 844 }) });
+    bigMap.open();
+    return bigMap;
+  };
+  const cls = (root: Element, c: string) => [...root.querySelectorAll(`.${c}`)];
+  const placedAt = (e: Element) => e.getAttribute('transform');
+
+  it('map data has each area thrift and workbench point and every house door', () => {
+    expect(CAMPUS.thrift).toEqual(housing.areas.map((a: { thrift: XZ; workbench: XZ }) => m(a.thrift)));
+    expect(CAMPUS.workbench).toEqual(housing.areas.map((a: { thrift: XZ; workbench: XZ }) => m(a.workbench)));
+    expect(CAMPUS.doors).toEqual(housing.houses.map(m));
+  });
+
+  it('the big map draws thrift and workbench icons distinct from the shop and bank', () => {
+    const b = bigWith(() => []);
+    expect(cls(b.svg!, 'lush-map-thrift')).toHaveLength(housing.areas.length);
+    expect(cls(b.svg!, 'lush-map-workbench')).toHaveLength(housing.areas.length);
+    const t = housing.areas[0].thrift;
+    expect(cls(b.svg!, 'lush-map-thrift').map(placedAt)).toContain(`translate(${t.x / 10} ${t.z / 10})`);
+    expect(cls(b.svg!, 'lush-map-thrift')[0].innerHTML).not.toBe(cls(b.svg!, 'lush-map-shop')[0].innerHTML);
+    expect(cls(b.svg!, 'lush-map-thrift')[0].innerHTML).not.toBe(cls(b.svg!, 'lush-map-bank')[0].innerHTML);
+    expect(cls(b.svg!, 'lush-map-workbench')[0].innerHTML).not.toBe(cls(b.svg!, 'lush-map-thrift')[0].innerHTML);
+  });
+
+  it('the minimap draws thrift and workbench icons near them, upright and distinct', () => {
+    const t = m(housing.areas[0].thrift);
+    const { m: mm } = mount({ pos: { x: t.x + 5, z: t.z } });
+    expect(cls(mm.pois, 'lush-map-thrift')).toHaveLength(1);
+    expect(cls(mm.pois, 'lush-map-workbench')).toHaveLength(1);
+    expect(cls(mm.pois, 'lush-map-thrift')[0].innerHTML).not.toBe(mm.shop.innerHTML);
+    expect(cls(mm.pois, 'lush-map-workbench')[0].innerHTML).not.toBe(mm.shop.innerHTML);
+    const far = mount({ pos: { x: 0, z: 0 } }).m;
+    expect(cls(far.pois, 'lush-map-thrift')).toHaveLength(0);
+  });
+
+  it('draws a labelled home marker only for claimed houses, at j+1 -> houses[j]', () => {
+    const houses = [house(1, 'Peter'), house(2, ''), house(3, 'Ann')];
+    const b = bigWith(() => houses);
+    const homes = cls(b.svg!, 'lush-map-home');
+    expect(homes).toHaveLength(2);
+    const d0 = CAMPUS.doors[0], d2 = CAMPUS.doors[2];
+    expect(homes.map(placedAt)).toEqual([`translate(${d0.x} ${d0.z})`, `translate(${d2.x} ${d2.z})`]);
+    expect(cls(b.svg!, 'lush-map-home-label').map((e) => e.textContent)).toEqual(['Peter', 'Ann']);
+
+    const { m: mm } = mount({ pos: { x: d0.x, z: d0.z + 3 }, houses });
+    const drawn = cls(mm.pois, 'lush-map-home').map((e) => e.getAttribute('data-id'));
+    expect(drawn).toEqual(['home-1-other']);
+  });
+
+  it('the own house is marked differently and markers follow later HousingState changes', () => {
+    let houses = [house(1, 'Peter', true), house(2, 'Ann')];
+    const b = bigWith(() => houses);
+    expect(cls(b.svg!, 'lush-map-home-mine')).toHaveLength(1);
+    expect(cls(b.svg!, 'lush-map-home')).toHaveLength(2);
+    const door = CAMPUS.doors[0];
+    const { m: mm, state } = mount({ pos: { x: door.x, z: door.z + 3 }, houses });
+    expect(cls(mm.pois, 'lush-map-home-mine')).toHaveLength(1);
+
+    houses = [house(1, 'Peter'), house(2, 'Ann', true)];
+    b.update();
+    expect(cls(b.svg!, 'lush-map-home-entry-mine').map((e) => e.getAttribute('data-id'))).toEqual(['home-2']);
+    houses = [house(1, ''), house(2, 'Ann')];
+    b.update();
+    expect(cls(b.svg!, 'lush-map-home')).toHaveLength(1);
+    expect(state).toBeTruthy();
+  });
+
+  it('minimap markers update when the owner changes', () => {
+    const door = CAMPUS.doors[0];
+    const s: Setup = { pos: { x: door.x, z: door.z + 3 }, houses: [house(1, 'Peter')] };
+    const { m: mm } = mount(s);
+    expect(cls(mm.pois, 'lush-map-home-mine')).toHaveLength(0);
+    s.houses = [house(1, 'Me', true)];
+    mm.update();
+    expect(cls(mm.pois, 'lush-map-home-mine')).toHaveLength(1);
+    s.houses = [house(1, '')];
+    mm.update();
+    expect(cls(mm.pois, 'lush-map-home')).toHaveLength(0);
   });
 });
