@@ -4,6 +4,9 @@
 
 import * as flatbuffers from 'flatbuffers';
 
+import { ChatChannel } from '../protocol/chat-channel';
+
+
 export class ChatSend {
   bb: flatbuffers.ByteBuffer|null = null;
   bb_pos = 0;
@@ -29,12 +32,21 @@ text(optionalEncoding?:any):string|Uint8Array|null {
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
+channel():ChatChannel {
+  const offset = this.bb!.__offset(this.bb_pos, 6);
+  return offset ? this.bb!.readUint8(this.bb_pos + offset) : ChatChannel.Local;
+}
+
 static startChatSend(builder:flatbuffers.Builder) {
-  builder.startObject(1);
+  builder.startObject(2);
 }
 
 static addText(builder:flatbuffers.Builder, textOffset:flatbuffers.Offset) {
   builder.addFieldOffset(0, textOffset, 0);
+}
+
+static addChannel(builder:flatbuffers.Builder, channel:ChatChannel) {
+  builder.addFieldInt8(1, channel, ChatChannel.Local);
 }
 
 static endChatSend(builder:flatbuffers.Builder):flatbuffers.Offset {
@@ -42,9 +54,10 @@ static endChatSend(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createChatSend(builder:flatbuffers.Builder, textOffset:flatbuffers.Offset = 0):flatbuffers.Offset {
+static createChatSend(builder:flatbuffers.Builder, textOffset:flatbuffers.Offset = 0, channel:ChatChannel = ChatChannel.Local):flatbuffers.Offset {
   ChatSend.startChatSend(builder);
   ChatSend.addText(builder, textOffset);
+  ChatSend.addChannel(builder, channel);
   return ChatSend.endChatSend(builder);
 }
 }

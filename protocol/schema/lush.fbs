@@ -12,7 +12,7 @@ namespace protocol;
 // The protocol version. The value of Current is the version constant.
 // Hello carries it; a server that sees a different value replies with Reload.
 enum ProtocolVersion : ushort {
-  Current = 19
+  Current = 20
 }
 
 // Position of an entity, in world units (metres) from the map origin.
@@ -170,13 +170,23 @@ table Snapshot {
   entities: [Entity];
 }
 
+// Chat channels. Local (the default, so old-style messages stay local) is
+// heard by players in view; Group is heard by the sender's group only.
+enum ChatChannel : ubyte {
+  Local = 0,
+  Group = 1
+}
+
 table ChatSend {
   text: string;
+  channel: ChatChannel = Local;
 }
 
 table ChatMessage {
   speaker_id: ushort;
   text: string;
+  channel: ChatChannel = Local;
+  speaker_name: string; // so group messages from players out of view can be shown
 }
 
 table Ping {
@@ -269,6 +279,9 @@ table EntityInfo {
   body: ushort;
   shield: ushort;
   total_level: ushort;     // combat level plus every skill level; 0 for NPCs
+  group_id: uint32;        // the player's group; 0 for no group and for NPCs
+  group_banner: ubyte;     // banner colour preset 0..11; only with a group
+  group_name: string;      // the group's name; only with a group
 }
 
 // Server -> client: health bars for entities in view whose health changed.
@@ -1125,6 +1138,132 @@ table QuestResult {
   code: QuestResultCode;
 }
 
+// ---- Groups (docs/specs/groups.md) ----
+// Member-targeted actions use GroupMember.key from GroupState, not an entity
+// id, so they work on offline members.
+
+enum GroupRank : ubyte {
+  Recruit = 0,
+  Member = 1,
+  Officer = 2,
+  Leader = 3
+}
+
+// Permissions the leader can switch on or off per rank.
+enum GroupPermission : ubyte {
+  Keys = 0,       // lock and unlock hall doors
+  VaultRoom = 1,  // enter the vault room
+  Withdraw = 2    // withdraw from the group vault
+}
+
+// Client -> server: found a group (costs gold). Banner is a preset 0..11.
+table GroupFound {
+  name: string;
+  banner: ubyte;
+}
+
+// Client -> server: invite a player in view (entity id).
+table GroupInvite {
+  target_id: ushort;
+}
+
+// Client -> server: answer a GroupInvited.
+table GroupInviteReply {
+  group_id: uint32;
+  accept: bool;
+}
+
+// Client -> server: promote (promote = true) or demote a member.
+table GroupSetRank {
+  member: uint32;
+  promote: bool;
+}
+
+table GroupKick {
+  member: uint32;
+}
+
+table GroupLeave {
+}
+
+// Client -> server: pass leadership to a member.
+table GroupHandover {
+  member: uint32;
+}
+
+// Client -> server: switch a permission on or off for a rank.
+table GroupSetPermission {
+  rank: GroupRank;
+  permission: GroupPermission;
+  on: bool;
+}
+
+table GroupDisband {
+}
+
+// Server -> client: you were invited to a group.
+table GroupInvited {
+  inviter_name: string;
+  group_name: string;
+  group_id: uint32;
+}
+
+// One permission toggle in GroupState.
+struct GroupPermissionSetting {
+  rank: GroupRank;
+  permission: GroupPermission;
+  on: bool;
+}
+
+table GroupMember {
+  key: uint32;    // stable member key, used by member-targeted actions
+  name: string;
+  rank: GroupRank;
+  online: bool;
+}
+
+// Server -> client: the player's group. Sent on login, on any change, and
+// with group_id 0 and no members when the player is not in a group.
+table GroupState {
+  group_id: uint32;
+  name: string;
+  banner: ubyte;
+  own_rank: GroupRank;
+  permissions: [GroupPermissionSetting];
+  vault_gold: uint64;
+  hall_id: ushort;   // 0 for no hall
+  members: [GroupMember];
+}
+
+enum GroupResultCode : ubyte {
+  Ok = 0,
+  NotInGroup = 1,
+  AlreadyInGroup = 2,
+  NameInvalid = 3,          // not 3 to 20 letters, numbers and spaces
+  NameBlocked = 4,          // on the blocked-word list
+  NameTaken = 5,
+  BannerInvalid = 6,
+  NotEnoughGold = 7,
+  NoPermission = 8,         // rank too low for this action
+  TargetNotFound = 9,       // invite target not in view, or unknown member
+  TargetInGroup = 10,       // invited player is already in a group
+  TargetCoolingDown = 11,   // target left or was kicked under 24 hours ago
+  CoolingDown = 12,         // you left or were kicked under 24 hours ago
+  GroupFull = 13,           // 30 members
+  InviteExpired = 14,
+  RankTooHigh = 15,         // target's rank is not below yours
+  CannotPromote = 16,       // already at the highest rank you can give
+  CannotDemote = 17,        // already a Recruit
+  LeaderMustHandover = 18,  // the leader can't leave without handing over
+  HandoverNotOfficer = 19,  // leadership passes to an Officer
+  NotLeader = 20
+}
+
+// Server -> client: the outcome of a group action that failed (or Ok).
+table GroupResult {
+  code: GroupResultCode;
+}
+
 union Message {
   Hello,
   Welcome,
@@ -1211,7 +1350,19 @@ union Message {
   Dialogue,
   DialogueClose,
   QuestCompleted,
-  QuestResult
+  QuestResult,
+  GroupFound,
+  GroupInvite,
+  GroupInviteReply,
+  GroupSetRank,
+  GroupKick,
+  GroupLeave,
+  GroupHandover,
+  GroupSetPermission,
+  GroupDisband,
+  GroupInvited,
+  GroupState,
+  GroupResult
 }
 
 table Envelope {

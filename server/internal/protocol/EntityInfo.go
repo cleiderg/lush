@@ -141,8 +141,40 @@ func (rcv *EntityInfo) MutateTotalLevel(n uint16) bool {
 	return rcv._tab.MutateUint16Slot(20, n)
 }
 
+func (rcv *EntityInfo) GroupId() uint32 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(22))
+	if o != 0 {
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *EntityInfo) MutateGroupId(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(22, n)
+}
+
+func (rcv *EntityInfo) GroupBanner() byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(24))
+	if o != 0 {
+		return rcv._tab.GetByte(o + rcv._tab.Pos)
+	}
+	return 0
+}
+
+func (rcv *EntityInfo) MutateGroupBanner(n byte) bool {
+	return rcv._tab.MutateByteSlot(24, n)
+}
+
+func (rcv *EntityInfo) GroupName() []byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(26))
+	if o != 0 {
+		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+	}
+	return nil
+}
+
 func EntityInfoStart(builder *flatbuffers.Builder) {
-	builder.StartObject(9)
+	builder.StartObject(12)
 }
 func EntityInfoAddId(builder *flatbuffers.Builder, id uint16) {
 	builder.PrependUint16Slot(0, id, 0)
@@ -170,6 +202,15 @@ func EntityInfoAddShield(builder *flatbuffers.Builder, shield uint16) {
 }
 func EntityInfoAddTotalLevel(builder *flatbuffers.Builder, totalLevel uint16) {
 	builder.PrependUint16Slot(8, totalLevel, 0)
+}
+func EntityInfoAddGroupId(builder *flatbuffers.Builder, groupId uint32) {
+	builder.PrependUint32Slot(9, groupId, 0)
+}
+func EntityInfoAddGroupBanner(builder *flatbuffers.Builder, groupBanner byte) {
+	builder.PrependByteSlot(10, groupBanner, 0)
+}
+func EntityInfoAddGroupName(builder *flatbuffers.Builder, groupName flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(11, flatbuffers.UOffsetT(groupName), 0)
 }
 func EntityInfoEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
