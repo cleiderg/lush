@@ -72,7 +72,7 @@ function material(id: number, fallback: THREE.MeshLambertMaterial): THREE.MeshLa
   }
 }
 
-interface Pose {
+export interface Pose {
   x: number;
   y: number;
   z: number;
@@ -83,7 +83,7 @@ const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const quarter = (r: number): number => -(((r % 4) + 4) % 4) * (Math.PI / 2);
 
 /** Where an item stands, or null if it can't be placed (unknown parent, slot or wall item). */
-function pose(item: RoomItem, byId: ReadonlyMap<number, RoomItem>, depth = 0): Pose | null {
+export function itemPose(item: RoomItem, byId: ReadonlyMap<number, RoomItem>, depth = 0): Pose | null {
   if (item.layer === LAYER_WALL) {
     const w = furnitureFootprint(item.itemId).w;
     const c = item.x + w / 2, e = ROOM_SIZE - 0.5;
@@ -98,7 +98,7 @@ function pose(item: RoomItem, byId: ReadonlyMap<number, RoomItem>, depth = 0): P
   if (item.layer === LAYER_SURFACE) {
     const parent = byId.get(item.parentPlacedId);
     if (!parent || parent.layer !== LAYER_FLOOR || depth > 0) return null;
-    const pp = pose(parent, byId, depth + 1);
+    const pp = itemPose(parent, byId, depth + 1);
     const anchor = surfaceAnchors(parent.itemId)[item.slot];
     if (!pp || !anchor) return null;
     const a = anchor.clone().applyAxisAngle(Y_AXIS, pp.yaw);
@@ -171,7 +171,7 @@ export class RoomView {
     for (const it of desc.items) {
       let p: Pose | null;
       try {
-        p = pose(it, byId);
+        p = itemPose(it, byId);
       } catch {
         p = null; // unknown item id
       }

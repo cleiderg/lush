@@ -155,15 +155,21 @@ func (s *Server) homeEdit(g *guest, p *world.Player) (econReq, bool) {
 // homeClaimed records the home that a committed claim created, so that the
 // next tick adds it to the home room system. Saver goroutine.
 func (s *Server) homeClaimed(ctx context.Context, g *guest, plot int32) error {
+	return s.homeCreated(ctx, g.storeID, g.id, plot)
+}
+
+// homeCreated is homeClaimed for the stored player storeID, whose session id
+// is owner (a house winner may be offline). Saver goroutine.
+func (s *Server) homeCreated(ctx context.Context, storeID int64, owner world.PlayerID, plot int32) error {
 	if s.rooms == nil {
 		return nil
 	}
-	h, err := s.rooms.homes.LoadHome(ctx, g.storeID)
+	h, err := s.rooms.homes.LoadHome(ctx, storeID)
 	if err != nil {
 		return fmt.Errorf("load new home: %w", err)
 	}
 	s.rooms.mu.Lock()
-	s.rooms.add = append(s.rooms.add, newHome{plot: homeroom.HomeID(plot), store: h.ID, owner: g.id})
+	s.rooms.add = append(s.rooms.add, newHome{plot: homeroom.HomeID(plot), store: h.ID, owner: owner})
 	s.rooms.mu.Unlock()
 	return nil
 }

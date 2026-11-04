@@ -8,6 +8,7 @@ import {
   FishingSpotState, LevelUp, SkillCatalog, FishingSpotKindDef, TreeKindDef, ToolSkill, ResourceState, Skill, SkillAction, SkillResult, SkillResultCode, SkillStats, SkillTarget, ShopResult, ShopResultCode, ShopSell, Snapshot, TradeAccept,
   TradeCancel, TradeItem, TradeOffer, TradeRemove, TradeRequest, TradeRequestNotice, TradeResult, TradeResultCode,
   TradeSetGold, TradeState, Vec2, Welcome,
+  CraftResult, CraftResultCode, ShopKind, WorkbenchCatalog, WorkbenchCraft, WorkbenchRecipe,
   HomeEnter, HomeLeave, HomeMove, HomePlace, HomeRemove, HomeResult, HomeResultCode, HomeRotate, HomeSetFloor, HomeSetOpen,
   AuctionBid, AuctionResult, AuctionResultCode,
   HomeSetWallpaper, HomeState, HouseClaim, HouseInfo, HouseState, HousingResult, HousingResultCode, HousingState, PlacedItem, PlacementKind, RentPay,
@@ -70,8 +71,25 @@ export interface ItemInfo {
   toolLevel: number;
   /** Cooking level to cook it; 0 unless it is a raw fish. */
   cookingLevel: number;
-  /** How the item is placed in a home; PlacementKind.None if it can't be. */
-  placement?: PlacementKind;
+  /** Furniture width in tiles; 0 when not furniture. */
+  footprintW: number;
+  /** Furniture depth in tiles; 0 when not furniture. */
+  footprintD: number;
+  /** Where it can go in a home; PlacementKind.None if not furniture. */
+  placement: PlacementKind;
+  /** Small items a surface piece holds; 0 if none. */
+  surfaceSlots: number;
+  /** Gold the Campus Thrift stall charges; 0 when it doesn't sell the item. */
+  thriftSellsFor: number;
+  /** Gold the Campus Thrift stall pays; 0 when it doesn't buy the item. */
+  thriftBuysFor: number;
+}
+
+/** One workbench recipe: inputs are parallel arrays of item ids and quantities. */
+export interface WorkbenchRecipeInfo {
+  outputItemId: number;
+  inputs: { itemId: number; quantity: number }[];
+  gold: number;
 }
 
 /** One tree kind of the SkillCatalog. */
@@ -283,6 +301,8 @@ export type ServerMessage =
   | ({ type: 'playerStats' } & PlayerStatsState)
   | ({ type: 'inventory' } & InventoryView)
   | { type: 'itemCatalog'; items: ItemInfo[] }
+  | { type: 'workbenchCatalog'; recipes: WorkbenchRecipeInfo[] }
+  | { type: 'craftResult'; code: CraftResultCode }
   | { type: 'skillCatalog'; trees: TreeKindInfo[]; fishingSpots: FishingSpotKindInfo[] }
   | ({ type: 'entityInfo' } & EntityInfoState)
   | { type: 'entityHealth'; entries: HealthEntry[] }
@@ -353,14 +373,19 @@ export function encodeItemAction(action: ItemActionKind, slot: number, equipSlot
   return wrap(b, Message.ItemAction, ItemAction.createItemAction(b, action, slot, equipSlot));
 }
 
-export function encodeShopBuy(itemId: number, quantity: number): Uint8Array {
+export function encodeShopBuy(itemId: number, quantity: number, shop: ShopKind = ShopKind.Market): Uint8Array {
   const b = new flatbuffers.Builder(32);
-  return wrap(b, Message.ShopBuy, ShopBuy.createShopBuy(b, itemId, quantity));
+  return wrap(b, Message.ShopBuy, ShopBuy.createShopBuy(b, itemId, quantity, shop));
 }
 
-export function encodeShopSell(slot: number, quantity: number): Uint8Array {
+export function encodeShopSell(slot: number, quantity: number, shop: ShopKind = ShopKind.Market): Uint8Array {
   const b = new flatbuffers.Builder(32);
-  return wrap(b, Message.ShopSell, ShopSell.createShopSell(b, slot, quantity));
+  return wrap(b, Message.ShopSell, ShopSell.createShopSell(b, slot, quantity, shop));
+}
+
+export function encodeWorkbenchCraft(outputItemId: number): Uint8Array {
+  const b = new flatbuffers.Builder(32);
+  return wrap(b, Message.WorkbenchCraft, WorkbenchCraft.createWorkbenchCraft(b, outputItemId));
 }
 
 export function encodePickUp(groundItemId: number): Uint8Array {
@@ -663,11 +688,33 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
           toolSkill: d.toolSkill(),
           toolLevel: d.toolLevel(),
           cookingLevel: d.cookingLevel(),
+          footprintW: d.footprintW(),
+          footprintD: d.footprintD(),
           placement: d.placement(),
+          surfaceSlots: d.surfaceSlots(),
+          thriftSellsFor: d.thriftSellsFor(),
+          thriftBuysFor: d.thriftBuysFor(),
         });
       }
       return { type: 'itemCatalog', items };
     }
+    case Message.WorkbenchCatalog: {
+      const m = env.msg(new WorkbenchCatalog()) as WorkbenchCatalog;
+      const recipes: WorkbenchRecipeInfo[] = [];
+      const r = new WorkbenchRecipe();
+      for (let i = 0; i < m.recipesLength(); i++) {
+        const o = m.recipes(i, r);
+        if (!o) continue;
+        const inputs: { itemId: number; quantity: number }[] = [];
+        for (let j = 0; j < o.inputItemIdsLength(); j++) {
+          inputs.push({ itemId: o.inputItemIds(j) ?? 0, quantity: o.inputQuantities(j) ?? 0 });
+        }
+        recipes.push({ outputItemId: o.outputItemId(), inputs, gold: o.gold() });
+      }
+      return { type: 'workbenchCatalog', recipes };
+    }
+    case Message.CraftResult:
+      return { type: 'craftResult', code: (env.msg(new CraftResult()) as CraftResult).code() };
     case Message.EntityInfo: {
       const m = env.msg(new EntityInfo()) as EntityInfo;
       return {

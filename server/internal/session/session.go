@@ -193,10 +193,21 @@ type Server struct {
 	mu     sync.Mutex
 	guests map[int64]*guest // by store id; session ids for known players
 	nextID uint32
-	keep   map[int64]world.PlayerID // owners of houses: their session ids are never reused
-	idle   *list.List               // offline guests, longest offline first
-	ops    []op
-	conns  map[transport.Conn]struct{}
+	myBids map[world.PlayerID]map[housing.HouseID]int // held bid of each player per house, as last told or loaded
+	// Gold that auction commits moved in the store for players out of the
+	// world when the commit started (see movedGold). goldSeq counts those
+	// commits; goldMoved is the last one for each player who had no guest.
+	// goldPending counts the auction writes in flight for each player who
+	// had no guest when it started.
+	goldSeq     uint64
+	goldMoved   map[int64]uint64
+	goldPending map[int64]int
+	goldMoves   []goldMove
+	auctions    store.Auctions           // nil if the player store keeps no auctions
+	keep        map[int64]world.PlayerID // owners of houses: their session ids are never reused
+	idle        *list.List               // offline guests, longest offline first
+	ops         []op
+	conns       map[transport.Conn]struct{}
 
 	saver *saver
 
@@ -366,7 +377,7 @@ func (s *Server) ServeConn(c transport.Conn) {
 			protocol.MessageCardTableReady, protocol.MessageShedPlay, protocol.MessageShedDraw,
 			protocol.MessageBankOpen, protocol.MessageBankClose, protocol.MessageBankDeposit,
 			protocol.MessageBankWithdraw, protocol.MessageBankDepositInventory, protocol.MessageBankDepositEquipment,
-			protocol.MessageSkillAction, protocol.MessageWorkbenchCraft, protocol.MessageHouseClaim, protocol.MessageRentPay,
+			protocol.MessageSkillAction, protocol.MessageWorkbenchCraft, protocol.MessageHouseClaim, protocol.MessageRentPay, protocol.MessageAuctionBid,
 			protocol.MessageHomeEnter, protocol.MessageHomeLeave, protocol.MessageHomeSetOpen, protocol.MessageHomePlace,
 			protocol.MessageHomeMove, protocol.MessageHomeRotate, protocol.MessageHomeRemove,
 			protocol.MessageHomeSetWallpaper, protocol.MessageHomeSetFloor:
@@ -396,6 +407,9 @@ func (s *Server) handshake(ctx context.Context, c transport.Conn) *guest {
 	}
 
 	// Store calls happen here, on the connection goroutine, outside s.mu.
+	s.mu.Lock()
+	seq := s.goldSeq
+	s.mu.Unlock()
 	sp, token, fresh, err := s.resolve(hctx, m.helloTok)
 	if err != nil {
 		s.log.Error("resolve guest", "err", err)
@@ -409,6 +423,26 @@ func (s *Server) handshake(ctx context.Context, c transport.Conn) *guest {
 	}
 
 	s.mu.Lock()
+	for s.guests[sp.ID] == nil && (s.goldPending[sp.ID] > 0 || s.goldMoved[sp.ID] > seq) {
+		// An auction is moving the player's gold in the store, or moved it
+		// after sp was read: read it again once it is done.
+		pending := s.goldPending[sp.ID] > 0
+		seq = s.goldSeq
+		s.mu.Unlock()
+		if pending {
+			select {
+			case <-hctx.Done():
+				s.log.Error("resolve guest: auction write in flight", "err", hctx.Err())
+				return nil
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+		if sp, _, _, err = s.resolve(hctx, token); err != nil {
+			s.log.Error("resolve guest", "err", err)
+			return nil
+		}
+		s.mu.Lock()
+	}
 	known := s.guests[sp.ID] != nil
 	g, err := s.guestLocked(sp, fresh)
 	if err != nil {
@@ -423,6 +457,7 @@ func (s *Server) handshake(ctx context.Context, c transport.Conn) *guest {
 	}
 	if !known {
 		g.bank = bk // a known guest keeps the bank it has
+		delete(s.goldMoved, sp.ID)
 	}
 	g.conns++
 	if g.idle != nil {
@@ -726,6 +761,7 @@ func (s *Server) Tick(w *world.World, _ time.Duration) {
 	}
 
 	s.addClaimedHomes()
+	s.applyMovedGold()
 
 	s.econ = s.econ[:0]
 	for id, g := range s.live {
@@ -1034,7 +1070,7 @@ func (s *Server) sendInitial(g *guest, p *world.Player) {
 	g.conn.Send(encodeSkillStats(s.bld, &p.SkillXP))
 	s.sendInitialSkills(g)
 	if s.housing != nil {
-		g.conn.Send(s.housingState(g, s.housing.List()))
+		g.conn.Send(s.housingState(g, s.joinHouses(g)))
 	}
 }
 
@@ -1141,6 +1177,9 @@ func (s *Server) appendEconomy(dst []econReq, g *guest, p *world.Player) []econR
 		if ev.Reason == housing.ReasonClaim || ev.Reason == housing.ReasonRent {
 			continue // saved by the house's own transaction (CommitHousing)
 		}
+		if isAuction(ev.Reason) {
+			continue // saved by the auction's own transaction (CommitHousing)
+		}
 		if isCardRoom(ev.Reason) {
 			continue // saved by the card room's own transaction (CommitCardRoom)
 		}
@@ -1177,6 +1216,7 @@ func (s *Server) collectSaves() []saveReq {
 // world state from the calling goroutine. It returns an error if ctx ends
 // first or any save failed.
 func (s *Server) SaveAll(ctx context.Context) error {
+	s.applyMovedGold()
 	s.econ = s.econ[:0]
 	for id, g := range s.live {
 		if p := s.w.Player(id); p != nil {
