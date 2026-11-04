@@ -265,7 +265,7 @@ describe('NPC animations stay instanced (AC4)', () => {
       });
       expect(meshes).toBe(types.length);
     }
-    expect(countDrawCalls(scene(300).scene)).toBe(countDrawCalls(scene(6).scene));
+    expect(countDrawCalls(scene(300).scene)).toBe(countDrawCalls(scene(13).scene));
   });
 });
 
