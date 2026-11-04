@@ -2,6 +2,7 @@ package talk
 
 import (
 	"bytes"
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -29,7 +30,12 @@ func (s *sink) QuestCompleted(_ world.PlayerID, c quest.Completion, take []gamed
 	s.taken = append(s.taken, take)
 }
 
+type committer struct{ reqs []CommitRequest }
+
+func (c *committer) CommitQuest(r CommitRequest) { c.reqs = append(c.reqs, r) }
+
 type fixture struct {
+	cm   *committer
 	t    *testing.T
 	d    *gamedata.Data
 	eng  *quest.Engine
@@ -47,7 +53,8 @@ func setup(t *testing.T) *fixture {
 	}
 	eng := quest.New(d)
 	sk := &sink{}
-	sys, err := New(d, eng, 1, sk)
+	cm := &committer{}
+	sys, err := New(d, eng, 1, sk, cm)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +67,7 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	w.Tick() // spawns the talkers
-	return &fixture{t, d, eng, sys, sk, w, p}
+	return &fixture{cm, t, d, eng, sys, sk, w, p}
 }
 
 func (f *fixture) npcOf(key string) *world.NPC {
@@ -263,6 +270,11 @@ func TestOverdueFirstAndLastTalk(t *testing.T) {
 		t.Fatalf("step 2 node = %+v", got)
 	}
 	f.reply(0)
+	if len(f.cm.reqs) != 1 {
+		t.Fatalf("commit requests = %d", len(f.cm.reqs))
+	}
+	f.sys.Resolve(f.cm.reqs[0].ID, true)
+	f.w.Tick()
 
 	if len(f.sink.completed) != 1 {
 		t.Fatalf("completions = %d", len(f.sink.completed))
@@ -298,12 +310,196 @@ func TestOverdueFirstAndLastTalk(t *testing.T) {
 	}
 }
 
+// atLastStep starts quest key and puts the player on its last step.
+func (f *fixture) atLastStep(key string, npc string) *world.NPC {
+	f.t.Helper()
+	q, _ := f.d.QuestByKey(key)
+	n := f.npcOf(npc)
+	f.p.Pos = n.Pos
+	st := f.sys.State(f.p.ID)
+	if _, err := f.eng.Start(st, q.ID, env{f.p, f.d}); err != nil {
+		f.t.Fatal(err)
+	}
+	for st.Get(q.ID).Step < len(q.Steps)-1 {
+		switch s := q.Steps[st.Get(q.ID).Step]; s.Kind {
+		case gamedata.StepTalk:
+			f.eng.Talk(st, s.NPC, env{f.p, f.d})
+		case gamedata.StepQuestItem:
+			f.eng.GotItem(st, s.Item, env{f.p, f.d})
+		default:
+			f.t.Fatalf("unsupported step %v", s.Kind)
+		}
+	}
+	return n
+}
+
+func (f *fixture) finishOverdue() {
+	f.t.Helper()
+	lib := f.atLastStep("overdue", "librarian")
+	if _, err := f.p.Inv.Add(f.d, f.item("overdue_book"), 1); err != nil {
+		f.t.Fatal(err)
+	}
+	f.talk(lib)
+	f.reply(0)
+}
+
+func TestCompletionInventoryFull(t *testing.T) {
+	f := setup(t)
+	pad := f.item("overdue_book")
+	q, _ := f.d.QuestByKey("overdue")
+	lib := f.atLastStep("overdue", "librarian")
+	if _, err := f.p.Inv.Add(f.d, pad, 1); err != nil {
+		t.Fatal(err)
+	}
+	// Every slot taken, and no room in the gold balance either: the reward
+	// cannot be given. (The book's own slot frees up when it is handed in.)
+	for _, it := range f.d.Items {
+		if it.ID == pad || it.Stackable() {
+			continue
+		}
+		for {
+			if _, err := f.p.Inv.Add(f.d, it.ID, 1); err != nil {
+				break
+			}
+		}
+	}
+	f.p.Inv.Gold = math.MaxInt - 10
+	f.talk(lib)
+	f.reply(0)
+	if len(f.cm.reqs) != 0 {
+		t.Fatalf("commit sent with a full inventory: %+v", f.cm.reqs)
+	}
+	if n := len(f.sink.results); n == 0 || f.sink.results[n-1] != InventoryFull {
+		t.Fatalf("results = %v", f.sink.results)
+	}
+	if got := f.sys.State(f.p.ID).Get(q.ID); got.Status != quest.InProgress || got.Step != 2 {
+		t.Fatalf("state %+v", got)
+	}
+	if f.p.Inv.Count(pad) != 1 || f.p.Inv.Locked() || f.p.Inv.Gold != math.MaxInt-10 {
+		t.Fatal("inventory changed or locked")
+	}
+}
+
+func TestCompletionCommitRequest(t *testing.T) {
+	f := setup(t)
+	q, _ := f.d.QuestByKey("overdue")
+	goldBefore := f.p.Inv.Gold
+	f.finishOverdue()
+	if len(f.cm.reqs) != 1 {
+		t.Fatalf("requests = %d", len(f.cm.reqs))
+	}
+	r := f.cm.reqs[0]
+	if r.Player != f.p.ID || r.Quest != q.ID || r.QuestPoints != 1 || r.Gold != 150 {
+		t.Fatalf("request = %+v", r)
+	}
+	if len(r.XP) != 1 || r.XP[0].Skill != gamedata.CombatSkill || r.XP[0].XP != 500 {
+		t.Fatalf("xp = %+v", r.XP)
+	}
+	if len(r.Items) != 1 || r.Items[0].Item != f.item("library_card") {
+		t.Fatalf("items = %+v", r.Items)
+	}
+	if len(r.Remove) != 1 || r.Remove[0].Item != f.item("overdue_book") {
+		t.Fatalf("remove = %+v", r.Remove)
+	}
+	// Nothing else changes before Resolve.
+	if !f.p.Inv.Locked() || f.p.Inv.Gold != goldBefore || f.p.Inv.Count(f.item("overdue_book")) != 1 ||
+		f.p.Inv.Count(f.item("library_card")) != 0 || len(f.sink.completed) != 0 {
+		t.Fatal("state changed before Resolve")
+	}
+	if got := f.sys.State(f.p.ID).Get(q.ID); got.Status != quest.InProgress || got.Step != 2 {
+		t.Fatalf("state %+v", got)
+	}
+}
+
+func TestResolveSuccessAndFailure(t *testing.T) {
+	for _, ok := range []bool{true, false} {
+		f := setup(t)
+		q, _ := f.d.QuestByKey("overdue")
+		f.finishOverdue()
+		f.sys.Resolve(f.cm.reqs[0].ID, ok)
+		f.w.Tick()
+		if f.p.Inv.Locked() {
+			t.Fatalf("ok=%v: inventory still locked", ok)
+		}
+		got := f.sys.State(f.p.ID).Get(q.ID)
+		if ok {
+			if got.Status != quest.Complete || f.p.Inv.Count(f.item("overdue_book")) != 0 ||
+				f.p.Inv.Count(f.item("library_card")) != 1 || f.p.Inv.Gold != 150 ||
+				len(f.sink.completed) != 1 || f.sink.completed[0].Quest != q.ID {
+				t.Fatalf("success not applied: %+v gold %d", got, f.p.Inv.Gold)
+			}
+		} else if got.Status != quest.InProgress || got.Step != 2 || f.p.Inv.Count(f.item("overdue_book")) != 1 ||
+			f.p.Inv.Gold != 0 || f.p.Inv.Count(f.item("library_card")) != 0 || len(f.sink.completed) != 0 {
+			t.Fatalf("failure changed things: %+v", got)
+		}
+	}
+}
+
+func TestTalkWhilePendingSendsNoSecondRequest(t *testing.T) {
+	f := setup(t)
+	f.finishOverdue()
+	lib := f.npcOf("librarian")
+	f.talk(lib)
+	f.reply(0)
+	f.talk(lib)
+	f.reply(0)
+	if len(f.cm.reqs) != 1 {
+		t.Fatalf("requests = %d, want 1", len(f.cm.reqs))
+	}
+	f.sys.Resolve(f.cm.reqs[0].ID, true)
+	f.sys.Resolve(f.cm.reqs[0].ID, true) // repeated id ignored
+	f.w.Tick()
+	if len(f.sink.completed) != 1 || f.p.Inv.Gold != 150 {
+		t.Fatalf("completed %d gold %d", len(f.sink.completed), f.p.Inv.Gold)
+	}
+}
+
+func TestFishFryHandInRecorded(t *testing.T) {
+	f := setup(t)
+	f.p.AddSkillXP(world.Fishing, 1_000_000*world.SkillXPScale)
+	f.p.AddSkillXP(world.Cooking, 1_000_000*world.SkillXPScale)
+	cook := f.atLastStep("fish_fry", "food_truck_cook")
+	trout := f.item("trout")
+	if _, err := f.p.Inv.Add(f.d, trout, 5); err != nil {
+		t.Fatal(err)
+	}
+	f.talk(cook)
+	f.reply(0)
+	if len(f.cm.reqs) != 1 {
+		t.Fatalf("requests = %d", len(f.cm.reqs))
+	}
+	r := f.cm.reqs[0]
+	if len(r.Take) != 1 || r.Take[0].Item != trout || r.Take[0].Quantity != 5 {
+		t.Fatalf("take = %+v", r.Take)
+	}
+	f.sys.Resolve(r.ID, true)
+	f.w.Tick()
+	var hand []world.Change
+	for _, e := range f.p.PendingEconomy() {
+		if e.Reason == ReasonHandIn {
+			hand = append(hand, e.Changes...)
+		}
+	}
+	n := 0
+	for _, c := range hand {
+		if c.Kind == world.ChangeRemove && c.Item == trout {
+			n += c.Qty
+		}
+	}
+	if n != 5 {
+		t.Fatalf("recorded hand-in changes = %+v", hand)
+	}
+	if f.p.Inv.Count(trout) != 0 {
+		t.Fatal("trout still carried")
+	}
+}
+
 func BenchmarkTick(b *testing.B) {
 	d, err := gamedata.Default()
 	if err != nil {
 		b.Fatal(err)
 	}
-	sys, err := New(d, quest.New(d), 1, &sink{})
+	sys, err := New(d, quest.New(d), 1, &sink{}, &committer{})
 	if err != nil {
 		b.Fatal(err)
 	}
