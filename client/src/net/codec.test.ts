@@ -96,13 +96,13 @@ describe('decode M6 server messages', () => {
   it('decodes NpcCatalog', () => {
     const b = new flatbuffers.Builder(128);
     const rat = NpcDef.createNpcDef(b, 1, b.createString('Rat'), 2);
-    const anteater = NpcDef.createNpcDef(b, 4, b.createString('Anteater'), 15);
+    const anteater = NpcDef.createNpcDef(b, 4, b.createString('Anteater'), 15, true);
     const v = NpcCatalog.createNpcsVector(b, [rat, anteater]);
     expect(decode(finish(b, Message.NpcCatalog, NpcCatalog.createNpcCatalog(b, v)))).toEqual({
       type: 'npcCatalog',
       npcs: [
-        { id: 1, name: 'Rat', combatLevel: 2 },
-        { id: 4, name: 'Anteater', combatLevel: 15 },
+        { id: 1, name: 'Rat', combatLevel: 2, talkable: false },
+        { id: 4, name: 'Anteater', combatLevel: 15, talkable: true },
       ],
     });
   });

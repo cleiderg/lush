@@ -23,7 +23,7 @@ interface Other { id: number; x: number; z: number; kind: EntityKind; npcType?: 
 function game(pos: { x: number; z: number }, others: Other[] = [], ground: { id: number; x: number; z: number; itemId: number }[] = []): GameState {
   const g = new GameState();
   g.handle({ type: 'welcome', playerId: 1, guestToken: 't', spawn: pos, tickRate: 20 }, 0);
-  g.handle({ type: 'npcCatalog', npcs: [{ id: COYOTE, name: 'Coyote', combatLevel: 9 }] }, 0);
+  g.handle({ type: 'npcCatalog', npcs: [{ id: COYOTE, name: 'Coyote', combatLevel: 9, talkable: false }, { id: 30, name: 'Dean Ada', combatLevel: 0, talkable: true }] }, 0);
   g.items.setCatalog([{ id: 3, name: 'Acorn' } as never]);
   const entities = [{ id: 1, x: pos.x, z: pos.z, heading: 0, animation: 0 }, ...others.map((o) => ({ id: o.id, x: o.x, z: o.z, heading: 0, animation: 0 }))];
   g.handle({ type: 'snapshot', tick: 1, lastInputSeq: 0, entities }, 0);
@@ -54,6 +54,7 @@ describe('interact prompt text (AC1)', () => {
   const cases: [string, () => GameState, string, string | null][] = [
     ['an NPC to attack', () => game(OPEN, [{ id: 5, x: OPEN.x + 1, z: OPEN.z, kind: EntityKind.Npc, npcType: COYOTE, combatLevel: 12 }]),
       'Attack Coyote · Lvl 12', 'Coyote'],
+    ['a talking NPC', () => game(OPEN, [{ id: 8, x: OPEN.x + 2, z: OPEN.z, kind: EntityKind.Npc, npcType: 30 }]), 'Talk Dean Ada', 'Dean Ada'],
     ['a player in the PvP zone', () => game(PVP, [{ id: 6, x: PVP.x + 2, z: PVP.z, kind: EntityKind.Player }]), 'Attack a player', null],
     ['the bank booth', () => game({ x: BANK_BOOTH.x + 1, z: BANK_BOOTH.z }), 'Open Bank', 'Bank'],
     ['the shop', () => game({ ...SHOP_STALL }), 'Open Campus Market', 'Campus Market'],
@@ -97,7 +98,7 @@ describe('interact prompt and the Interact button agree (AC2)', () => {
       { id: 6, x: OPEN.x + 1, z: OPEN.z, kind: EntityKind.Player },
     ]);
     const actions: InteractActions = {
-      openShop: vi.fn(), openBank: vi.fn(), openCardTable: vi.fn(), openHouse: vi.fn(), openThrift: vi.fn(), openWorkbench: vi.fn(), sendPickUp: vi.fn(), sendAttackTarget: vi.fn(), sendTradeRequest: vi.fn(), sendSkillAction: vi.fn(),
+      openShop: vi.fn(), openBank: vi.fn(), openCardTable: vi.fn(), openHouse: vi.fn(), openThrift: vi.fn(), openWorkbench: vi.fn(), sendPickUp: vi.fn(), sendAttackTarget: vi.fn(), sendTradeRequest: vi.fn(), sendTalk: vi.fn(), sendSkillAction: vi.fn(),
     };
     const p = mount(g);
     expect(p.root.textContent).toBe('Attack Coyote · Lvl 9');

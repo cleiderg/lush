@@ -174,7 +174,7 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
   if (opts.panel === 'dialogue') {
     // A talking NPC (a bot's id stands in for it) with two lines and three replies.
     msgs.push(
-      { type: 'npcCatalog', npcs: [{ id: 90, name: 'Professor Peter', combatLevel: 0 }] },
+      { type: 'npcCatalog', npcs: [{ id: 90, name: 'Professor Peter', combatLevel: 0, talkable: true }] },
       { type: 'entityInfo', id: BOT_IDS[0], kind: EntityKind.Npc, npcType: 90, combatLevel: 0, totalLevel: 0, equipment: { weapon: 0, head: 0, body: 0, shield: 0 } },
       {
         type: 'dialogue', npcId: BOT_IDS[0],

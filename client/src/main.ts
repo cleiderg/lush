@@ -81,6 +81,7 @@ const controls = new Controls({
       sendPickUp: (id) => session.sendPickUp(id),
       sendAttackTarget: (id) => session.sendAttackTarget(id),
       sendTradeRequest: (id) => session.sendTradeRequest(id),
+      sendTalk: (id) => session.sendTalk(id),
     }),
 });
 

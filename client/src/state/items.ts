@@ -92,6 +92,11 @@ export class ItemState {
     this.notify();
   }
 
+  /** The NPC type ids whose NpcDef.talkable is set. */
+  talkableNpcTypes(): ReadonlySet<number> {
+    return new Set([...this.npcs.values()].filter((n) => n.talkable).map((n) => n.id));
+  }
+
   setNpcCatalog(npcs: NpcInfo[]): void {
     this.npcs = new Map(npcs.map((d) => [d.id, { ...d }]));
     this.notify();
