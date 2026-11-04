@@ -11,6 +11,8 @@ import (
 	"github.com/cleiderg/lush/server/internal/store"
 	"github.com/cleiderg/lush/server/internal/systems/furniture"
 	"github.com/cleiderg/lush/server/internal/systems/gamedata"
+	"github.com/cleiderg/lush/server/internal/systems/homeroom"
+	"github.com/cleiderg/lush/server/internal/systems/housing"
 	"github.com/cleiderg/lush/server/internal/world"
 )
 
@@ -101,14 +103,35 @@ func TestHousingReseedKeepsOwnersAndBuildsSystems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := len(homes.List()); got != 40 {
-		t.Fatalf("housing system has %d plots, want 40", got)
+	list := homes.List()
+	if len(list) != 40 {
+		t.Fatalf("housing system has %d plots, want 40", len(list))
+	}
+	for j, h := range list {
+		if h.ID != housing.HouseID(j+1) || (h.ID == 7) != (h.Owner != 0) {
+			t.Fatalf("house %d = %+v", j, h)
+		}
 	}
 	rooms, err := homeRoomSystem(data, 5, clock, sess, mem)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = rooms
+	// AddHome fails for a home with no door, so every unowned plot taking a
+	// home shows the room system has every plot's door.
+	for _, p := range plots {
+		if p.ID == 7 {
+			if _, ok := rooms.State(homeroom.HomeID(7)); !ok {
+				t.Fatal("owned plot 7 has no home room")
+			}
+			continue
+		}
+		if err := rooms.AddHome(homeroom.Spec{ID: homeroom.HomeID(p.ID), Owner: 99}); err != nil {
+			t.Fatalf("plot %d: %v", p.ID, err)
+		}
+	}
+	if err := rooms.AddHome(homeroom.Spec{ID: 41, Owner: 99}); err == nil {
+		t.Fatal("home 41 added without a door")
+	}
 }
 
 type furnSink struct{ got []furniture.Result }
