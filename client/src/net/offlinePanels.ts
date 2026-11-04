@@ -1,4 +1,4 @@
-import { EquipSlot, HouseState, ItemKind, PlacementKind, QuestSkill, QuestState, ShedColour, ShedSymbol, Skill, ToolSkill } from '../protocol';
+import { EntityKind, EquipSlot, HouseState, ItemKind, PlacementKind, QuestSkill, QuestState, ShedColour, ShedSymbol, Skill, ToolSkill } from '../protocol';
 import type { ItemInfo, ServerMessage, ShedCardValue } from './codec';
 import { OFFLINE_PLAYER_ID, seededRandom, type OfflineOptions } from './offline';
 
@@ -144,6 +144,19 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
           { outputItemId: 41, inputs: [{ itemId: 14, quantity: 10 }, { itemId: 13, quantity: 2 }], gold: 80 },
           { outputItemId: 42, inputs: [{ itemId: 14, quantity: 6 }], gold: 400 },
         ],
+      },
+    );
+  }
+
+  if (opts.panel === 'dialogue') {
+    // A talking NPC (a bot's id stands in for it) with two lines and three replies.
+    msgs.push(
+      { type: 'npcCatalog', npcs: [{ id: 90, name: 'Professor Peter', combatLevel: 0 }] },
+      { type: 'entityInfo', id: BOT_IDS[0], kind: EntityKind.Npc, npcType: 90, combatLevel: 0, totalLevel: 0, equipment: { weapon: 0, head: 0, body: 0, shield: 0 } },
+      {
+        type: 'dialogue', npcId: BOT_IDS[0],
+        lines: ['Ah, a new face! The anteaters have been stealing my notes.', 'Could you help me get them back?'],
+        replies: ['Sure, I will help', 'Tell me more', 'Not right now'],
       },
     );
   }

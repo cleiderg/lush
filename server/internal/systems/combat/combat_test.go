@@ -705,3 +705,26 @@ func BenchmarkTick(b *testing.B) {
 		f.sys.Tick(f.w, 600*time.Millisecond)
 	}
 }
+
+// TestCannotAttackTalkingNPC checks that an attack on a talking NPC is
+// refused: no damage, no fight back, and the target is dropped.
+func TestCannotAttackTalkingNPC(t *testing.T) {
+	f := newFixture(t, alwaysMax, false)
+	p := f.player(t, 1, 10, f.field(0, 0), "")
+	n := f.npc(t, "librarian", f.field(1, 0))
+	n.HP = 10 // even with HP to lose
+	f.attack(p, n)
+	f.combatTicks(10)
+	if n.HP != 10 {
+		t.Fatalf("talking NPC HP = %d, want 10", n.HP)
+	}
+	if h := f.rec.hits(false); len(h) != 0 {
+		t.Fatalf("player hits = %v, want none", h)
+	}
+	if _, ok := f.sys.TargetOf(p.ID); ok {
+		t.Fatal("target kept after refused attack")
+	}
+	if f.w.NPC(n.ID) == nil || p.HP != p.MaxHP(f.d.Rules) {
+		t.Fatal("NPC removed or player hurt")
+	}
+}
