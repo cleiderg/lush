@@ -44,10 +44,14 @@ describe('npcs (AC1)', () => {
 });
 
 describe('npc models (AC2)', () => {
-  it('has a distinct model for each of the six types and a generic fallback', () => {
-    expect(TYPES).toEqual([1, 2, 3, 4, 5, 6]);
+  it('has a distinct model for each of the thirteen types and a generic fallback', () => {
+    expect(TYPES).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
     const shapes = new Set(TYPES.map((t) => JSON.stringify(NPC_MODELS[t])));
-    expect(shapes.size).toBe(6);
+    expect(shapes.size).toBe(13);
+    for (const t of TYPES) {
+      expect(npcModelKey(t)).toBe(t);
+      expect(makeNpcGeometry(t).getAttribute('position').count).toBeGreaterThan(0);
+    }
     expect(shapes.has(JSON.stringify(NPC_MODELS[GENERIC_NPC]))).toBe(false);
     expect(npcModelKey(99)).toBe(GENERIC_NPC);
     expect(npcModelKey(-1)).toBe(GENERIC_NPC);
@@ -63,7 +67,7 @@ describe('npc models (AC2)', () => {
       expect(g.getAttribute('uv')).toBeUndefined();
     }
     const w = new WorldScene(() => 0);
-    w.update({ ...base, npcs: [...spread(6), { id: 9, npcType: 42, x: 0, z: 0, heading: 0 }] });
+    w.update({ ...base, npcs: [...spread(13), { id: 9, npcType: 42, x: 0, z: 0, heading: 0 }] });
     let meshes = 0;
     npcGroup(w).traverse((o) => {
       const mesh = o as THREE.Mesh;
@@ -74,18 +78,18 @@ describe('npc models (AC2)', () => {
         for (const v of Object.values(mat)) expect((v as THREE.Texture)?.isTexture).not.toBe(true);
       }
     });
-    expect(meshes).toBe(7);
+    expect(meshes).toBe(14);
   });
 });
 
 describe('npc instancing (AC3)', () => {
-  it('uses the same draw calls for 100 NPCs over all six types as for one of each', () => {
+  it('uses the same draw calls for 100 NPCs over all thirteen types as for one of each', () => {
     const one = new WorldScene(() => 0);
-    one.update({ ...base, npcs: spread(6) });
+    one.update({ ...base, npcs: spread(13) });
     const many = new WorldScene(() => 0);
     many.update({ ...base, npcs: spread(100) });
-    expect(countDrawCalls(npcGroup(one))).toBe(6);
-    expect(countDrawCalls(npcGroup(many))).toBe(6);
+    expect(countDrawCalls(npcGroup(one))).toBe(13);
+    expect(countDrawCalls(npcGroup(many))).toBe(13);
     expect(countDrawCalls(many.scene)).toBe(countDrawCalls(one.scene));
     const drawn = TYPES.reduce((s, t) => s + (many.scene.getObjectByName(`npc-${t}`) as THREE.InstancedMesh).count, 0);
     expect(drawn).toBe(100);

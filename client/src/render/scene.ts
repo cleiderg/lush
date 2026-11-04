@@ -9,6 +9,7 @@ import { LevelUpEffects } from './levelUp';
 import { CampusMap, loadCampus } from './campusMap';
 import { GroundItems } from './groundItems';
 import { Npcs } from './npcs';
+import { NpcMarkers } from './npcMarkers';
 import { ChatText } from './chatText';
 import { FloatTexts } from './floatText';
 import { AreaMarkers, loadAreas } from './gameAreas';
@@ -90,6 +91,8 @@ export class WorldScene {
   private groundItems: GroundItems | null = null;
   /** Created on the first view that carries npcs, like groundItems. */
   private npcs: Npcs | null = null;
+  /** Created with the first marker, like hitsplats. */
+  private npcMarkers: NpcMarkers | null = null;
   /** The home room, present only while a view carries `home`. */
   private room: RoomView | null = null;
   /** Campus objects hidden for the room, with the visibility to restore. */
@@ -203,6 +206,11 @@ export class WorldScene {
     // Like hitsplats, the effect joins the scene with the first level-up.
     if (view.levelUps?.length && !this.levelUps.group.parent) this.scene.add(this.levelUps.group);
     if (this.levelUps.group.parent) this.levelUps.update(view, this.now());
+    if (view.npcMarkers?.size && !this.npcMarkers) {
+      this.npcMarkers = new NpcMarkers();
+      this.scene.add(this.npcMarkers.group);
+    }
+    this.npcMarkers?.update(view.npcs ?? [], view.npcMarkers, this.rig.camera.quaternion, time);
     this.healthBars.update(this.barEntries(view), this.rig.camera.quaternion);
     // Chat joins the scene with the first message, like hitsplats; it needs the DOM only from then on.
     if (view.chat?.length && !this.chat.group.parent) this.scene.add(this.chat.group);
@@ -238,7 +246,7 @@ export class WorldScene {
       this.ground, this.map.group, this.areas.group, this.cardTables.group, this.housing.group, this.props.group, this.cafe.group,
       this.skills.group, this.fountain.group, this.nature.group, this.lamps.group, this.player.root,
       this.remotes.group, this.shadows.group, this.healthBars.group, this.hitsplats.group, this.levelUps.group,
-      this.chat.group, this.floatTexts.group, this.groundItems?.group ?? null, this.npcs?.group ?? null,
+      this.chat.group, this.floatTexts.group, this.groundItems?.group ?? null, this.npcs?.group ?? null, this.npcMarkers?.group ?? null,
     ];
     return list.filter((o): o is THREE.Object3D => o !== null);
   }

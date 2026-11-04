@@ -11,8 +11,8 @@ const DT = 1 / FPS;
 const TICK = 0.6;
 const LOCAL = 1;
 const KEYS = [...Object.values(NpcType), GENERIC_NPC];
-const LEGGED = [NpcType.Rabbit, NpcType.Squirrel, NpcType.Crow, NpcType.Coyote, NpcType.CoyoteAlpha];
-const LEGLESS = [NpcType.RogueDeliveryRobot, GENERIC_NPC];
+const LEGGED = [NpcType.Rabbit, NpcType.Squirrel, NpcType.Crow, NpcType.Coyote, NpcType.CoyoteAlpha, NpcType.Goose, NpcType.NightWatchmanBot, NpcType.Librarian, NpcType.ParkRanger, NpcType.FoodTruckCook, NpcType.Guide];
+const LEGLESS = [NpcType.RogueDeliveryRobot, NpcType.RunawayEScooter, GENERIC_NPC];
 
 interface Sample {
   pos: THREE.Vector3;
