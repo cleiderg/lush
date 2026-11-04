@@ -19,7 +19,7 @@ export const OFFLINE_TABLE_ID = 1;
 function item(id: number, name: string, kind: ItemKind, extra: Partial<ItemInfo> = {}): ItemInfo {
   return {
     id, name, kind, equipSlot: EquipSlot.None, levelToEquip: 1, accuracy: 0, strength: 0, defence: 0, attackSpeed: 0, heal: 0,
-    shopBuysFor: 1, shopSells: false, shopSellsFor: 0, toolSkill: ToolSkill.None, toolLevel: 0, cookingLevel: 0, ...extra,
+    shopBuysFor: 1, shopSells: false, shopSellsFor: 0, toolSkill: ToolSkill.None, toolLevel: 0, cookingLevel: 0, footprintW: 0, footprintD: 0, placement: 0, surfaceSlots: 0, thriftSellsFor: 0, thriftBuysFor: 0, ...extra,
   };
 }
 
@@ -141,12 +141,21 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
     });
   }
 
+  if (opts.panel === 'house-auction') {
+    // A house in auction: a top bid, three days left and the player's own held bid.
+    const now = Math.floor(Date.now() / 1000);
+    msgs.push({
+      type: 'housingState', rentPerMonth: 200, claimMonths: 2, maxPrepaidMonths: 6,
+      houses: [{ id: OFFLINE_HOUSE_ID, areaId: 1, ownerName: '', mine: false, paidUntil: 0, state: HouseState.Auction, open: false, topBid: 450, auctionEnd: now + 3 * 24 * 3600, myBid: 300 }],
+    });
+  }
+
   if (opts.panel === 'home') {
     // Visiting someone else's furnished room: the world view shows it and the Leave button is up.
     msgs.push(
       {
         type: 'housingState', rentPerMonth: 200, claimMonths: 2, maxPrepaidMonths: 6,
-        houses: [{ id: OFFLINE_HOUSE_ID, areaId: 1, ownerName: 'Sam', mine: false, paidUntil: 0, state: HouseState.Owned, open: true }],
+        houses: [{ id: OFFLINE_HOUSE_ID, areaId: 1, ownerName: 'Sam', mine: false, paidUntil: 0, state: HouseState.Owned, open: true, topBid: 0, auctionEnd: 0, myBid: 0 }],
       },
       {
         type: 'homeState', houseId: OFFLINE_HOUSE_ID, ownerName: 'Sam', wallpaperItemId: 0, floorItemId: 0,

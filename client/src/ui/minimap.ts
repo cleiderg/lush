@@ -1,6 +1,7 @@
 import type areas from '../../../shared/map/areas.json';
 import { distanceToOutline, pointInPolygon, polygonFromDecimetres, type Polygon } from '../state/pvpZone';
 import type { Point } from '../state/shop';
+import type { HouseInfoState } from '../state/housing';
 import { hudLayout, place } from './hudLayout';
 import { addPressFeedbackWithin, PanelMotion } from './theme';
 
@@ -30,8 +31,22 @@ export interface MapData {
   readonly shop: Point;
   /** The bank booth, in metres (skills.json), or null when the map was built without it. */
   readonly bank: Point | null;
+  /** Every area's thrift stall (housing.json), in metres. */
+  readonly thrift: readonly Point[];
+  /** Every area's workbench (housing.json), in metres. */
+  readonly workbench: readonly Point[];
+  /** House doors in metres; house id j+1 is doors[j] (housing.json houses[j]). */
+  readonly doors: readonly Point[];
   readonly bounds: { minX: number; minZ: number; maxX: number; maxZ: number };
 }
+
+/** The parts of housing.json the map uses (decimetres). */
+export interface HousingJson {
+  areas: { thrift: Point; workbench: Point }[];
+  houses: Point[];
+}
+
+const toMetres = (p: Point): Point => ({ x: p.x / 10, z: p.z / 10 });
 
 export interface CampusJson {
   bounds: { minX: number; minZ: number; maxX: number; maxZ: number };
@@ -53,7 +68,9 @@ function feature(kind: MapFeatureKind, id: string, p: number[], widthDm = 0): Ma
 }
 
 /** Builds the map from campus.json and areas.json text/objects (decimetres) into metres. */
-export function buildMapData(campus: CampusJson, gameAreas: typeof areas, skills?: { bank: Point }): MapData {
+export function buildMapData(
+  campus: CampusJson, gameAreas: typeof areas, skills?: { bank: Point }, housing?: HousingJson,
+): MapData {
   const features: MapFeature[] = [
     ...(campus.plazas ?? []).map((a) => feature('plaza', `plaza-${a.id}`, a.p)),
     ...campus.paths.map((w) => feature('path', `path-${w.id}`, w.p, w.w)),
@@ -65,6 +82,9 @@ export function buildMapData(campus: CampusJson, gameAreas: typeof areas, skills
     features,
     shop: { x: gameAreas.shop.x / 10, z: gameAreas.shop.z / 10 },
     bank: skills ? { x: skills.bank.x / 10, z: skills.bank.z / 10 } : null,
+    thrift: (housing?.areas ?? []).map((a) => toMetres(a.thrift)),
+    workbench: (housing?.areas ?? []).map((a) => toMetres(a.workbench)),
+    doors: (housing?.houses ?? []).map(toMetres),
     bounds: { minX: b.minX / 10, minZ: b.minZ / 10, maxX: b.maxX / 10, maxZ: b.maxZ / 10 },
   };
 }
@@ -160,6 +180,74 @@ function bankIcon(scale: number): SVGGElement {
   return g;
 }
 
+/** The thrift stall icon: a sack of coins on a teal disc, distinct from the shop and bank icons. */
+function thriftIcon(scale: number): SVGGElement {
+  const g = svg('g', { class: 'lush-map-thrift' });
+  const inner = svg('g', { transform: `scale(${scale})` });
+  inner.append(
+    svg('circle', { class: 'lush-map-thrift-bg', cx: 0, cy: 0, r: 6 }),
+    svg('polygon', { class: 'lush-map-thrift-sack', points: '-3,3.5 3,3.5 4,0 1.5,-1.5 -1.5,-1.5 -4,0' }),
+    svg('rect', { class: 'lush-map-thrift-tie', x: -1.5, y: -3.5, width: 3, height: 2 }),
+  );
+  g.append(inner);
+  return g;
+}
+
+/** The workbench icon: a hammer on a slate disc. */
+function workbenchIcon(scale: number): SVGGElement {
+  const g = svg('g', { class: 'lush-map-workbench' });
+  const inner = svg('g', { transform: `scale(${scale})` });
+  inner.append(
+    svg('circle', { class: 'lush-map-workbench-bg', cx: 0, cy: 0, r: 6 }),
+    svg('rect', { class: 'lush-map-workbench-handle', x: -0.8, y: -3, width: 1.6, height: 7 }),
+    svg('rect', { class: 'lush-map-workbench-head', x: -3.5, y: -4, width: 7, height: 3 }),
+  );
+  g.append(inner);
+  return g;
+}
+
+/** A claimed house marker: a little house; the player's own is gold with a star. */
+function homeIcon(scale: number, mine: boolean): SVGGElement {
+  const g = svg('g', { class: mine ? 'lush-map-home lush-map-home-mine' : 'lush-map-home' });
+  const inner = svg('g', { transform: `scale(${scale})` });
+  inner.append(
+    svg('circle', { class: 'lush-map-home-bg', cx: 0, cy: 0, r: 6 }),
+    svg('polygon', { class: 'lush-map-home-roof', points: '-4.5,0 0,-4.5 4.5,0' }),
+    svg('rect', { class: 'lush-map-home-body', x: -3, y: 0, width: 6, height: 4 }),
+  );
+  if (mine) inner.append(svg('circle', { class: 'lush-map-home-star', cx: 0, cy: 1.8, r: 1.3 }));
+  g.append(inner);
+  return g;
+}
+
+/** The doors of the claimed houses (house id j+1 is doors[j]); empty houses get none. */
+export function claimedHomes(data: MapData, houses: readonly HouseInfoState[]): { id: number; pt: Point; owner: string; mine: boolean }[] {
+  const out: { id: number; pt: Point; owner: string; mine: boolean }[] = [];
+  for (const h of houses) {
+    const pt = data.doors[h.id - 1];
+    if (pt && h.ownerName !== '') out.push({ id: h.id, pt, owner: h.ownerName, mine: h.mine });
+  }
+  return out;
+}
+
+/**
+ * Where to draw two icons on screen so neither hides the other: each area's thrift stall and workbench
+ * stand about 2 m apart, much less than an icon, so closer than `gap` they sit side by side, centred on their midpoint.
+ */
+export function sideBySide(a: { x: number; y: number }, b: { x: number; y: number }, gap: number): [{ x: number; y: number }, { x: number; y: number }] {
+  if (Math.hypot(a.x - b.x, a.y - b.y) >= gap) return [a, b];
+  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  return [{ x: mx - gap / 2, y: my }, { x: mx + gap / 2, y: my }];
+}
+
+/** Gap between icon centres (in units of the icon scale): an icon's disc is 12 across. */
+const ICON_GAP = 13;
+
+function placed(g: SVGGElement, pt: Point): SVGGElement {
+  g.setAttribute('transform', `translate(${pt.x} ${pt.z})`);
+  return g;
+}
+
 function playerMarker(r: number): SVGGElement {
   const g = svg('g', { class: 'lush-map-player' });
   g.append(svg('circle', { cx: 0, cy: 0, r }));
@@ -178,6 +266,8 @@ export interface MinimapOptions {
   onOpen?: () => void;
   /** The map to draw (campusMapData() in the game). */
   data: MapData;
+  /** The houses from the latest HousingState; claimed ones get a home marker. */
+  houses?: () => readonly HouseInfoState[];
   range?: number;
   viewport?: () => { width: number; height: number };
 }
@@ -197,8 +287,11 @@ export class Minimap {
   readonly shop: SVGGElement;
   /** The bank booth icon; null when the map data has no bank position. */
   readonly bank: SVGGElement | null;
+  /** Thrift, workbench and home markers, kept upright on screen. */
+  readonly pois: SVGGElement;
   readonly north: SVGGElement;
   private readonly data: MapData;
+  private poiKey = '';
   private readonly range: number;
   private shownAt: Point | null = null;
   private shownKey = '';
@@ -229,7 +322,8 @@ export class Minimap {
     this.world.append(this.features, this.dots);
     this.shop = shopIcon(r / 40);
     this.bank = this.data.bank ? bankIcon(r / 40) : null;
-    disc.append(svg('circle', { class: 'lush-minimap-ground', cx: 0, cy: 0, r }), this.world, this.shop, ...(this.bank ? [this.bank] : []), playerMarker(r / 24));
+    this.pois = svg('g', { class: 'lush-minimap-pois' });
+    disc.append(svg('circle', { class: 'lush-minimap-ground', cx: 0, cy: 0, r }), this.world, this.shop, ...(this.bank ? [this.bank] : []), this.pois, playerMarker(r / 24));
     this.north = svg('g', { class: 'lush-minimap-north' });
     const n = svg('text', { x: 0, y: -r, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': r * 0.2 });
     n.textContent = 'N';
@@ -284,6 +378,8 @@ export class Minimap {
       if (bankIn) this.bank.setAttribute('transform', `translate(${bank.x.toFixed(2)} ${bank.y.toFixed(2)})`);
     }
 
+    this.updatePois(pos, yaw);
+
     const dotR = (this.range / 30).toFixed(2);
     const remotes = this.opts.remotes().filter((p) => Math.hypot(p.x - pos.x, p.z - pos.z) <= this.range);
     while (this.dots.childElementCount > remotes.length) this.dots.lastElementChild?.remove();
@@ -294,6 +390,32 @@ export class Minimap {
       c.setAttribute('cy', p.z.toFixed(2));
       c.setAttribute('data-id', String(p.id));
     });
+  }
+
+  private updatePois(pos: Point, yaw: number): void {
+    const items: { key: string; at: { x: number; y: number }; make: () => SVGGElement }[] = [];
+    const scale = this.range / 40;
+    const at = (pt: Point) => toMinimap(pt.x - pos.x, pt.z - pos.z, yaw);
+    // thrift[i] and workbench[i] are the same area's (housing.json areas[i]).
+    this.data.thrift.forEach((pt, i) => {
+      const [t, w] = sideBySide(at(pt), at(this.data.workbench[i]), ICON_GAP * scale);
+      items.push({ key: `thrift-${i}`, at: t, make: () => thriftIcon(scale) });
+      items.push({ key: `workbench-${i}`, at: w, make: () => workbenchIcon(scale) });
+    });
+    for (const h of claimedHomes(this.data, this.opts.houses?.() ?? [])) {
+      items.push({ key: `home-${h.id}-${h.mine ? 'mine' : 'other'}`, at: at(h.pt), make: () => homeIcon(scale, h.mine) });
+    }
+    const shown = items.filter((e) => Math.hypot(e.at.x, e.at.y) <= this.range);
+    const key = shown.map((e) => e.key).join(',');
+    if (key !== this.poiKey) {
+      this.poiKey = key;
+      this.pois.replaceChildren(...shown.map((e) => {
+        const g = e.make();
+        g.dataset.id = e.key;
+        return g;
+      }));
+    }
+    shown.forEach((e, i) => this.pois.children[i].setAttribute('transform', `translate(${e.at.x.toFixed(2)} ${e.at.y.toFixed(2)})`));
   }
 
   dispose(): void {
@@ -307,6 +429,8 @@ export interface BigMapOptions {
   position: () => Point;
   remotes: () => readonly { id: number; x: number; z: number }[];
   data: MapData;
+  /** The houses from the latest HousingState; claimed ones get a home marker and owner label. */
+  houses?: () => readonly HouseInfoState[];
   viewport?: () => { width: number; height: number };
   /** Called when the panel opens, so other panels in its place can close. */
   onOpen?: () => void;
@@ -319,6 +443,9 @@ export class BigMap {
   svg: SVGSVGElement | null = null;
   private dots: SVGGElement | null = null;
   private player: SVGGElement | null = null;
+  private pois: SVGGElement | null = null;
+  private homes: SVGGElement | null = null;
+  private homeKey = '';
   private readonly data: MapData;
   private readonly motion: PanelMotion;
   private readonly onResize = (): void => this.layout();
@@ -379,6 +506,7 @@ export class BigMap {
   /** Call once per tick: moves the player marker and the other players' dots while open. */
   update(): void {
     if (!this.isOpen || !this.player || !this.dots) return;
+    this.updateHomes();
     const pos = this.opts.position();
     this.player.setAttribute('transform', `translate(${pos.x.toFixed(1)} ${pos.z.toFixed(1)})`);
     const remotes = this.opts.remotes();
@@ -390,6 +518,25 @@ export class BigMap {
       c.setAttribute('cy', p.z.toFixed(1));
       c.setAttribute('data-id', String(p.id));
     });
+  }
+
+  /** Redraws the home markers when the claimed set, an owner or "mine" changes. */
+  private updateHomes(): void {
+    if (!this.homes) return;
+    const homes = claimedHomes(this.data, this.opts.houses?.() ?? []);
+    const key = homes.map((h) => `${h.id}:${h.mine ? 1 : 0}:${h.owner}`).join('|');
+    if (key === this.homeKey) return;
+    this.homeKey = key;
+    this.homes.replaceChildren(...homes.map((h) => {
+      const g = placed(homeIcon(2.5, h.mine), h.pt);
+      g.dataset.id = `home-${h.id}`;
+      const label = svg('text', { class: 'lush-map-home-label', x: h.pt.x, y: h.pt.z - 18, 'text-anchor': 'middle', 'font-size': 14 });
+      label.textContent = h.owner;
+      const wrap = svg('g', { class: h.mine ? 'lush-map-home-entry lush-map-home-entry-mine' : 'lush-map-home-entry' });
+      wrap.dataset.id = `home-${h.id}`;
+      wrap.append(g, label);
+      return wrap;
+    }));
   }
 
   dispose(): void {
@@ -410,6 +557,14 @@ export class BigMap {
     shop.setAttribute('transform', `translate(${this.data.shop.x} ${this.data.shop.z})`);
     const bank = this.data.bank ? bankIcon(2.5) : null;
     bank?.setAttribute('transform', `translate(${this.data.bank!.x} ${this.data.bank!.z})`);
+    this.pois = svg('g', { class: 'lush-bigmap-pois' });
+    this.data.thrift.forEach((pt, i) => {
+      // The big map is north-up in metres, so screen x/y are world x/z.
+      const bench = this.data.workbench[i];
+      const [t, w] = sideBySide({ x: pt.x, y: pt.z }, { x: bench.x, y: bench.z }, ICON_GAP * 2.5);
+      this.pois!.append(placed(thriftIcon(2.5), { x: t.x, z: t.y }), placed(workbenchIcon(2.5), { x: w.x, z: w.y }));
+    });
+    this.homes = svg('g', { class: 'lush-bigmap-homes' });
     this.dots = svg('g', {});
     this.player = playerMarker(8);
     const north = svg('text', {
@@ -417,7 +572,7 @@ export class BigMap {
     });
     north.textContent = 'N ↑';
     s.append(svg('rect', { class: 'lush-minimap-ground', x: b.minX, y: b.minZ, width: b.maxX - b.minX, height: b.maxZ - b.minZ }),
-      features, shop, ...(bank ? [bank] : []), this.dots, this.player, north);
+      features, shop, ...(bank ? [bank] : []), this.pois, this.homes, this.dots, this.player, north);
     this.svg = s;
     this.panel.append(s);
   }
@@ -443,6 +598,18 @@ export const MINIMAP_CSS = `
 .lush-map-bank-bg { fill: var(--lush-panel-bg-solid); stroke: var(--lush-gold); stroke-width: 1; }
 .lush-map-bank-door { fill: var(--lush-gold-bright); }
 .lush-map-bank-coin { fill: var(--lush-panel-bg-solid); }
+.lush-map-thrift-bg { fill: var(--lush-panel-bg-solid); stroke: #4fb3a5; stroke-width: 1; }
+.lush-map-thrift-sack { fill: #4fb3a5; }
+.lush-map-thrift-tie { fill: var(--lush-gold-bright); }
+.lush-map-workbench-bg { fill: var(--lush-panel-bg-solid); stroke: #9aa4b2; stroke-width: 1; }
+.lush-map-workbench-handle { fill: #b07a4a; }
+.lush-map-workbench-head { fill: #cfd6df; }
+.lush-map-home-bg { fill: var(--lush-panel-bg-solid); stroke: #e7e1d4; stroke-width: 1; }
+.lush-map-home-roof { fill: #c0563f; }
+.lush-map-home-body { fill: #e7e1d4; }
+.lush-map-home-mine .lush-map-home-bg { fill: var(--lush-gold); stroke: var(--lush-gold-bright); stroke-width: 1.6; }
+.lush-map-home-star { fill: var(--lush-panel-bg-solid); }
+.lush-map-home-label { fill: #ffffff; stroke: #2a1f18; stroke-width: 3; paint-order: stroke; font-family: var(--lush-font-title); }
 .lush-map-shop-body { fill: var(--lush-gold-bright); }
 .lush-bigmap { box-sizing: border-box; z-index: 6; display: flex; flex-direction: column; gap: var(--lush-space-2); padding: var(--lush-space-2) var(--lush-space-3) var(--lush-space-3); user-select: none; -webkit-user-select: none; }
 .lush-bigmap[hidden] { display: none; }
