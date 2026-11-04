@@ -97,7 +97,7 @@ describe('interact prompt and the Interact button agree (AC2)', () => {
       { id: 6, x: OPEN.x + 1, z: OPEN.z, kind: EntityKind.Player },
     ]);
     const actions: InteractActions = {
-      openShop: vi.fn(), openBank: vi.fn(), openCardTable: vi.fn(), openHouse: vi.fn(), sendPickUp: vi.fn(), sendAttackTarget: vi.fn(), sendTradeRequest: vi.fn(), sendSkillAction: vi.fn(),
+      openShop: vi.fn(), openBank: vi.fn(), openCardTable: vi.fn(), openHouse: vi.fn(), openThrift: vi.fn(), openWorkbench: vi.fn(), sendPickUp: vi.fn(), sendAttackTarget: vi.fn(), sendTradeRequest: vi.fn(), sendSkillAction: vi.fn(),
     };
     const p = mount(g);
     expect(p.root.textContent).toBe('Attack Coyote · Lvl 9');

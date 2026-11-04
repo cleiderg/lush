@@ -72,6 +72,8 @@ const controls = new Controls({
       openShop: () => shop.tryOpen(),
       openBank: () => bank.open(),
       openCardTable: (id) => cardTable.open(id),
+      openThrift: () => thrift.open(),
+      openWorkbench: () => bench.open(),
       openHouse: (id) => house.open(id),
       sendSkillAction: (target, id) => session.sendSkillAction(target, id),
       sendPickUp: (id) => session.sendPickUp(id),
@@ -138,7 +140,7 @@ const shop = new ShopPanel({
     bigMap.close();
   },
 });
-// Campus Thrift: opened from the offline shot for now; Interact at the stall comes with its position (#524).
+// Campus Thrift: opened from the offline shot for now; Interact at a stall opens it (#624).
 const thrift = new ShopPanel({
   parent: document.body,
   items: game.items,
@@ -156,7 +158,7 @@ const thrift = new ShopPanel({
     bigMap.close();
   },
 });
-// Opened from the offline shot for now; Interact at the workbench comes with #524.
+// Opened by Interact at a workbench (#624) and from the offline shot.
 const bench = new WorkbenchPanel({
   parent: document.body,
   workbench: game.workbench,
