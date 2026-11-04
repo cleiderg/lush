@@ -1,6 +1,6 @@
 import * as flatbuffers from 'flatbuffers';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ChatMessage, ChatSend, Envelope, Hello, Message, Reload, RestartCountdown, Welcome, Vec2 } from '../protocol';
+import { ChatChannel, ChatMessage, ChatSend, Envelope, Hello, Message, Reload, RestartCountdown, Welcome, Vec2 } from '../protocol';
 import { GameState } from '../state/world';
 import { decode } from './codec';
 import { localTokenStore, Session, TOKEN_KEY, type TokenStore } from './session';
@@ -182,5 +182,29 @@ describe('sendChat', () => {
 
     t.onMessage?.(chatMessage(7, 'hello there'));
     expect(game.chat.log).toEqual([{ speakerId: 7, text: 'hello there' }]);
+  });
+
+  it('sends a leading // on the group channel with the prefix removed (OSRS clan-chat prefix)', () => {
+    const t = new FakeTransport();
+    const s = new Session({ factory: () => t, store: { get: () => '', set: () => {} }, onMessage: () => {} });
+    s.start();
+    t.onMessage?.(welcome('g'));
+    t.sent = [];
+    const sent = (): ChatSend => {
+      const env = Envelope.getRootAsEnvelope(new flatbuffers.ByteBuffer(t.sent[t.sent.length - 1]));
+      expect(env.msgType()).toBe(Message.ChatSend);
+      return env.msg(new ChatSend()) as ChatSend;
+    };
+
+    s.sendChat('//rally at the hall');
+    expect([sent().text(), sent().channel()]).toEqual(['rally at the hall', ChatChannel.Group]);
+    s.sendChat('hello');
+    expect([sent().text(), sent().channel()]).toEqual(['hello', ChatChannel.Local]);
+    s.sendChat('a // b');
+    expect([sent().text(), sent().channel()]).toEqual(['a // b', ChatChannel.Local]);
+    expect(t.sent.length).toBe(3);
+    s.sendChat('//');
+    s.sendChat('//   ');
+    expect(t.sent.length).toBe(3);
   });
 });

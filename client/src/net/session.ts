@@ -1,7 +1,8 @@
-import { type EquipSlot, type ItemActionKind, ShedColour, ShopKind, type SkillTarget } from '../protocol';
+import { ChatChannel, type EquipSlot, type GroupPermission, type GroupRank, type ItemActionKind, ShedColour, ShopKind, type SkillTarget } from '../protocol';
 import {
   decode, encodeDialogueReply, encodeTalk, encodeAttackTarget, encodeBankClose, encodeBankDeposit, encodeBankDepositEquipment, encodeBankDepositInventory,
-  encodeBankOpen, encodeBankWithdraw, encodeCardTableLeave, encodeCardTableReady, encodeCardTableSit, encodeChat, encodeHello, encodeItemAction, encodePickUp, encodeShedDraw, encodeShedPlay,
+  encodeBankOpen, encodeBankWithdraw, encodeCardTableLeave, encodeCardTableReady, encodeCardTableSit, encodeChat, encodeGroupDisband, encodeGroupFound, encodeGroupHandover, encodeGroupInvite, encodeGroupInviteReply,
+  encodeGroupKick, encodeGroupLeave, encodeGroupSetPermission, encodeGroupSetRank, encodeHello, encodeItemAction, encodePickUp, encodeShedDraw, encodeShedPlay,
   encodeHomeEnter, encodeHomeLeave, encodeHomeMove, encodeHomePlace, encodeHomeRemove, encodeHomeRotate, encodeHomeSetFloor,
   encodeHomeSetOpen, encodeHomeSetWallpaper, type HomePlacement, encodeAuctionBid, encodeHouseClaim, encodeRentPay, encodeShopBuy, encodeShopSell, encodeWorkbenchCraft, encodeSkillAction, encodeTradeAccept, encodeTradeCancel, encodeTradeOffer, encodeTradeRemove, encodeTradeRequest, encodeTradeSetGold,
   type ServerMessage, type ShedCardValue,
@@ -258,10 +259,25 @@ export class Session {
     this.send(encodeSkillAction(target, targetId));
   }
 
+  /** Sends a chat line; blank text is not sent. A leading `//` sends to the group channel (OSRS clan-chat prefix). */
   sendChat(text: string): void {
-    if (text.trim() === '') return;
-    this.send(encodeChat(text));
+    const group = text.startsWith('//');
+    const body = group ? text.slice(2).trim() : text;
+    if (body.trim() === '') return;
+    this.send(encodeChat(body, group ? ChatChannel.Group : ChatChannel.Local));
   }
+
+  sendGroupFound(name: string, banner: number): void { this.send(encodeGroupFound(name, banner)); }
+  sendGroupInvite(targetId: number): void { this.send(encodeGroupInvite(targetId)); }
+  sendGroupInviteReply(groupId: number, accept: boolean): void { this.send(encodeGroupInviteReply(groupId, accept)); }
+  sendGroupSetRank(member: number, promote: boolean): void { this.send(encodeGroupSetRank(member, promote)); }
+  sendGroupKick(member: number): void { this.send(encodeGroupKick(member)); }
+  sendGroupLeave(): void { this.send(encodeGroupLeave()); }
+  sendGroupHandover(member: number): void { this.send(encodeGroupHandover(member)); }
+  sendGroupSetPermission(rank: GroupRank, permission: GroupPermission, on: boolean): void {
+    this.send(encodeGroupSetPermission(rank, permission, on));
+  }
+  sendGroupDisband(): void { this.send(encodeGroupDisband()); }
 
   private connect(): void {
     this.timer = null;

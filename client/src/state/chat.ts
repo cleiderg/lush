@@ -20,6 +20,10 @@ export interface ChatLine {
   readonly text: string;
   /** A game message to the local player (skill results, bank refusals, level-ups), not speech; speakerId is 0. */
   readonly system?: boolean;
+  /** Set for group-channel messages; they show a group marker and speakerName. */
+  readonly group?: boolean;
+  /** The speaker's name; group messages only. */
+  readonly speakerName?: string;
 }
 
 export interface OverheadChat {
@@ -46,6 +50,12 @@ export class ChatStore {
     this.lines.push({ speakerId, text });
     if (this.lines.length > CHAT_LOG_LINES) this.lines.splice(0, this.lines.length - CHAT_LOG_LINES);
     this.overheads.set(speakerId, { speakerId, text, at: now });
+  }
+
+  /** Adds a group-channel message to the log only: never an overhead bubble. */
+  pushGroup(speakerId: number, speakerName: string, text: string): void {
+    this.lines.push({ speakerId, text, group: true, speakerName });
+    if (this.lines.length > CHAT_LOG_LINES) this.lines.splice(0, this.lines.length - CHAT_LOG_LINES);
   }
 
   /** Adds a game message to the log only (no overhead bubble). */

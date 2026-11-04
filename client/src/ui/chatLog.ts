@@ -100,6 +100,11 @@ export class ChatLog {
       text.textContent = line.text;
       if (line.system) {
         row.append(text);
+      } else if (line.group) {
+        const who = document.createElement('span');
+        who.style.cssText = 'font-weight:600;color:var(--lush-gold-bright);';
+        who.textContent = `[Group] ${line.speakerName ?? ''}: `;
+        row.append(who, text);
       } else {
         const who = document.createElement('span');
         who.style.cssText = 'font-weight:600;color:var(--lush-gold-bright);';

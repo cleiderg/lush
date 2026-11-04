@@ -12,6 +12,8 @@ import {
   CraftResult, CraftResultCode, ShopKind, WorkbenchCatalog, WorkbenchCraft, WorkbenchRecipe,
   HomeEnter, HomeLeave, HomeMove, HomePlace, HomeRemove, HomeResult, HomeResultCode, HomeRotate, HomeSetFloor, HomeSetOpen,
   AuctionBid, AuctionResult, AuctionResultCode,
+  ChatChannel, GroupDisband, GroupFound, GroupHandover, GroupInvite, GroupInviteReply, GroupInvited, GroupKick, GroupLeave, GroupPermission,
+  GroupRank, GroupResult, GroupResultCode, GroupSetPermission, GroupSetRank, GroupState,
   HomeSetWallpaper, HomeState, HouseClaim, HouseInfo, HouseState, HousingResult, HousingResultCode, HousingState, PlacedItem, PlacementKind, RentPay,
 } from '../protocol';
 
@@ -50,6 +52,40 @@ export interface SlotState {
 export interface InventoryView {
   slots: SlotState[];
   equipment: Equipment;
+}
+
+/** One member in GroupState. */
+export interface GroupMemberState {
+  key: number;
+  name: string;
+  rank: GroupRank;
+  online: boolean;
+}
+
+/** One rank permission toggle in GroupState. */
+export interface GroupPermissionState {
+  rank: GroupRank;
+  permission: GroupPermission;
+  on: boolean;
+}
+
+export interface GroupInvitedView {
+  inviterName: string;
+  groupName: string;
+  groupId: number;
+}
+
+export interface GroupStateView {
+  /** 0 when the player is not in a group. */
+  groupId: number;
+  name: string;
+  banner: number;
+  ownRank: GroupRank;
+  permissions: GroupPermissionState[];
+  vaultGold: number;
+  /** 0 for no hall. */
+  hallId: number;
+  members: GroupMemberState[];
 }
 
 export interface ItemInfo {
@@ -118,6 +154,11 @@ export interface EntityInfoState {
   /** Combat level plus every skill level; 0 for NPCs. */
   totalLevel: number;
   equipment: Equipment;
+  /** The player's group; 0 for no group and for NPCs. */
+  groupId?: number;
+  /** Banner colour preset 0..11; only with a group. */
+  groupBanner?: number;
+  groupName?: string;
 }
 
 /** Health bar entry; ratio is hp / max_hp in 0..1. */
@@ -335,7 +376,10 @@ export interface SkillResultEvent {
 export type ServerMessage =
   | { type: 'welcome'; playerId: number; guestToken: string; spawn: { x: number; z: number }; tickRate: number; walkSpeed?: number; runSpeed?: number; serverTimeMs?: number }
   | { type: 'snapshot'; tick: number; lastInputSeq: number; entities: EntityState[] }
-  | { type: 'chat'; speakerId: number; text: string }
+  | { type: 'chat'; speakerId: number; text: string; channel?: ChatChannel; speakerName?: string }
+  | ({ type: 'groupState' } & GroupStateView)
+  | ({ type: 'groupInvited' } & GroupInvitedView)
+  | { type: 'groupResult'; code: GroupResultCode }
   | { type: 'pong'; token: number }
   | { type: 'reload'; reason: string }
   | { type: 'restartCountdown'; seconds: number }
@@ -407,9 +451,55 @@ export function encodeInput(seq: number, moveX: number, moveZ: number, facing: n
   return wrap(b, Message.Input, Input.endInput(b));
 }
 
-export function encodeChat(text: string): Uint8Array {
+export function encodeChat(text: string, channel: ChatChannel = ChatChannel.Local): Uint8Array {
   const b = new flatbuffers.Builder(64);
-  return wrap(b, Message.ChatSend, ChatSend.createChatSend(b, b.createString(text)));
+  return wrap(b, Message.ChatSend, ChatSend.createChatSend(b, b.createString(text), channel));
+}
+
+export function encodeGroupFound(name: string, banner: number): Uint8Array {
+  const b = new flatbuffers.Builder(64);
+  return wrap(b, Message.GroupFound, GroupFound.createGroupFound(b, b.createString(name), banner));
+}
+
+export function encodeGroupInvite(targetId: number): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.GroupInvite, GroupInvite.createGroupInvite(b, targetId));
+}
+
+export function encodeGroupInviteReply(groupId: number, accept: boolean): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.GroupInviteReply, GroupInviteReply.createGroupInviteReply(b, groupId, accept));
+}
+
+/** Promote (promote = true) or demote the member with this GroupMember.key. */
+export function encodeGroupSetRank(member: number, promote: boolean): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.GroupSetRank, GroupSetRank.createGroupSetRank(b, member, promote));
+}
+
+export function encodeGroupKick(member: number): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.GroupKick, GroupKick.createGroupKick(b, member));
+}
+
+export function encodeGroupLeave(): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.GroupLeave, GroupLeave.createGroupLeave(b));
+}
+
+export function encodeGroupHandover(member: number): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.GroupHandover, GroupHandover.createGroupHandover(b, member));
+}
+
+export function encodeGroupSetPermission(rank: GroupRank, permission: GroupPermission, on: boolean): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.GroupSetPermission, GroupSetPermission.createGroupSetPermission(b, rank, permission, on));
+}
+
+export function encodeGroupDisband(): Uint8Array {
+  const b = new flatbuffers.Builder(16);
+  return wrap(b, Message.GroupDisband, GroupDisband.createGroupDisband(b));
 }
 
 export function encodeEmote(emote: Emote): Uint8Array {
@@ -706,8 +796,31 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
     }
     case Message.ChatMessage: {
       const m = env.msg(new ChatMessage()) as ChatMessage;
-      return { type: 'chat', speakerId: m.speakerId(), text: m.text() ?? '' };
+      return { type: 'chat', speakerId: m.speakerId(), text: m.text() ?? '', channel: m.channel(), speakerName: m.speakerName() ?? '' };
     }
+    case Message.GroupState: {
+      const m = env.msg(new GroupState()) as GroupState;
+      const permissions: GroupPermissionState[] = [];
+      for (let i = 0; i < m.permissionsLength(); i++) {
+        const p = m.permissions(i);
+        if (p) permissions.push({ rank: p.rank(), permission: p.permission(), on: p.on() });
+      }
+      const members: GroupMemberState[] = [];
+      for (let i = 0; i < m.membersLength(); i++) {
+        const o = m.members(i);
+        if (o) members.push({ key: o.key(), name: o.name() ?? '', rank: o.rank(), online: o.online() });
+      }
+      return {
+        type: 'groupState', groupId: m.groupId(), name: m.name() ?? '', banner: m.banner(), ownRank: m.ownRank(),
+        permissions, vaultGold: Number(m.vaultGold()), hallId: m.hallId(), members,
+      };
+    }
+    case Message.GroupInvited: {
+      const m = env.msg(new GroupInvited()) as GroupInvited;
+      return { type: 'groupInvited', inviterName: m.inviterName() ?? '', groupName: m.groupName() ?? '', groupId: m.groupId() };
+    }
+    case Message.GroupResult:
+      return { type: 'groupResult', code: (env.msg(new GroupResult()) as GroupResult).code() };
     case Message.Pong:
       return { type: 'pong', token: (env.msg(new Pong()) as Pong).token() };
     case Message.Reload:
@@ -793,6 +906,9 @@ export function decode(bytes: Uint8Array): ServerMessage | null {
         combatLevel: m.combatLevel(),
         totalLevel: m.totalLevel(),
         equipment: { weapon: m.weapon(), head: m.head(), body: m.body(), shield: m.shield() },
+        groupId: m.groupId(),
+        groupBanner: m.groupBanner(),
+        groupName: m.groupName() ?? '',
       };
     }
     case Message.EntityHealth: {
