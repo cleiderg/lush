@@ -92,7 +92,7 @@ describe('post-process chain', () => {
     expect(BLOOM_THRESHOLD).toBe(0.85);
     expect(BLOOM_STRENGTH).toBe(0.6);
     expect(BLOOM_RADIUS).toBe(0.4);
-    expect(BLOOM_SCALE).toBe(0.5);
+    expect(BLOOM_SCALE).toEqual({ high: 1, medium: 0.5, low: 0 });
     expect(GRADE_WARMTH).toBe(0.05);
     expect(LOOK_VIGNETTE).toBe(0.25);
   });
@@ -135,15 +135,15 @@ describe('post-process chain', () => {
   it('renders the bloom at BLOOM_SCALE of the canvas and resizes it with the canvas (AC2)', () => {
     const bloom = r.post!.bloomPass;
     const bright = () => [bloom.renderTargetBright.width, bloom.renderTargetBright.height];
-    expect(bloom.resolution.toArray()).toEqual([390 * 2 * BLOOM_SCALE, 844 * 2 * BLOOM_SCALE]);
+    expect(bloom.resolution.toArray()).toEqual([390 * 2 * BLOOM_SCALE.high, 844 * 2 * BLOOM_SCALE.high]);
     // UnrealBloomPass's brightest mip starts at half its resolution.
-    expect(bright()).toEqual([Math.round(390 * BLOOM_SCALE), Math.round(844 * BLOOM_SCALE)]);
+    expect(bright()).toEqual([Math.round(390 * BLOOM_SCALE.high), Math.round(844 * BLOOM_SCALE.high)]);
 
     canvas.clientWidth = 800;
     canvas.clientHeight = 600;
     r.resize();
-    expect(bloom.resolution.toArray()).toEqual([1600 * BLOOM_SCALE, 1200 * BLOOM_SCALE]);
-    expect(bright()).toEqual([800 * BLOOM_SCALE, 600 * BLOOM_SCALE]);
+    expect(bloom.resolution.toArray()).toEqual([1600 * BLOOM_SCALE.high, 1200 * BLOOM_SCALE.high]);
+    expect(bright()).toEqual([800 * BLOOM_SCALE.high, 600 * BLOOM_SCALE.high]);
     expect([r.post!.composer.renderTarget1.width, r.post!.composer.renderTarget1.height]).toEqual([1600, 1200]);
 
     // A removed bloom pass keeps following the canvas, so restoring it needs no resize.
@@ -152,7 +152,7 @@ describe('post-process chain', () => {
     canvas.clientHeight = 300;
     r.resize();
     r.setBloom(true);
-    expect(bloom.resolution.toArray()).toEqual([800 * BLOOM_SCALE, 600 * BLOOM_SCALE]);
+    expect(bloom.resolution.toArray()).toEqual([800 * BLOOM_SCALE.high, 600 * BLOOM_SCALE.high]);
   });
 
   it('with retro on, draws bloom, grade and vignette, then the retro pass, at the retro resolution (AC4)', () => {
@@ -172,7 +172,7 @@ describe('post-process chain', () => {
     const h = 844 * 2 * RETRO_SCALE;
     expect([post.composer.renderTarget1.width, post.composer.renderTarget1.height]).toEqual([w, h]);
     expect(post.composer.renderTarget1.texture.magFilter).toBe(T.NearestFilter);
-    expect(post.bloomPass.resolution.toArray()).toEqual([w * BLOOM_SCALE, h * BLOOM_SCALE]);
+    expect(post.bloomPass.resolution.toArray()).toEqual([w * BLOOM_SCALE.high, h * BLOOM_SCALE.high]);
     expect((mat.uniforms.resolution.value as T.Vector2).toArray()).toEqual([w, h]);
 
     r.setRetro(false);
@@ -196,6 +196,76 @@ describe('post-process chain', () => {
     expect(seen).toBe(input);
     // Its own low-resolution target is put back afterwards.
     expect(retro.material.uniforms.tScene.value).toBe(retro.target.texture);
+  });
+  describe('bloom per quality preset', () => {
+    const bloomTargets = (post: PostChain) => {
+      const b = post.bloomPass;
+      return [b.renderTargetBright, ...b.renderTargetsHorizontal, ...b.renderTargetsVertical];
+    };
+    const frame = [390 * 2, 844 * 2];
+
+    it('High and Medium size the bloom at that preset\'s share of the canvas (AC1)', () => {
+      const post = r.post!;
+      const bright = () => [post.bloomPass.renderTargetBright.width, post.bloomPass.renderTargetBright.height];
+      const share = (s: number) => frame.map((n) => Math.round(Math.round(n * s) / 2));
+      r.setQuality('high');
+      expect(post.bloomPass.resolution.toArray()).toEqual(frame.map((n) => n * BLOOM_SCALE.high));
+      expect(bright()).toEqual(share(BLOOM_SCALE.high));
+      r.setQuality('medium');
+      expect(post.bloomPass.resolution.toArray()).toEqual(frame.map((n) => n * BLOOM_SCALE.medium));
+      expect(bright()).toEqual(share(BLOOM_SCALE.medium));
+      r.setQuality('high');
+      expect(bright()).toEqual(share(BLOOM_SCALE.high));
+    });
+
+    it('Low disables bloom; grade and vignette stay on with the same uniforms as High (AC2)', () => {
+      const post = r.post!;
+      const uniforms = () => [
+        post.gradePass.enabled, post.vignettePass.enabled,
+        (post.gradePass.uniforms.tint.value as T.Vector3).toArray(), post.vignettePass.uniforms.vignette.value,
+      ];
+      const high = uniforms();
+      r.setQuality('low');
+      expect(r.bloom).toBe(false);
+      expect(post.composer.passes).not.toContain(post.bloomPass);
+      expect(uniforms()).toEqual(high);
+      expect(high.slice(0, 2)).toEqual([true, true]);
+      expect(high[2]).toEqual([...gradeTint(GRADE_WARMTH)]);
+      expect(high[3]).toBe(LOOK_VIGNETTE);
+      r.setQuality('medium');
+      expect(r.bloom).toBe(true);
+      expect(uniforms()).toEqual(high);
+    });
+
+    it('High → Low → Medium → High disposes every bloom target it replaces and keeps the target count (AC3)', () => {
+      const post = r.post!;
+      const targets = bloomTargets(post);
+      const count = () => bloomTargets(post).length + 2;
+      const start = count();
+      const spies = targets.map((t) => vi.spyOn(t, 'dispose'));
+      const disposed = () => spies.map((s) => s.mock.calls.length);
+      r.setQuality('low');
+      expect(disposed().every((n) => n === 0)).toBe(true);
+      r.setQuality('medium');
+      expect(disposed().every((n) => n >= 1)).toBe(true);
+      const afterMedium = disposed();
+      r.setQuality('high');
+      expect(disposed().every((n, i) => n > afterMedium[i])).toBe(true);
+      expect(count()).toBe(start);
+      expect(bloomTargets(post)).toEqual(targets);
+    });
+
+    it('draws the retro pass on top on every preset (AC4)', () => {
+      const post = r.post!;
+      r.setRetro(true);
+      for (const p of ['high', 'low', 'medium'] as const) {
+        r.setQuality(p);
+        const order = trace(post);
+        r.render(view);
+        expect(order).toEqual(p === 'low' ? ['scene', 'grade', 'vignette', 'retro'] : ['scene', 'bloom', 'grade', 'vignette', 'retro']);
+        vi.restoreAllMocks();
+      }
+    });
   });
 });
 

@@ -14,8 +14,8 @@ export const BLOOM_THRESHOLD = 0.85;
 export const BLOOM_STRENGTH = 0.6;
 /** Spread of the bloom across its mip levels (0..1). */
 export const BLOOM_RADIUS = 0.4;
-/** Bloom resolution as a fraction of the frame's drawing buffer. */
-export const BLOOM_SCALE = 0.5;
+/** Bloom resolution as a fraction of the frame's drawing buffer, per quality preset; Low has no bloom (PRD 13). */
+export const BLOOM_SCALE = { high: 1, medium: 0.5, low: 0 } as const;
 /** How far mid-tones are pushed towards red and away from blue. */
 export const GRADE_WARMTH = 0.05;
 /** How much the corners darken (0 = none, 1 = black). */
@@ -84,21 +84,37 @@ void main() {
 }`,
 };
 
-/** Unreal bloom drawn at BLOOM_SCALE of the frame it reads. */
+/** Unreal bloom drawn at `scale` of the frame it reads (BLOOM_SCALE.high until changed). */
 export class ScaledBloomPass extends UnrealBloomPass {
+  private scale: number = BLOOM_SCALE.high;
+  private frameW: number;
+  private frameH: number;
+
   constructor(width: number, height: number) {
-    super(new THREE.Vector2(scaled(width), scaled(height)), BLOOM_STRENGTH, BLOOM_RADIUS, BLOOM_THRESHOLD);
+    super(new THREE.Vector2(scaled(width, BLOOM_SCALE.high), scaled(height, BLOOM_SCALE.high)), BLOOM_STRENGTH, BLOOM_RADIUS, BLOOM_THRESHOLD);
+    this.frameW = width;
+    this.frameH = height;
   }
 
-  /** `width` × `height` is the frame's size; the bloom follows at BLOOM_SCALE. */
+  /** `width` × `height` is the frame's size; the bloom follows at the current scale. */
   override setSize(width: number, height: number): void {
-    this.resolution.set(scaled(width), scaled(height));
+    this.frameW = width;
+    this.frameH = height;
+    this.resolution.set(scaled(width, this.scale), scaled(height, this.scale));
+    // Resizing a target disposes its old GPU texture, so no render target is leaked.
     super.setSize(this.resolution.x, this.resolution.y);
+  }
+
+  /** Changes the bloom's share of the frame, resizing its render targets in place. */
+  setScale(scale: number): void {
+    if (scale === this.scale) return;
+    this.scale = scale;
+    this.setSize(this.frameW, this.frameH);
   }
 }
 
-function scaled(n: number): number {
-  return Math.max(1, Math.round(n * BLOOM_SCALE));
+function scaled(n: number, scale: number): number {
+  return Math.max(1, Math.round(n * scale));
 }
 
 /** Last pass while retro is on: the retro shader reads the graded frame and draws it to the canvas. */
@@ -161,6 +177,11 @@ export class PostChain {
     if (enabled === this.bloom) return;
     if (enabled) this.composer.insertPass(this.bloomPass, this.composer.passes.indexOf(this.scenePass) + 1);
     else this.composer.removePass(this.bloomPass);
+  }
+
+  /** Sets the bloom resolution as a fraction of the frame; used with setBloom by the quality presets. */
+  setBloomScale(scale: number): void {
+    this.bloomPass.setScale(scale);
   }
 
   /** Ends the chain in `retro` (drawn at its low resolution, nearest-filtered) or, with null, at full resolution. */
