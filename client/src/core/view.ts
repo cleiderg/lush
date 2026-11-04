@@ -29,15 +29,21 @@ export function homeRoom(home: HomeView | null): RoomDescription | undefined {
  * Drains game.hits, so each hit appears in exactly one view. Chat holds the current overhead
  * message of the local player and of each remote player in view; other speakers are left out.
  * A bubble carries an opacity below 1 only while it fades over the last CHAT_FADE_MS.
+ * npcMarkers maps each NPC in view to the quest marker (!/?) from the quest state; NPCs with no quest to offer or finish have no entry.
  * The sky is the sun's position at the shared (server) time, or the debug override.
  */
 export function buildWorldView(game: GameState, now: number): WorldView {
   const hits = game.hits.drain().flatMap((b) => b.hits.map((h) => ({ attacker: h.attacker, target: h.target, damage: h.damage, died: h.died })));
   const remotes: PlayerView[] = [];
   const npcs: NpcView[] = [];
+  const npcMarkers = new Map<number, 'start' | 'finish'>();
   for (const r of game.remotes(now)) {
     const info = game.items.entityInfo(r.id);
-    if (info?.kind === EntityKind.Npc) npcs.push({ id: r.id, npcType: info.npcType, x: r.x, z: r.z, heading: r.heading });
+    if (info?.kind === EntityKind.Npc) {
+      npcs.push({ id: r.id, npcType: info.npcType, x: r.x, z: r.z, heading: r.heading });
+      const marker = game.quests.markerFor(info.npcType);
+      if (marker) npcMarkers.set(r.id, marker);
+    }
     else remotes.push(r);
   }
   const local = game.local;
@@ -54,7 +60,7 @@ export function buildWorldView(game: GameState, now: number): WorldView {
   const fishingSpots = new Set(game.skills.fishingSpots().flatMap((f) => skillsMap.pond.spots[f.candidate]?.id ?? []));
   const activeResource = game.gathering.activeResource(candidateOf);
   const resourceProgress = game.gathering.progress(now);
-  return { local, remotes, npcs, felledTrees, fishingSpots, activeResource, resourceProgress, entities: game.items, groundItems: game.items.groundItems, hits, gains: game.gains.active(now, FLOAT_TEXT_MS), chat, sky: sunPosition(game.clock.now()), home: homeRoom(game.housing.home) };
+  return { local, remotes, npcs, felledTrees, fishingSpots, activeResource, resourceProgress, entities: game.items, groundItems: game.items.groundItems, hits, gains: game.gains.active(now, FLOAT_TEXT_MS), chat, npcMarkers, sky: sunPosition(game.clock.now()), home: homeRoom(game.housing.home) };
 }
 
 /**

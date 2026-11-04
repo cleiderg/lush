@@ -37,6 +37,7 @@ import { DialoguePanel } from './ui/dialoguePanel';
 import { WorkbenchPanel } from './ui/workbenchPanel';
 import { ShopKind } from './protocol';
 import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
+import { QuestsPanel } from './ui/questsPanel';
 import { SkillsPanel } from './ui/skillsPanel';
 import { applyTheme, BUTTON_CLASS } from './ui/theme';
 import { mountTimePanel } from './ui/timePanel';
@@ -101,6 +102,7 @@ const hud = new Hud({
   send,
   onOpen: () => {
     skills.setOpen(false);
+    quests.setOpen(false);
     shop.close();
     thrift.close();
     bench.close();
@@ -118,6 +120,25 @@ const skills = new SkillsPanel({
   inventory: hud,
   onOpen: () => {
     hud.setOpen(false);
+    quests.setOpen(false);
+    shop.close();
+    thrift.close();
+    bench.close();
+    house.close();
+    cardTable.close();
+    bank.close();
+    bigMap.close();
+  },
+});
+const quests = new QuestsPanel({
+  parent: document.body,
+  quests: game.quests,
+  inventory: hud,
+  skills,
+  levels: [game.skills, game.items],
+  onOpen: () => {
+    hud.setOpen(false);
+    skills.setOpen(false);
     shop.close();
     thrift.close();
     bench.close();
@@ -135,6 +156,7 @@ const shop = new ShopPanel({
   onOpen: () => {
     hud.setOpen(false);
     skills.setOpen(false);
+    quests.setOpen(false);
     thrift.close();
     house.close();
     cardTable.close();
@@ -152,6 +174,7 @@ const thrift = new ShopPanel({
   onOpen: () => {
     hud.setOpen(false);
     skills.setOpen(false);
+    quests.setOpen(false);
     shop.close();
     bench.close();
     house.close();
@@ -179,6 +202,7 @@ const bench = new WorkbenchPanel({
   onOpen: () => {
     hud.setOpen(false);
     skills.setOpen(false);
+    quests.setOpen(false);
     shop.close();
     thrift.close();
     house.close();
@@ -196,6 +220,7 @@ const house = new HousePanel({
   onOpen: () => {
     hud.setOpen(false);
     skills.setOpen(false);
+    quests.setOpen(false);
     shop.close();
     thrift.close();
     bench.close();
@@ -238,6 +263,7 @@ const cardTable = new CardTablePanel({
   onOpen: () => {
     hud.setOpen(false);
     skills.setOpen(false);
+    quests.setOpen(false);
     shop.close();
     thrift.close();
     bench.close();
@@ -262,6 +288,7 @@ const bank = new BankPanel({
   onOpen: () => {
     hud.setOpen(false);
     skills.setOpen(false);
+    quests.setOpen(false);
     shop.close();
     thrift.close();
     bench.close();
@@ -286,6 +313,7 @@ const trade = new TradePanel({
   onOpen: () => {
     hud.setOpen(false);
     skills.setOpen(false);
+    quests.setOpen(false);
     shop.close();
     thrift.close();
     bench.close();
@@ -307,6 +335,7 @@ const bigMap = new BigMap({
   onOpen: () => {
     hud.setOpen(false);
     skills.setOpen(false);
+    quests.setOpen(false);
     shop.close();
     thrift.close();
     bench.close();
@@ -328,7 +357,7 @@ const chatLog = new ChatLog({
   parent: document.body,
   lines: () => game.chat.log,
   playerId: () => game.playerId,
-  covered: () => anyOpen([hud, skills, shop, thrift, bench, house, bank, trade, cardTable, bigMap]),
+  covered: () => anyOpen([hud, skills, quests, shop, thrift, bench, house, bank, trade, cardTable, bigMap]),
 });
 // Developer-only time control (?debug): overrides the shared time the sky follows.
 mountTimePanel(location.search, { parent: document.body, clock: game.clock });
@@ -391,6 +420,10 @@ function openOfflinePanel(panel: OfflinePanel): void {
     skills: () => {
       skills.setOpen(true);
       return skills.isOpen;
+    },
+    quests: () => {
+      quests.setOpen(true);
+      return quests.isOpen;
     },
     'big-map': () => {
       bigMap.open();

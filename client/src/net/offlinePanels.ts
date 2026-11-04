@@ -1,4 +1,4 @@
-import { EntityKind, EquipSlot, HouseState, ItemKind, PlacementKind, QuestSkill, QuestState, ShedColour, ShedSymbol, Skill, ToolSkill } from '../protocol';
+import { EntityKind, EquipSlot, HouseState, ItemKind, PlacementKind, QuestRequirementKind, QuestSkill, QuestState, ShedColour, ShedSymbol, Skill, ToolSkill } from '../protocol';
 import type { ItemInfo, ServerMessage, ShedCardValue } from './codec';
 import { OFFLINE_PLAYER_ID, seededRandom, type OfflineOptions } from './offline';
 
@@ -22,6 +22,21 @@ function item(id: number, name: string, kind: ItemKind, extra: Partial<ItemInfo>
     shopBuysFor: 1, shopSells: false, shopSellsFor: 0, toolSkill: ToolSkill.None, toolLevel: 0, cookingLevel: 0, footprintW: 0, footprintD: 0, placement: 0, surfaceSlots: 0, thriftSellsFor: 0, thriftBuysFor: 0, ...extra,
   };
 }
+
+const NO_REWARDS = { questPoints: 0, gold: 0, items: [], xp: [] };
+
+/** Three quests for the Quests panel shot: one complete, one in progress, one whose requirements aren't met. */
+const OFFLINE_QUESTS = [
+  { id: 1, name: 'Overdue', description: 'Return a library book.', requirements: [], steps: ['Talk to the librarian.'], rewards: { ...NO_REWARDS, questPoints: 1 }, startNpc: 1, finishNpc: 1 },
+  {
+    id: 2, name: 'Coyote Trouble', description: 'Help the ranger.', steps: ['Talk to the park ranger.', 'Kill 5 coyotes.'], rewards: { ...NO_REWARDS, questPoints: 2 }, startNpc: 2, finishNpc: 2,
+    requirements: [{ kind: QuestRequirementKind.Level, skill: QuestSkill.Combat, level: 15, questId: 0 }],
+  },
+  {
+    id: 3, name: 'Fish Fry', description: 'Feed the lunch rush.', steps: ['Bring 5 trout to the cook.'], rewards: { ...NO_REWARDS, questPoints: 1 }, startNpc: 3, finishNpc: 3,
+    requirements: [{ kind: QuestRequirementKind.Level, skill: QuestSkill.Cooking, level: 40, questId: 0 }],
+  },
+];
 
 /** A small catalog like the server's (items.json); some of it the shop sells. */
 const CATALOG: readonly ItemInfo[] = [
@@ -102,6 +117,15 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
       }),
     },
     { type: 'cardTableCatalog', tables: [{ id: OFFLINE_TABLE_ID, seats: 4, stake: 10 }] },
+    { type: 'questCatalog', quests: OFFLINE_QUESTS },
+    {
+      type: 'questLog',
+      quests: [
+        { questId: 1, state: QuestState.Complete, step: 0, count: 0 },
+        { questId: 2, state: QuestState.InProgress, step: 1, count: 3 },
+      ],
+      questPoints: 1,
+    },
   ];
 
   // A Shed game at table 1: the player in seat 0 and three bots, the player's turn.

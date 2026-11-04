@@ -287,6 +287,9 @@ func TestSplitOnDeathConserves(t *testing.T) {
 		for i := range inv.Slots {
 			if r.IntN(3) == 0 {
 				it := d.Items[r.IntN(len(d.Items))]
+				for it.QuestItem { // quest items are removed on death, not split
+					it = d.Items[r.IntN(len(d.Items))]
+				}
 				qty := 1
 				if it.Stackable() {
 					qty = 1 + r.IntN(20)
