@@ -156,6 +156,8 @@ M10 housing (`docs/specs/housing.md`: Neighborhoods and ownership, Economy hooks
 - `areas[]`: `{id, name, p, thrift, workbench}`. `id` is `mesa_court` or `middle_earth`; `name` the display name; `p` the OSM outline (`HOUSING` in `config.mjs`) as a closed polygon `[x0,z0,...]` (last point not repeated); `thrift` and `workbench` are `{x, z}` points.
 - `houses[]`: `{id, area, osm, x, z}`. `id` is `<area>-<n>` with n from 1, unique; `area` an area id; `osm` the OSM way id of the building (`campus.json` `buildings`); `x`, `z` the door, the centre of a walkable collision cell.
 
+**Ids in `HousingState`** (protocol): the house at 0-based index `j` in `houses[]` is house (plot) id `j+1`, and the area at 0-based index `i` in `areas[]` is area id `i+1`. Client and server both count in file order, so the order of `areas[]` and `houses[]` must not change without a version bump.
+
 `build.mjs` runs this last, on the final grid. Per area it takes the `HOUSES_PER_AREA` (20) largest buildings wholly inside the outline (ties by id) that have a door cell: a walkable cell inside the outline, outside the building and within 1.5 m of its footprint, nearest the wall (then best connected, then north-west first), never one used as another door. The thrift stall is on the open cell (all 8 neighbours walkable) inside the outline nearest the middle of the area's doors, at least 3 m from every door; the workbench is another such cell 1.5 to 2.5 m from the stall. All points are on walkable cells of `collision.bin`. Deterministic: byte-identical on every build.
 
 ## `parknature.json`

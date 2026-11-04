@@ -13,6 +13,7 @@ import { ChatText } from './chatText';
 import { FloatTexts } from './floatText';
 import { AreaMarkers, loadAreas } from './gameAreas';
 import { CardTables, loadCardTables } from './cardTables';
+import { createHousingLayer } from './housingLayer';
 import { Nature, FLOWERS_PER_M2, GRASS_TUFTS_PER_M2, type NatureOptions } from './nature';
 import { QUALITY_GRASS, QUALITY_SHADOW_MAP, type QualityPreset } from './quality';
 import { Props, loadProps } from './propKit';
@@ -55,6 +56,8 @@ export class WorldScene {
   readonly map = new CampusMap(loadCampus(), loadParkNature());
   readonly areas = new AreaMarkers(loadAreas());
   readonly cardTables = new CardTables(loadCardTables());
+  /** House doors, auction signs, thrift stalls and workbenches in the housing areas. */
+  readonly housing = createHousingLayer();
   /** Grass tufts and flowers, instanced per map chunk. */
   nature = new Nature(loadCampus(), this.natureOptions('high'));
   private preset: QualityPreset = 'high';
@@ -101,7 +104,7 @@ export class WorldScene {
     this.ground = makeGround(loadCampus().bounds);
     this.scene.add(this.ground, this.map.group, this.areas.group, this.player.root, this.remotes.group, this.shadows.group, this.healthBars.group);
     // After the players: tests find the remote-player instanced meshes as the first ones in the scene.
-    this.scene.add(this.cardTables.group, this.props.group, this.cafe.group, this.skills.group, this.fountain.group, this.nature.group, this.lamps.group);
+    this.scene.add(this.cardTables.group, this.housing.group, this.props.group, this.cafe.group, this.skills.group, this.fountain.group, this.nature.group, this.lamps.group);
     this.lamps.update(DEFAULT_SKY.elevation, this.rig.camera.position, this.now());
     // Cull again for the camera actually rendering, in case its aspect changed since the last view.
     this.scene.onBeforeRender = (_renderer, _scene, camera) => {
@@ -190,6 +193,8 @@ export class WorldScene {
       this.skills.cull(this.rig.camera);
     }
     this.sky.update(view.sky, local.x, local.z);
+    // After the sky sets this frame's fog; at home the campus, housing included, stays hidden.
+    if (!this.room) this.housing.update(this.rig.camera, this.sky.fog.far);
     this.lamps.update((view.sky ?? DEFAULT_SKY).elevation, this.rig.camera.position, this.now());
     this.map.updateSky(view.sky);
     // Hitsplats join the scene with the first hit, so a view without hits leaves the graph as it was.
@@ -230,7 +235,7 @@ export class WorldScene {
   /** Everything placed in campus space: scenery and everything standing on it. */
   private campusObjects(): THREE.Object3D[] {
     const list: (THREE.Object3D | null)[] = [
-      this.ground, this.map.group, this.areas.group, this.cardTables.group, this.props.group, this.cafe.group,
+      this.ground, this.map.group, this.areas.group, this.cardTables.group, this.housing.group, this.props.group, this.cafe.group,
       this.skills.group, this.fountain.group, this.nature.group, this.lamps.group, this.player.root,
       this.remotes.group, this.shadows.group, this.healthBars.group, this.hitsplats.group, this.levelUps.group,
       this.chat.group, this.floatTexts.group, this.groundItems?.group ?? null, this.npcs?.group ?? null,
