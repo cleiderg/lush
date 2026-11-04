@@ -24,6 +24,9 @@ function setup() {
   return { quests, scroll };
 }
 
+const inProgress = (q: QuestStore) => q.setLog([{ questId: 1, state: QuestState.InProgress, step: 2, count: 0 }], 0);
+const complete = (q: QuestStore) => q.setLog([{ questId: 1, state: QuestState.Complete, step: 3, count: 0 }], 1);
+
 const lines = (s: QuestScroll): string[] => [...s.panel.querySelectorAll('.lush-quest-scroll-line')].map((e) => e.textContent ?? '');
 
 describe('QuestScroll', () => {
@@ -31,7 +34,8 @@ describe('QuestScroll', () => {
 
   it('opens for the local player with the name and every reward line (AC1)', () => {
     const { quests, scroll } = setup();
-    quests.setLog([{ questId: 1, state: QuestState.Complete, step: 3, count: 0 }], 1);
+    inProgress(quests);
+    complete(quests);
     quests.setCompleted('Cleider', 1, 'Overdue', OVERDUE);
     expect(scroll.isOpen).toBe(true);
     expect(scroll.panel.classList.contains('lush-panel')).toBe(true);
@@ -41,9 +45,10 @@ describe('QuestScroll', () => {
 
   it('opens when the log update arrives just after QuestCompleted (AC1)', () => {
     const { quests, scroll } = setup();
+    inProgress(quests);
     quests.setCompleted('Cleider', 1, 'Overdue', OVERDUE);
     expect(scroll.isOpen).toBe(false);
-    quests.setLog([{ questId: 1, state: QuestState.Complete, step: 3, count: 0 }], 1);
+    complete(quests);
     expect(scroll.isOpen).toBe(true);
   });
 
@@ -52,14 +57,22 @@ describe('QuestScroll', () => {
     quests.setCompleted('Sam', 1, 'Overdue', OVERDUE);
     quests.setLog([{ questId: 1, state: QuestState.InProgress, step: 1, count: 0 }], 0);
     expect(scroll.isOpen).toBe(false);
-    quests.setLog([{ questId: 1, state: QuestState.Complete, step: 3, count: 0 }], 1);
+  });
+
+  it("doesn't open when another player finishes a quest the player finished earlier (AC2)", () => {
+    const { quests, scroll } = setup();
+    complete(quests); // the log at login
+    quests.setCompleted('Sam', 1, 'Overdue', OVERDUE);
+    complete(quests);
     expect(scroll.isOpen).toBe(false);
   });
 
   it('closes with its button (AC3)', () => {
     const { quests, scroll } = setup();
-    quests.setLog([{ questId: 1, state: QuestState.Complete, step: 3, count: 0 }], 1);
+    inProgress(quests);
+    complete(quests);
     quests.setCompleted('Cleider', 1, 'Overdue', OVERDUE);
+    expect(scroll.isOpen).toBe(true);
     scroll.panel.querySelector<HTMLElement>('.lush-quest-scroll-close')!.click();
     expect(scroll.isOpen).toBe(false);
     expect(scroll.panel.hidden).toBe(true);

@@ -1,6 +1,6 @@
 import { QuestSkill, QuestState } from '../protocol';
 import type { ItemState } from '../state/items';
-import type { QuestStore } from '../state/quests';
+import type { QuestRewardsInfo, QuestStore } from '../state/quests';
 import { addPressFeedbackWithin, BUTTON_CLASS, PanelMotion } from './theme';
 
 export interface QuestScrollOptions {
@@ -26,8 +26,9 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text = '
 /**
  * The quest completion scroll: the quest name and its rewards, closed with a button.
  * QuestCompleted is also sent for other players, and the client doesn't know its own name, so the
- * scroll opens only when the quest is complete in the player's own quest log (the log update may
- * arrive just after the QuestCompleted, so one log update is waited for).
+ * scroll opens only when the quest also goes from in progress to complete in the player's own quest
+ * log; the log update may arrive just before or just after the QuestCompleted. A quest the player
+ * finished earlier never changes again, so another player finishing it doesn't open the scroll.
  */
 export class QuestScroll {
   readonly panel: HTMLElement;
@@ -36,11 +37,17 @@ export class QuestScroll {
   private readonly motion: PanelMotion;
   private readonly unsubscribe: () => void;
   private seenSeq: number;
-  private pending = false;
+  /** The latest QuestCompleted not yet matched to a completion in the player's own log. */
+  private pending: { questId: number; questName: string; rewards: QuestRewardsInfo } | null = null;
+  /** Each quest's state in the log at the last sync. */
+  private states = new Map<number, QuestState>();
+  /** Quests the player's own log moved from in progress to complete, not yet matched to a QuestCompleted. */
+  private readonly finished = new Set<number>();
 
   constructor(private readonly opts: QuestScrollOptions) {
     injectStyle();
     this.seenSeq = opts.quests.completedSeq;
+    this.states = new Map(opts.quests.log.map((p) => [p.questId, p.state]));
     this.panel = el('div', 'lush-panel lush-quest-scroll');
     this.panel.setAttribute('role', 'dialog');
     this.panel.setAttribute('aria-label', 'Quest complete');
@@ -71,20 +78,24 @@ export class QuestScroll {
 
   private sync(): void {
     const { quests } = this.opts;
-    const fresh = quests.completedSeq !== this.seenSeq;
-    this.seenSeq = quests.completedSeq;
-    if (fresh) this.pending = true;
-    const c = quests.completed;
-    if (!this.pending || !c) return;
-    if (quests.progressOf(c.questId).state === QuestState.Complete) {
-      this.pending = false;
-      this.show(c.questName, c.rewards);
-    } else if (!fresh) {
-      this.pending = false;
+    const states = new Map(quests.log.map((p) => [p.questId, p.state]));
+    for (const [id, state] of states) {
+      if (state === QuestState.Complete && this.states.get(id) === QuestState.InProgress) this.finished.add(id);
     }
+    this.states = states;
+    if (quests.completedSeq !== this.seenSeq && quests.completed) {
+      this.seenSeq = quests.completedSeq;
+      const { questId, questName, rewards } = quests.completed;
+      this.pending = { questId, questName, rewards };
+    }
+    const c = this.pending;
+    if (!c || !this.finished.has(c.questId)) return;
+    this.finished.delete(c.questId);
+    this.pending = null;
+    this.show(c.questName, c.rewards);
   }
 
-  private show(name: string, r: { questPoints: number; gold: number; items: { itemId: number; count: number }[]; xp: { skill: number; xp: number }[] }): void {
+  private show(name: string, r: QuestRewardsInfo): void {
     this.title.textContent = name;
     const lines: [string, string][] = [];
     if (r.questPoints > 0) lines.push(['points', `${r.questPoints} quest point${r.questPoints === 1 ? '' : 's'}`]);

@@ -228,8 +228,9 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
   }
 
   if (opts.panel === 'quest-scroll') {
-    // The player finishes Overdue: the log shows it complete, then the QuestCompleted with its rewards.
+    // The player finishes Overdue: the log goes from in progress to complete, then the QuestCompleted with its rewards.
     msgs.push(
+      { type: 'questLog', quests: [{ questId: 1, state: QuestState.InProgress, step: 2, count: 0 }], questPoints: 0 },
       { type: 'questLog', quests: [{ questId: 1, state: QuestState.Complete, step: 3, count: 0 }], questPoints: 1 },
       {
         type: 'questCompleted', playerName: 'You', questId: 1, questName: 'Overdue',

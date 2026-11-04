@@ -46,7 +46,7 @@ export class QuestStore {
   completedSeq = 0;
   /**
    * The latest QuestCompleted, for the completion scroll; null before any. The client doesn't know its
-   * own name, so the UI shows the scroll only when the quest is complete in its own log.
+   * own name, so the UI shows the scroll only when the quest goes from in progress to complete in its own log.
    */
   completed: { playerName: string; questId: number; questName: string; rewards: QuestRewardsInfo } | null = null;
 
@@ -72,6 +72,11 @@ export class QuestStore {
 
   quest(id: number): QuestInfo | undefined {
     return this.catalog.get(id);
+  }
+
+  /** Every quest the player's log lists. */
+  get log(): QuestProgressState[] {
+    return [...this.progress.values()];
   }
 
   /** The player's progress in a quest; not started when the log doesn't list it. */
