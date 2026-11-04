@@ -30,6 +30,7 @@ import { BigMap, Minimap } from './ui/minimap';
 import { PlayerPortrait } from './ui/playerPortrait';
 import { localRetroStore, RetroToggle } from './ui/retroToggle';
 import { HomeLeaveButton } from './ui/homeLeaveButton';
+import { HomeOpenToggle } from './ui/homeOpenToggle';
 import { HomeEditPanel, type Tile } from './ui/homeEditPanel';
 import { HousePanel } from './ui/housePanel';
 import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
@@ -163,6 +164,7 @@ const homeEdit = new HomeEditPanel({
 void tilePick;
 const homeLeave = new HomeLeaveButton({ parent: document.body, housing: game.housing, sendHomeLeave: () => session.sendHomeLeave() });
 void homeLeave;
+void new HomeOpenToggle({ parent: document.body, housing: game.housing, sendHomeSetOpen: (open) => session.sendHomeSetOpen(open) });
 const cardTable = new CardTablePanel({
   parent: document.body,
   tables: game.cardTables,
