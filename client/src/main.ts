@@ -33,6 +33,7 @@ import { HomeLeaveButton } from './ui/homeLeaveButton';
 import { HomeOpenToggle } from './ui/homeOpenToggle';
 import { HomeEditPanel, type Tile } from './ui/homeEditPanel';
 import { HousePanel } from './ui/housePanel';
+import { ShopKind } from './protocol';
 import { SHOP_STALL, ShopPanel } from './ui/shopPanel';
 import { SkillsPanel } from './ui/skillsPanel';
 import { applyTheme, BUTTON_CLASS } from './ui/theme';
@@ -95,6 +96,7 @@ const hud = new Hud({
   onOpen: () => {
     skills.setOpen(false);
     shop.close();
+    thrift.close();
     house.close();
     cardTable.close();
     bank.close();
@@ -110,6 +112,7 @@ const skills = new SkillsPanel({
   onOpen: () => {
     hud.setOpen(false);
     shop.close();
+    thrift.close();
     house.close();
     cardTable.close();
     bank.close();
@@ -124,6 +127,24 @@ const shop = new ShopPanel({
   onOpen: () => {
     hud.setOpen(false);
     skills.setOpen(false);
+    thrift.close();
+    house.close();
+    cardTable.close();
+    bank.close();
+    bigMap.close();
+  },
+});
+// Campus Thrift: opened from the offline shot for now; Interact at the stall comes with its position (#524).
+const thrift = new ShopPanel({
+  parent: document.body,
+  items: game.items,
+  send,
+  position: () => game.prediction.pos,
+  shop: ShopKind.Thrift,
+  onOpen: () => {
+    hud.setOpen(false);
+    skills.setOpen(false);
+    shop.close();
     house.close();
     cardTable.close();
     bank.close();
@@ -140,6 +161,7 @@ const house = new HousePanel({
     hud.setOpen(false);
     skills.setOpen(false);
     shop.close();
+    thrift.close();
     cardTable.close();
     bank.close();
     bigMap.close();
@@ -180,6 +202,7 @@ const cardTable = new CardTablePanel({
     hud.setOpen(false);
     skills.setOpen(false);
     shop.close();
+    thrift.close();
     house.close();
     bank.close();
     bigMap.close();
@@ -202,6 +225,7 @@ const bank = new BankPanel({
     hud.setOpen(false);
     skills.setOpen(false);
     shop.close();
+    thrift.close();
     house.close();
     cardTable.close();
     bigMap.close();
@@ -224,6 +248,7 @@ const trade = new TradePanel({
     hud.setOpen(false);
     skills.setOpen(false);
     shop.close();
+    thrift.close();
     house.close();
     cardTable.close();
     bank.close();
@@ -242,6 +267,7 @@ const bigMap = new BigMap({
     hud.setOpen(false);
     skills.setOpen(false);
     shop.close();
+    thrift.close();
     house.close();
     cardTable.close();
     bank.close();
@@ -260,7 +286,7 @@ const chatLog = new ChatLog({
   parent: document.body,
   lines: () => game.chat.log,
   playerId: () => game.playerId,
-  covered: () => anyOpen([hud, skills, shop, house, bank, trade, cardTable, bigMap]),
+  covered: () => anyOpen([hud, skills, shop, thrift, house, bank, trade, cardTable, bigMap]),
 });
 // Developer-only time control (?debug): overrides the shared time the sky follows.
 mountTimePanel(location.search, { parent: document.body, clock: game.clock });
@@ -290,6 +316,10 @@ function openOfflinePanel(panel: OfflinePanel): void {
       return hud.isOpen;
     },
     shop: () => shop.tryOpen(),
+    thrift: () => {
+      thrift.open();
+      return thrift.isOpen;
+    },
     house: () => {
       house.open(OFFLINE_HOUSE_ID);
       return house.isOpen;

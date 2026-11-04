@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as flatbuffers from 'flatbuffers';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Envelope, EquipSlot, ItemKind, Message, ShopBuy, ShopResultCode, ShopSell } from '../protocol';
+import { Envelope, EquipSlot, ItemKind, Message, ShopBuy, ShopKind, ShopResultCode, ShopSell } from '../protocol';
 import { ItemState, type ItemInfo } from '../state/items';
 import { nearShop, SHOP_DISTANCE_TILES, shopResultText, TILE_METRES } from '../state/shop';
 import { Hud } from './hud';
@@ -188,5 +188,65 @@ describe('shop results (AC4)', () => {
       items.setShopResult(code);
       expect(shop.message.textContent).toBe(shopResultText(code));
     }
+  });
+});
+
+describe('Campus Thrift panel (#604)', () => {
+  const THRIFT_CATALOG = [
+    ...CATALOG,
+    { ...item(40, 'Beanbag', ItemKind.Loot, 2), thriftSellsFor: 30, thriftBuysFor: 10 },
+    { ...item(41, 'Lava lamp', ItemKind.Loot, 2), thriftSellsFor: 24, thriftBuysFor: 0 },
+    { ...item(42, 'Blue wallpaper', ItemKind.Loot, 2), thriftSellsFor: 50, thriftBuysFor: 16 },
+  ];
+
+  function setupThrift() {
+    const items = new ItemState();
+    items.setCatalog(THRIFT_CATALOG);
+    const send = vi.fn<(bytes: Uint8Array) => void>();
+    shop = new ShopPanel({ parent: document.body, items, send, position: () => ({ x: 0, z: 0 }), shop: ShopKind.Thrift, viewport: () => ({ width: 390, height: 844 }) });
+    shop.open();
+    return { items, send };
+  }
+
+  const names = (sel: string) => [...document.querySelectorAll(sel)].map((r) => r.querySelector('.lush-shop-name')?.textContent);
+
+  it('lists exactly the items with a thrift price, at that price (AC1)', () => {
+    setupThrift();
+    const rows = [...document.querySelectorAll('.lush-shop-list')[0].children];
+    expect(rows.map((r) => [r.querySelector('.lush-shop-name')?.textContent, r.querySelector('.lush-shop-price')?.textContent])).toEqual([
+      ['Lava lamp', '24 gp'], ['Beanbag', '30 gp'], ['Blue wallpaper', '50 gp'],
+    ]);
+  });
+
+  it('buying sends ShopBuy with the thrift shop (AC1)', () => {
+    const { send } = setupThrift();
+    (document.querySelector('[data-item="40"] .lush-shop-buy') as HTMLElement).click();
+    const m = envelope(send.mock.calls[0][0]);
+    const buy = m.msg(new ShopBuy()) as ShopBuy;
+    expect([buy.itemId(), buy.quantity(), buy.shop()]).toEqual([40, 1, ShopKind.Thrift]);
+  });
+
+  it('offers only inventory items with a thrift buy price, and selling sends the thrift shop (AC2)', () => {
+    const { items, send } = setupThrift();
+    const slots = Array.from({ length: 28 }, () => ({ itemId: 0, quantity: 0 }));
+    [1, 40, 41, 42].forEach((id, i) => { slots[i] = { itemId: id, quantity: 1 }; });
+    items.setInventory({ slots, equipment: { weapon: 0, head: 0, body: 0, shield: 0 } });
+    expect(names('[data-slot]')).toEqual(['Beanbag', 'Blue wallpaper']);
+    expect([...document.querySelectorAll('[data-slot] .lush-shop-price')].map((p) => p.textContent)).toEqual(['10 gp', '16 gp']);
+    (document.querySelector('[data-slot="1"] .lush-shop-sell') as HTMLElement).click();
+    const sell = envelope(send.mock.calls[0][0]).msg(new ShopSell()) as ShopSell;
+    expect([sell.slot(), sell.quantity(), sell.shop()]).toEqual([1, 1, ShopKind.Thrift]);
+  });
+
+  it('the Campus Market panel lists, prices and sends as before (AC3)', () => {
+    const { items, send } = setup();
+    shop!.tryOpen();
+    expect(document.querySelector('.lush-shop-title')?.textContent).toBe('Campus Market');
+    expect([...document.querySelectorAll('[data-item]')].map((r) => [r.querySelector('.lush-shop-name')?.textContent, r.querySelector('.lush-shop-price')?.textContent]))
+      .toEqual([['Wooden stick', '5 gp'], ['Boba', '5 gp'], ['Bronze dagger', '40 gp']]);
+    items.setInventory({ slots: [{ itemId: 5, quantity: 1 }, ...Array.from({ length: 27 }, () => ({ itemId: 0, quantity: 0 }))], equipment: { weapon: 0, head: 0, body: 0, shield: 0 } });
+    expect(document.querySelector('[data-slot="0"] .lush-shop-price')?.textContent).toBe('25 gp');
+    (document.querySelector('[data-item="2"] .lush-shop-buy') as HTMLElement).click();
+    expect(((envelope(send.mock.calls[0][0]).msg(new ShopBuy())) as ShopBuy).shop()).toBe(ShopKind.Market);
   });
 });

@@ -36,12 +36,12 @@ const CATALOG: readonly ItemInfo[] = [
   item(12, 'Shiny trinket', ItemKind.Loot, { shopBuysFor: 25 }),
   item(13, 'Coyote pelt', ItemKind.Loot, { shopBuysFor: 12 }),
   item(14, 'Scrap metal', ItemKind.Loot, { shopBuysFor: 8 }),
-  item(40, 'Beanbag', ItemKind.Loot, { placement: PlacementKind.Floor }),
-  item(41, 'Study desk', ItemKind.Loot, { placement: PlacementKind.Floor }),
-  item(42, 'Lava lamp', ItemKind.Loot, { placement: PlacementKind.Surface }),
-  item(43, 'Poster', ItemKind.Loot, { placement: PlacementKind.Wall }),
-  item(44, 'Blue wallpaper', ItemKind.Loot, { placement: PlacementKind.Wallpaper }),
-  item(45, 'Wood flooring', ItemKind.Loot, { placement: PlacementKind.Flooring }),
+  item(40, 'Beanbag', ItemKind.Loot, { placement: PlacementKind.Floor, thriftSellsFor: 30, thriftBuysFor: 10 }),
+  item(41, 'Study desk', ItemKind.Loot, { placement: PlacementKind.Floor, thriftSellsFor: 60, thriftBuysFor: 20 }),
+  item(42, 'Lava lamp', ItemKind.Loot, { placement: PlacementKind.Surface, thriftSellsFor: 24, thriftBuysFor: 8 }),
+  item(43, 'Poster', ItemKind.Loot, { placement: PlacementKind.Wall, thriftSellsFor: 15, thriftBuysFor: 5 }),
+  item(44, 'Blue wallpaper', ItemKind.Loot, { placement: PlacementKind.Wallpaper, thriftSellsFor: 50, thriftBuysFor: 16 }),
+  item(45, 'Wood flooring', ItemKind.Loot, { placement: PlacementKind.Flooring, thriftSellsFor: 50, thriftBuysFor: 16 }),
 ];
 
 /** The catalog items before the home furnishings, which only the home-edit panel puts in the inventory. */
@@ -165,6 +165,13 @@ export function offlinePanelMessages(opts: Pick<OfflineOptions, 'seed' | 'panel'
         ],
       },
     );
+  }
+
+  if (opts.panel === 'thrift') {
+    // Furniture in the inventory to sell back, beside the thrift stock the catalog lists.
+    const free = slots.filter((x) => !x.itemId);
+    [40, 42, 44].forEach((id, i) => { free[i].itemId = id; free[i].quantity = 1; });
+    msgs.push({ type: 'inventory', slots, equipment: { weapon: 1, head: 0, body: 4, shield: 0 } });
   }
 
   if (opts.panel === 'home-edit') {
