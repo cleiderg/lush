@@ -1,6 +1,8 @@
 // Package questevents connects the quest engine (package quest) to the world
 // (docs/specs/quests.md). It keeps each player's quest state and feeds it the
-// game events that move quests on:
+// game events that move quests on. The quest state itself lives in a
+// States store shared with the talking NPC system, so dialogue, kills, levels
+// and items all move the same state:
 //
 //   - kills: Sink wraps the combat event sink, so the killer's quests count
 //     the kill and the NPC's quest drops join the loot (the session spawns
@@ -10,7 +12,9 @@
 //   - pick-ups: PickedUp is the grounditems pick-up hook.
 //
 // Players join with Load (their stored records) and leave with Forget. Drain
-// reports the players whose quest state changed since the last Drain, once.
+// reports the players whose quest state changed since the last Drain, once;
+// changes made elsewhere (a quest started in dialogue) are reported once
+// Changed is called for them.
 // Finished quests are reported in Change.Completed for whoever commits the
 // rewards; this package does not.
 //
@@ -33,6 +37,14 @@ type Players interface {
 	Player(id world.PlayerID) *world.Player
 }
 
+// States holds each player's quest state. *talk.System implements it.
+type States interface {
+	// State returns the player's quest state, creating an empty one.
+	State(id world.PlayerID) *quest.State
+	// SetState replaces the player's quest state.
+	SetState(id world.PlayerID, st quest.State)
+}
+
 // Change is one player's quest state after it changed.
 type Change struct {
 	Player world.PlayerID
@@ -43,7 +55,6 @@ type Change struct {
 }
 
 type entry struct {
-	state     quest.State
 	combat    int
 	skills    [world.NumSkills]int
 	dirty     bool
@@ -56,18 +67,21 @@ type System struct {
 	data    *gamedata.Data
 	engine  *quest.Engine
 	players Players
+	states  States
 	rand    quest.Rand
 
 	entries map[world.PlayerID]*entry
 	order   []world.PlayerID // players with changes, in the order they changed
 }
 
-// New creates the system. rand drives quest drop chances.
-func New(d *gamedata.Data, players Players, r quest.Rand) *System {
+// New creates the system over the shared quest states. rand drives quest
+// drop chances.
+func New(d *gamedata.Data, players Players, states States, r quest.Rand) *System {
 	return &System{
 		data:    d,
 		engine:  quest.New(d),
 		players: players,
+		states:  states,
 		rand:    r,
 		entries: make(map[world.PlayerID]*entry),
 	}
@@ -83,13 +97,22 @@ func (s *System) Load(p *world.Player, recs []quest.Record) error {
 	if err != nil {
 		return fmt.Errorf("load quests for player %d: %w", p.ID, err)
 	}
-	e := s.newEntry(p)
-	e.state = st
-	s.entries[p.ID] = e
+	s.states.SetState(p.ID, st)
+	s.entries[p.ID] = s.newEntry(p)
 	return nil
 }
 
-// Forget drops a leaving player's state and any change not yet drained.
+// Changed reports that player p's quest state changed outside this system
+// (a quest started or a step finished in dialogue), so the next Drain
+// includes it.
+func (s *System) Changed(id world.PlayerID) {
+	if p := s.players.Player(id); p != nil {
+		s.mark(p.ID, s.entry(p))
+	}
+}
+
+// Forget drops a leaving player's level tracking and any change not yet
+// drained. The States store drops the quest state itself.
 func (s *System) Forget(id world.PlayerID) {
 	delete(s.entries, id)
 	s.order = slices.DeleteFunc(s.order, func(o world.PlayerID) bool { return o == id })
@@ -97,18 +120,12 @@ func (s *System) Forget(id world.PlayerID) {
 
 // Records is the player's quest state as plain records.
 func (s *System) Records(id world.PlayerID) []quest.Record {
-	if e := s.entries[id]; e != nil {
-		return e.state.Encode()
-	}
-	return nil
+	return s.states.State(id).Encode()
 }
 
 // Progress is the player's progress in one quest.
 func (s *System) Progress(id world.PlayerID, q gamedata.QuestID) quest.Progress {
-	if e := s.entries[id]; e != nil {
-		return e.state.Get(q)
-	}
-	return quest.Progress{}
+	return s.states.State(id).Get(q)
 }
 
 // Drain returns the players whose quest state changed since the last call,
@@ -123,7 +140,7 @@ func (s *System) Drain() []Change {
 		if e == nil || !e.dirty {
 			continue
 		}
-		out = append(out, Change{Player: id, Records: e.state.Encode(), Completed: e.completed})
+		out = append(out, Change{Player: id, Records: s.states.State(id).Encode(), Completed: e.completed})
 		e.dirty = false
 		e.completed = nil
 	}
@@ -140,13 +157,13 @@ func (s *System) Tick(w *world.World, _ time.Duration) {
 		if lv := p.CombatLevel(rules); lv != e.combat {
 			e.combat = lv
 			if lv > 0 {
-				s.apply(p, e, s.engine.SkillLevel(&e.state, gamedata.CombatSkill, lv, s.env(p)))
+				s.apply(p, e, s.engine.SkillLevel(s.states.State(p.ID), gamedata.CombatSkill, lv, s.env(p)))
 			}
 		}
 		for sk := world.Skill(0); sk < world.NumSkills; sk++ {
 			if lv := p.SkillLevel(sk); lv != e.skills[sk] {
 				e.skills[sk] = lv
-				s.apply(p, e, s.engine.SkillLevel(&e.state, gamedata.Skill(sk.String()), lv, s.env(p)))
+				s.apply(p, e, s.engine.SkillLevel(s.states.State(p.ID), gamedata.Skill(sk.String()), lv, s.env(p)))
 			}
 		}
 	}
@@ -156,7 +173,7 @@ func (s *System) Tick(w *world.World, _ time.Duration) {
 // grounditems pick-up hook.
 func (s *System) PickedUp(p *world.Player, item gamedata.ItemID, _ int) {
 	e := s.entry(p)
-	s.apply(p, e, s.engine.GotItem(&e.state, item, s.env(p)))
+	s.apply(p, e, s.engine.GotItem(s.states.State(p.ID), item, s.env(p)))
 }
 
 func (s *System) entry(p *world.Player) *entry {
@@ -183,9 +200,13 @@ func (s *System) apply(p *world.Player, e *entry, r quest.Result) {
 	if !r.Advanced && len(r.Completed) == 0 {
 		return
 	}
+	s.mark(p.ID, e)
+}
+
+func (s *System) mark(id world.PlayerID, e *entry) {
 	if !e.dirty {
 		e.dirty = true
-		s.order = append(s.order, p.ID)
+		s.order = append(s.order, id)
 	}
 }
 
@@ -204,13 +225,14 @@ func (s *System) Sink(inner combat.EventSink) *Sink { return &Sink{EventSink: in
 func (k *Sink) NPCKilled(kill combat.Kill) {
 	if p := k.s.players.Player(kill.Killer); p != nil {
 		e := k.s.entry(p)
+		st := k.s.states.State(p.ID)
 		env := k.s.env(p)
 		typ := gamedata.NPCTypeID(kill.Type)
 		// Drops first: they depend on the step the player is on now.
-		for _, d := range k.s.engine.Drops(&e.state, typ, env, k.s.rand) {
+		for _, d := range k.s.engine.Drops(st, typ, env, k.s.rand) {
 			kill.Items = append(kill.Items, world.Stack{Item: d.Item, Qty: d.Quantity})
 		}
-		k.s.apply(p, e, k.s.engine.Kill(&e.state, typ, env))
+		k.s.apply(p, e, k.s.engine.Kill(st, typ, env))
 	}
 	k.EventSink.NPCKilled(kill)
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/cleiderg/lush/server/internal/systems/grounditems"
 	"github.com/cleiderg/lush/server/internal/systems/quest"
 	"github.com/cleiderg/lush/server/internal/systems/questevents"
+	"github.com/cleiderg/lush/server/internal/systems/talk"
 	"github.com/cleiderg/lush/server/internal/world"
 )
 
@@ -27,10 +28,19 @@ func (s *sink) Hit(combat.Hit)          {}
 func (s *sink) PlayerDied(combat.Death) {}
 func (s *sink) NPCKilled(k combat.Kill) { s.kills = append(s.kills, k) }
 
+// talkSink discards what the talking NPC system tells players.
+type talkSink struct{}
+
+func (talkSink) QuestResult(world.PlayerID, talk.Result)                                {}
+func (talkSink) Dialogue(world.PlayerID, talk.Dialogue)                                 {}
+func (talkSink) DialogueClose(world.PlayerID)                                           {}
+func (talkSink) QuestCompleted(world.PlayerID, quest.Completion, []gamedata.ItemAmount) {}
+
 type fixture struct {
 	t     *testing.T
 	d     *gamedata.Data
 	w     *world.World
+	talk  *talk.System
 	qe    *questevents.System
 	inner *sink
 	sink  *questevents.Sink
@@ -39,12 +49,20 @@ type fixture struct {
 func newFixture(t *testing.T, d *gamedata.Data, seed uint64) *fixture {
 	t.Helper()
 	w := world.New(world.DefaultConfig())
-	qe := questevents.New(d, w, rand.New(rand.NewPCG(seed, seed+1)))
+	tk, err := talk.New(d, quest.New(d), 1, talkSink{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	qe := questevents.New(d, w, tk, rand.New(rand.NewPCG(seed, seed+1)))
+	tk.SetChangeHook(qe.Changed)
+	if err := w.Register(tk); err != nil {
+		t.Fatal(err)
+	}
 	if err := w.Register(qe); err != nil {
 		t.Fatal(err)
 	}
 	inner := &sink{}
-	return &fixture{t, d, w, qe, inner, qe.Sink(inner)}
+	return &fixture{t, d, w, tk, qe, inner, qe.Sink(inner)}
 }
 
 func defaultData(t *testing.T) *gamedata.Data {
@@ -353,13 +371,73 @@ func TestDrainReportsOnce(t *testing.T) {
 	}
 }
 
+// The quest a player starts in dialogue is the one kills and pick-ups move,
+// and the dialogue's changes are drained like any other.
+func TestSharesStateWithDialogue(t *testing.T) {
+	d := defaultData(t)
+	f := newFixture(t, d, 1)
+	od := f.quest("overdue")
+	p := f.player(1)
+	f.w.Tick() // spawns the talkers
+	nt, _ := d.NPCByKey("librarian")
+	var lib *world.NPC
+	for _, n := range f.w.NPCs() {
+		if n.Type == world.NPCTypeID(nt.ID) {
+			lib = n
+		}
+	}
+	if lib == nil {
+		t.Fatal("no librarian")
+	}
+	p.Pos = lib.Pos
+	f.w.Enqueue(talk.TalkCommand{Player: 1, NPC: lib.ID})
+	f.w.Tick()
+	f.w.Enqueue(talk.ReplyCommand{Player: 1, Index: 0}) // starts Overdue
+	f.w.Tick()
+	want := []questevents.Change{{Player: 1, Records: []quest.Record{{Quest: od, Status: quest.InProgress}}}}
+	if got := f.qe.Drain(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("drain after start = %+v, want %+v", got, want)
+	}
+	f.w.Enqueue(talk.ReplyCommand{Player: 1, Index: 0}) // finishes the talk step
+	f.w.Tick()
+	if got := f.qe.Progress(1, od); got.Step != 1 {
+		t.Fatalf("after talk step: %+v", got)
+	}
+	if got := f.qe.Drain(); len(got) != 1 || got[0].Player != 1 {
+		t.Fatalf("drain after talk step = %+v", got)
+	}
+
+	ground := grounditems.New(d, world.NewFakeClock(t0), 1)
+	ground.SetPickupHook(f.qe.PickedUp)
+	book := f.item("overdue_book")
+	for i := 0; i < 100 && !hasItem(f.kill(1, "crow").Items, book); i++ {
+	}
+	if !hasItem(f.inner.kills[len(f.inner.kills)-1].Items, book) {
+		t.Fatal("no book in 100 crow kills")
+	}
+	id, err := ground.Spawn(book, 1, p.Pos, 1, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ground.PickUp(p, id); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.talk.State(1).Get(od); got.Step != 2 {
+		t.Fatalf("dialogue's state after pick-up: %+v", got)
+	}
+}
+
 func BenchmarkTick(b *testing.B) {
 	d, err := gamedata.Default()
 	if err != nil {
 		b.Fatal(err)
 	}
 	w := world.New(world.DefaultConfig())
-	qe := questevents.New(d, w, rand.New(rand.NewPCG(1, 2)))
+	tk, err := talk.New(d, quest.New(d), 1, talkSink{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	qe := questevents.New(d, w, tk, rand.New(rand.NewPCG(1, 2)))
 	for i := 1; i <= 200; i++ {
 		p := &world.Player{ID: world.PlayerID(i), Inv: world.NewInventory(d)}
 		if err := w.AddPlayer(p); err != nil {
